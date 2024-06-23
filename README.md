@@ -1,2 +1,2 @@
 # randscript
-Personal repository for random scripts
+Personal repository for random script
