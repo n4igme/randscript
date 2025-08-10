@@ -6,45 +6,77 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "codellama")
 
 PROMPT_TEMPLATE = """
-You are an experienced cybersecurity engineer and static analysis expert.
-Your task is to review the following code for bugs, security vulnerabilities, and maintainability issues.
+You are a world-class application-security engineer and vulnerability researcher with deep expertise in secure coding, threat modeling, and offensive techniques.
 
-- Be direct and specific—do not sugarcoat issues.
-- Focus on OWASP Top 10 and common language-specific security flaws.
-- If you see hardcoded secrets, weak crypto, insecure APIs, or business logic flaws, call them out.
-- Suggest clear, actionable fixes and best practices.
-- If the code looks good, state that clearly.
-- Summarize risks and improvements in bullet points.
+TASK:
+Perform an exhaustive, line-by-line static analysis of the code below. Identify **every** potential security weakness, anti-pattern, or design flaw that could lead to confidentiality, integrity, or availability issues. For each finding, return the following **exact** structure:
 
-Here is the context:
-{context}
+---
 
-Here is the code to analyze {language}:
+### 🚨 Finding #[Number]
+
+- ✅ **Title:** <short, clear title>
+- 📄 **Description:** <what the issue is, why it’s a problem, how it could be exploited>
+- 🧱 **Impact Area:** <Auth | Input Validation | Cryptography | Secrets Management | RCE | Injection | Logic Flaw | Access Control | etc.>
+- 🔥 **Severity:** <Critical | High | Medium | Low>
+  - Justify with exploitability, impact, prevalence, and likelihood of discovery
+- 💣 **Proof of Concept (PoC):**  
+  <concrete payload, curl command, test input, or malicious flow that triggers the issue>
+- 🛠️ **Suggested Fix:**  
+  <specific code change, secure design pattern, or configuration hardening>
+- 🔎 **Reference:** <CVE / CWE / OWASP Top 10 mapping if applicable>
+- 📂 **Location:** <filename.ext:line-range>
+
+---
+
+Requirements:
+- Be precise: cite exact line numbers or ranges where possible.
+- Be actionable: provide working, secure code for every suggested fix.
+- Be exhaustive: do **not** stop after the first issue—continue scanning the entire snippet.
+- Prioritize findings by real-world exploitability, not theoretical risk.
+
+Code to analyze:
 {code_block}
 """
 
+# You can add more extensions as needed
+LANG_TO_EXT = {
+    'py': '.py',
+    'js': '.js',
+    'go': '.go',
+    'kt': '.kt',
+    'java': '.java',
+    'c': '.c',
+    'cpp': '.cpp',
+    'rb': '.rb',
+    # etc.
+}
+
 def build_prompt(code, language, context):
     code_block = f"```{language}\n{code}\n```"
-    return PROMPT_TEMPLATE.format(language=language, context=context, code_block=code_block)
+    return PROMPT_TEMPLATE.format(code_block=code_block)
 
 def analyze_code_with_ollama(prompt, model):
     response = requests.post(
-        f"{OLLAMA_URL}/api/generate",
+        f"{OLLAMA_URL}/api/chat",
         json={
             "model": model,
-            "prompt": prompt,
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
             "stream": False,
         },
         timeout=120,
     )
     response.raise_for_status()
     data = response.json()
-    return data['response']
+    return data['message']['content']
 
 def analyze_directory(directory, language, context, model):
+    ext = LANG_TO_EXT.get(language, f".{language}")
     for root, dirs, files in os.walk(directory):
         for file in files:
-            if file.endswith(f".{language}"):
+            if file.endswith(ext):
                 path = os.path.join(root, file)
                 with open(path, "r", encoding="utf-8") as f:
                     code = f.read()
@@ -60,11 +92,11 @@ def analyze_directory(directory, language, context, model):
 def main():
     parser = argparse.ArgumentParser(description="Static code analysis with Ollama (local LLM)")
     parser.add_argument("target", help="Path to file or directory")
-    parser.add_argument("--lang", required=True, help="Programming language (e.g. go, py, js)")
+    parser.add_argument("--lang", required=True, help="Programming language (e.g. py, js, go, kt)")
     parser.add_argument("--context", default="No additional context", help="Context or filename (optional)")
     parser.add_argument("--model", default=OLLAMA_MODEL, help="Ollama model to use (default: codellama)")
     args = parser.parse_args()
-    # python ollasec.py source_code/ --lang kt --model deepseek-coder:latest
+    # python ollasec.py /Path/To/Source_Code/ --lang c --model deepseek-coder:latest
 
     if os.path.isdir(args.target):
         analyze_directory(args.target, args.lang, args.context, args.model)
