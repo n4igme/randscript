@@ -1,0 +1,1505 @@
+ <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<meta content="text/html; charset=utf-8" http-equiv="Content-Type"/>
+<title> 99 Beautiful Devine Names of allah, Asmaul Husna | AsmaulHusna.in, meaning, benefits, in english, malayalam, arabic - Asmaul Husna reciting, asmaulhusna, asmaul husna</title>
+<meta content=" 'The most beautiful names belong to Allah: so call on Him by them; but shun such men as use profanity in His names: for what they do, they will soon be requited' (Surah Al-A'raf, verse 180) " name="description"/>
+<meta content=" asma ul husna mp3 download, meaning, asma ul husna 99 names of allah , pdf, Asmaul Husna, Asma ul Husna, 99 Names of Allah, Allah's beautiful Names, Recite Asmaul husna, أسماء الله الحسنى : الله الرحمن الرحيم الملك القدوس السلام المؤمن المهيمن العزيز الجبار المتكبر الخالق البارئ المصور الغفار القهار الوهاب الرزاق الفتاح العليم القابض الباسط الخافض الرافع المعز المذل السميع البصير الحكم العدل, اللطيف الخبير الحليم العظيم الغفور الشكور العلي الكبير الحفيظ المقيت الحسيب الجليل الكريم الرقيب , المجيب , الواسع , الحكيم , الودود , المجيد , الباعث , الشهيد , الحق , الوكيل , القوي , المتين , الولي , الحميد , المحصي , المبدئ , المعيد , المحيي , المميت , الحي , القيوم , الواجد , الماجد الواحد , الأحد , الصمد , القادر , المقتدر , المقدم , المؤخر , الأول , الآخر , الظاهر , الباطن , الوالي, المتعالي , البر , التواب , المنتقم , العفو , الرءوف , مالك الملك , ذو الجلال والإكرام , المقسط , الجامع , الغني , المغني , المانع , الضار , النافع , النور , الهادي , البديع , الباقي , الوارث , الرشيد , الصبور" name="keywords"/>
+<script src="js/jquery-1.7.2.min_production.js" type="text/javascript"></script>
+<script src="js/counter_animation.js" type="text/javascript"></script>
+<script type="text/javascript">
+$(document).ready(function(){
+$('#infobox').fadeOut(500);
+
+var scrollcard = "";
+
+$(".card").hover(function(){
+holystr = $(this).attr("title");
+var lastcard = $(this).attr("id");
+scrollcard = "#"+lastcard;
+if(lastcard=="name0"){lastcard="nameThe Greatest Name";}
+lastcard = "#"+lastcard;
+$(".statustxt").text(holystr);
+
+var intRegex = /^\d+$/;
+if(intRegex.test(lastcard.replace('#name',''))) {
+$("#goname").val(lastcard.replace('#name',''));
+}
+//alert(lastcard);
+
+//$("#etitle",this).prepend("<div id='infobox' align='center' style='position:; width:100%; top:100px;'><div class='callbox'></div></div>");
+$('#infobox').fadeIn(100);
+$('#infobox').animate({top: "50"},100);
+
+str = $('#etitle', this).text();
+$( '#infobox div' ).empty().append("Ya "+str+" Ya ALLAH");
+},function(){$('#infobox').stop().animate({top:"0"},100);
+$('#infobox').fadeOut(1000).remove();
+});
+
+$("#options, #nameinfo").hide();
+$(".header").attr("align","left");
+var scrolled = 0;
+
+$(window).scroll(function() {
+    
+        var scrollVal = $(this).scrollTop();
+        $("#options").css({"visibility":"visible"});
+        
+        if ( scrollVal > 18) {
+        
+            $("#headerbox").css({"position":"fixed","top":"0px","width":"100%","z-index":"1"});
+            $(".header").attr("align","left");
+		  
+    		if(scrollVal > 100){
+    		    $("#statusbox").hide();
+    		    $("#sohbetheader").stop().slideUp(100);
+    		    
+    		    if($(window).width() > 600) {
+    		        $("#options, #nameinfo").fadeIn(1000);
+    		    }
+    		    
+    	  		$(".header").attr("align","left");
+    		}
+
+            if(scrolled==0){
+              scrolled=1;
+              $.post('startcount.php', {start:"1"},function(data) {
+              $("#startnums span").text(data);});
+            }
+
+        }else{
+            
+            if ($(window).width() > 600) {
+        		$("#options, #nameinfo").hide();
+                $("#sohbetheader").stop().slideDown(100);
+        		$("#statusbox").show();
+        		$("#headerbox").css({'position':'static','top':'auto'});
+    			$(".header").attr("align","left");
+            }
+		}
+
+    
+});
+
+//start reciting
+$(".btn").live('click',function(){
+event.returnValue = false;
+$('html, body').delay(1000).animate({scrollTop:$("#start").offset().top-190}, 'slow');
+	$.post('startcount.php', {start:"1"},function(data) {
+	  $("#startnums span").text(data);
+	});
+});
+
+
+/*options section*/
+//Whenver clicks on options, change its bg color as toggle to show switching
+$("a[id=descopt],a[id=etitleopt],a[id=benefitopt],a[id=malopt]").toggle(function(){
+$(this).css({"text-decoration":"line-through","background-color":"#F3F3F3"});
+},function(){
+$(this).css({"text-decoration":"none","background-color":"#FDFDFD"});
+});
+
+
+//onclick on options, hide repective divs as toggle
+$("a[id=descopt]").click(function(){event.returnValue = false;$(".desc").toggle("slow"); $("html, body").animate({scrollTop:$("#name49").offset().top-190}, 'slow');});
+$("a[id=etitleopt]").click(function(){event.returnValue = false;$(".etitle").toggle("slow");});
+$("a[id=benefitopt]").click(function(){event.returnValue = false;$(".reward").toggle("slow");});
+$("a[id=malopt]").click(function(){event.returnValue = false;$(".mmeaning").toggle("slow");});
+/*options section end*/
+
+$("#goname").change(function () { 
+goval = $(this).val(); 
+$('html, body').animate({scrollTop:$("#name"+goval).offset().top-50}, 'slow'); 
+$(".statustxt").text($("#name"+goval).attr("title"));
+});
+
+/*$(".atitle").hover(function(){
+atext = $(this).text();
+$(this).text("يا "+atext.replace('ال','')+" يا  الله");
+},function(){ $(this).text(atext);
+});*/
+
+
+//storing to database
+$(".card").each(function() {
+	 
+	 card_id = $(this).attr("id");
+     card_id = card_id.replace('name','');
+	 
+     name = $(".etitle", this).text();
+	 name = name.replace(/\d+/g, '')
+
+	 //alert(name);
+	 
+	 atitle = $(".atitle", this).text();
+	 subtitle = $(".emeaning", this).text();
+	 mal = $(".mmeaning", this).text();
+	 benefits = $(".reward", this).text();
+	 texts = $(".desc", this).text();
+	 abjad = $(".abjadvalue", this).text();
+	 
+/* to post all names and contents to database turn in on once.
+//storetodb.php used for to process the data via ajax.
+
+$.ajax({
+   url: "storetodb.php",
+   type: "GET",
+   data: "card_id="+card_id+"&atitle="+atitle+"&name="+name+"&subtitle="+subtitle+"&mal="+mal+"&texts="+texts+"&benefits="+benefits+"&abjad="+abjad,
+   success: function(response) {
+alert(response);
+   }
+});*/
+});
+
+});
+</script>
+</head>
+<style type="text/css">
+
+body{background-image:url(images/in.jpg);background-attachment:fixed;.png background-position:0px 20px; background-repeat:no-repeat; background-size:cover;-webkit-background-size: cover;  -moz-background-size: cover;  -o-background-size: cover;  background-size: cover; 
+  filter: progid:DXImageTransform.Microsoft.AlphaImageLoader(src='.jpg', sizingMethod='scale');
+}
+.header{ background-color:#FFFFFF; padding:25px; font-family:Verdana, Arial, Helvetica, sans-serif; width:800px; font-size:17px}
+.promote{padding-top:100px; color:#FFFFFF;  -webkit-text-shadow: 3px 3px 0 #999;
+    -moz-text-shadow: 3px 3px 0 #999;    text-shadow: 2px 1px 0 rgba(14, 20, 20, 0.26); padding-bottom:100px; font-size:18px; font-weight:bold; font-family:Verdana, Arial, Helvetica, sans-serif; min-height:100px;}
+.btn{   background-color:#000000; background-color:rgba(0, 0, 0, 0.59); cursor:pointer; color:#FFFFFF; font-family:Verdana, Arial, Helvetica, sans-serif; font-size:14px; padding:18px; font-weight:bold;}
+.btn:hover{ background-color:#000000;}
+.card{padding:25px; width:800px; padding-bottom:50px; cursor:default;}
+.cardbg{ background-color:#F4F4F4;}
+.callbox{padding:10px; background-color:#333333; color:#FFFFFF; width:300px; -webkit-border-radius:30px; font-size:11px;}
+.atitle{ font-size:105px; font-weight:bold; color:#006600; font-family:Verdana, Arial, Helvetica, sans-serif; padding-top:20px; cursor:pointer;}
+.etitle, .etitle a{ text-decoration:none; font-size:35px; font-weight:bold; font-family:Verdana, Arial, Helvetica, sans-serif; padding-top:30px; color:#000000;}
+.emeaning{ font-size:26px; font-family:Verdana, Arial, Helvetica, sans-serif; padding-bottom:30px; color:#666666;}
+.mmeaning{ font-size:16px; font-weight:bold; font-family:Verdana, Arial, Helvetica, sans-serif; padding-bottom:29px; margin-top:-20px; color:#666666;}
+.desc{line-height:16px;font-size:12px; color:#333333; font-family:Verdana, Arial, Helvetica, sans-serif;}
+.reward{ max-width:650px; line-height:16px; background-color:#D8FABC; -webkit-border-radius:40px; font-size:12px; color:#333333; font-family:Verdana, Arial, Helvetica, sans-serif; margin-top:25px; padding:15px;}
+.navlink, .navlink:link{ color:#333333; padding:10px; font:Verdana, Arial, Helvetica, sans-serif; font-size:11px; background-color:#FFFFFF; text-decoration:none; border:solid 1px #CCCCCC; -webkit-border-radius:5px;}
+.navlink:hover{background-color:#ffffff; -webkit-box-shadow:0px 1px 3px -1px;}
+.abjadvalue{ background-color:#F6FF8B; padding:5px; margin-left:-5px; padding-right:5px; color:#FF674A; border:solid 1px #FFB5B5; position:absolute;padding-left:5px; -webkit-border-radius:14px; font-size:11px; font-family:Verdana, Arial, Helvetica, sans-serif;}
+.statustxt{ background-color:#EEEEEE; padding:5px; font-size:11px; font-family:Verdana, Arial, Helvetica, sans-serif; -webkit-border-radius:5px;}
+.promotext{width:800px;}
+
+
+
+@media only screen and (max-width: 960px) {
+    
+    <!--when window gets a width min of 5000px-->
+    body{background-position: 0px 20px;}
+    .navlink:link{padding:0px; border:none;}
+    .header{ width:75%; text-align: center;} 
+    .promotext{text-align: center;width:350px;height:407px; font-size:15px;}
+    .promote{color: #FFFFFF;text-shadow: 2px 1px 0 rgba(14, 20, 20, 0.26);font-size: 16px;font-weight: bold;font-family: Verdana, Arial, Helvetica, sans-serif;}
+    .card{ width:75%;}
+    .statustxt{display:block;}
+    
+}
+
+
+@media only screen and (max-width: 600px) {
+    /*Mobile usability css changes in 2020*/
+    body{
+        font-family: Verdana, Arial, Helvetica, sans-serif;
+    }
+    .statustxt, #options, #statusbox, #sohbetheader{
+        display:none;
+    }
+    #statusbox{
+        float: right;
+        margin-top: 5px;
+    }
+    .promotext{
+        text-align: center;
+        max-width: 350px;
+        font-size: 1.2em;
+        width: 80%;
+        height:auto;
+    }
+    .etitle, .etitle a {
+        text-decoration: none;
+        font-size: 1.4em;
+        font-weight: bold;
+        padding: 10px 0px;
+        color: #1a672b;
+    }
+    .atitle{
+        font-size: 4em;
+        font-weight: bold;
+        color: #1eb515;
+        padding-top: 20px;
+        cursor: pointer;
+    }
+    .atitle:nth-child(1) {
+        font-size: 5em;
+    }
+    .emeaning{
+        font-size: 1.1em;
+        line-height: 1.6em;
+        padding-bottom: 30px;
+        color: #191919;
+    }
+    .mmeaning{
+        font-size:1.2em;
+    }
+    .reward{
+        max-width: 650px;
+        line-height: 1.6em;
+        background-color: #D8FABC;
+        border-radius: 14px;
+        font-size: 16px;
+        color: #333333;
+        margin-top: 25px;
+        padding: 15px;
+    }
+    .card{
+        width: 86%;
+    }
+    .desc{
+        line-height: 1.6em;
+        font-size: 1em;
+        color: #333333;
+    }
+}
+
+
+</style>
+<body leftmargin="0" marginheight="0" marginwidth="0" rightmargin="0" topmargin="0"><!-- BEGIN WAYBACK TOOLBAR INSERT -->
+<script type="text/javascript">//<![CDATA[
+//]]></script>
+<!-- END WAYBACK TOOLBAR INSERT -->
+<div id="fb-root"></div>
+<div id="fb-root"></div>
+<div align="center">
+<div id="headerbox" style="background-color:#FFFFFF; -webkit-box-shadow:0px 0px 6px -1px; border-bottom:solid 1px #CCCCCC;">
+<div align="center" id="sohbetheader" style="width:100%; border-bottom: solid 1px #eeeeee; height:80px;">
+<div align="left" style="width: 795px;font-size: 14px;padding-right: 9px;">
+<div id="sitelinkbox" style="padding-top: 11px;font-family: Verdana, Arial, Helvetica, sans-serif;">
+<img height="57" src="images/sahibusaif_photo.png" style="position:relative;float: left; padding-right:11px;" width="57"/><br/>
+<span style="font-size: 11px;color: #737373;"><strong>This website is dedicated to Hz. Sahibul Sayf Sheykh Abdul Kerim QS</strong><br/>
+ Allahumma salli 'ala Muhammadin wa 'ala ali Muhammadin wasallim.</span></div></div>
+</div>
+<div align="left" class="header"><strong>ASMAUL HUSNA</strong> <span id="nameinfo"><span class="statustxt">Start Now! </span> </span>
+<div name="seo-links" style="display:none;">
+</div>
+<div id="statusbox" style="float:right; margin-top:5px;">
+<table align="right" border="0" cellpadding="0" cellspacing="0" style="margin-top:-8px;" width="230">
+<tr><td><div id="startnums" style="font-size:19px; font-weight:bold; color:#41D125; float:left; padding-right:11px;"><span id="startcounter">627360</span>+</div><span style="font-size:9px; color:#BEBEBE;"> Times people started <br/>recitation since April '14</span></td>
+</tr>
+</table>
+</div>
+<div id="options" style="float:right; margin-top:5px;visibility:hidden; font-size:12px; color:#999999;">
+
+
+
+
+   Goto: <input id="goname" maxlength="2" name="goname" size="2" style="font-size:9px; text-align:center; margin-top: -10px;min-height: 28px;-webkit-border-radius: 21px; border:solid 1px #CCCCCC;" type="text"/>
+</div>
+</div></div>
+<div id="flagcounterbox" style="height:0px; visibility:hidden;">
+</div><div align="center" class="promote">
+<div class="promotext">
+<!--<iframe width="800" height="400" src="https://www.com/embed/O2gDiiRH0-8" frameborder="0" allowfullscreen="" style="
+    border: solid 27px white;
+"></iframe>-->
+<img height="83" src="images/Basmalah.png" width="284"/>
+<br/>
+<br/>
+"The most beautiful names belong to Allah: so call on Him by them; but shun such men as use profanity in His names: for what they do, they will soon be requited" (Surah Al-A'raf, verse 180) <br/>
+<br/>
+<strong>Those who believe, and whose hearts find satisfaction in the remembrance of Allah: for without doubt in the remembrance of Allah do hearts find satisfaction. (Glorious Qur'an 13:28)<br/>
+<br/>
+<br/>
+</strong></div>
+</div>
+<div style="background-color:#FFFFFF"> <br/>
+<br/>
+<span class="etitle"><a id="start0" name="start0"></a></span>
+<div align="center" class="card" id="name0" title="Ya Allahu Ya Allah">
+<div class="atitle"><strong><a id="start" name="start"></a>الله</strong>
+</div>
+<div style="margin-left: 5px;margin-top: -161px;background-image: url(images/in.jpg);width:.png 190px;height: 190px;background-size: 190px 190px;"></div>
+<div class="etitle"><span class="abjadvalue">66</span></div>
+<div class="emeaning">(The Greatest Name, The Name Of ALLAH)</div>
+<div class="mmeaning">അല്ലാഹു : അല്ലാഹുവിന്‍ നാമം</div>
+<div class="desc"> In the name of God  The infinitely Compassionate and Merciful ● Praise be to God, Lord of all the worlds. ● The Compassionate, The Merciful. ● Ruler on the Day of Reckoning. ● You alone do we worship, and You alone do we ask for help. ● Guide us on the straight path ● The path of those who have received your grace; not the path of those who have brought down wrath, nor of those who wander astray. <strong>Ameen Rabbal Alameen.</strong><br/>
+<br/>
+        Allah is Al-ism Al-a'zam, the greatest name which contains all the divine attributes and is the sign of the essence and cause of all existence. Allah does not resemble in any way any of His creation. Allah is Allah's name only. <br/>
+        Nothing else can assume this name or share it. <br/>
+<br/>
+</div>
+<div class="reward"><strong>Benefits of Reading :</strong> Whoever reads this name of Allah <strong>1,000</strong> times daily, all doubts and uncertainties will be removed from his heart, instead, determination and faith will become inborn in him. Insha-Allahu Rahman. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name1" title="Ya Rahman Ya Allah">
+<div class="atitle">الرحمن</div>
+<div class="etitle"><span class="abjadvalue">298</span></div>
+<div class="emeaning">(The All-Compassionate)</div>
+<div class="mmeaning">അര്‍-റഹ്മാന്‍ : പരമ-കാരുണ്യവാന്‍</div>
+<div class="desc"> The One who continually showers all of creation with blessings and prosperity without any disparity. The One who is most kind, loving and merciful. The One whose endless, loving mercy is perfect and inclusive. The One who is overflowing with the quality of loving mercy and is continually pouring it upon all of creation. The One whose perfect mercy and loving beneficence endlessly embrace all of creation. The One who loves and cherishes all of creation. <br/>
+    The One who is most loving, gentle and merciful. <br/>
+<br/>
+    The Most Gracious has imparted this Qur’an unto man. He has created man: He has imparted unto him articulate thought and speech. At His behest the sun and the moon run their appointed courses; before Him prostrate themselves the stars and the trees. And the skies has He raised high, and has devised for all things a measure, so that you too, O men, might never transgress the measure of what is right: weight, therefore, your deeds with equity, and cut not the measure short! and the earth has He spread out for all living beings, with fruit thereon, and palm trees with sheathed clusters of dates, and grain growing tall on its stalks, and sweet-smelling plants. Which, then, of your Sustainer’s powers can you disavow? <br/>
+<strong> <br/>
+    Ar-Rahman 55:1-13, tr. Asad</strong><br/>
+<br/>
+</div>
+<div class="reward"><span class="desc"><strong>Benefits of Reading :</strong></span> If this ism is recited <strong>100</strong> times daily after every salaah,<br/> 
+    if Allah wills, hard heartedness and negligence will be removed from the readers heart.</div>
+</div>
+</div>
+<div align="center" class="card" id="name2" title="Ya Raheem Ya Allah">
+<div class="atitle">الرحيم</div>
+<div class="etitle"><span class="abjadvalue">258</span></div>
+<div class="emeaning">(The All-Merciful)</div>
+<div class="mmeaning">അര്‍-റഹീം : കരുണാനിധി</div>
+<div class="desc"> The One who grants even more grace and greater rewards in response to our good actions and high thoughts. <br/>
+      The One who greatly rewards those who use the Divine bounties and beneficence in a good way. <br/>
+      The One who has mercy on the merciful.<br/>
+<br/>
+      Bismillah ar-Rahman ar-Rahim <br/>
+      In the name of God, the infinitely Compassionate and Merciful <br/>
+<strong>      Al-Fatihah 1:1</strong><br/>
+<br/>
+      He is the source of infinite mercy and beneficence, <br/>
+    who rewards with eternal gifts the one who uses his bounties for the good.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> If recited daily after every salah <strong>100</strong> times, the reciter will be safeguarded against all calamities, and maladies and the entire creation will become affectionate towards him - InshaAllah </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name3" title="Ya Malik Ya Allah">
+<div class="atitle">الملك</div>
+<div class="etitle"><span class="abjadvalue">90</span></div>
+<div class="emeaning">(The Absolute Ruler, The Sovereign)</div>
+<div class="mmeaning">അല്‍-മലിക്‌ : മഹാരാജാവ്‌</div>
+<div class="desc"> He is the owner and ruler of the entire universe, visible and invisible, and of all creation, from before the beginning and after the end. And thus have We bestowed from on high this divine writ as a discourse in the Arabic tongue, and have given therein many facets to all manner of warnings, so that men might remain conscious of Us, or that it give rise to a new awareness in them. Know, then that God is sublimely exalted, the Ultimate Sovereign, the Ultimate Truth: and knowing this, do not approach the Qur’an in haste, ere it has been revealed unto thee in full, but always say: <br/>
+<strong>"O my Sustainer, cause me to grow in knowledge!"</strong> <br/>
+<strong>Ta Ha 20:113-114</strong></div>
+<div class="reward"> <strong>Benefits of Reading :</strong> If read abundantly each day after zawaal, <br/>
+      the reader will be given abundant wealth, Insha-Allah.</div>
+</div>
+</div>
+<div align="center" class="card" id="name4" title="Ya Quddus Ya Allah">
+<div class="atitle">القدوس</div>
+<div class="etitle"><span class="abjadvalue">170</span></div>
+<div class="emeaning">(The Pure One)</div>
+<div class="mmeaning">അല്‍-ഖുദ്ധൂസ്‌ : പരിശുദ്ധവാന്‍</div>
+<div class="desc"> The One who is pure, spotless, without blemish or fault. The One who is far from, and untouched by, worldly imperfections or faults. The One whose essence and attributes are of unimaginable purity and perfection. The One who is beyond all human understanding of purity, perfection and holiness.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Allah will cure from all spiritual sickness the one who recites <br/>
+      this name abundantly each day. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name5" title="Ya Salamu Ya Allah">
+<div class="atitle">السلام</div>
+<div class="etitle"> <span class="abjadvalue">131</span></div>
+<div class="emeaning">(The Source of Peace)</div>
+<div class="mmeaning">അസ്സലാം : രക്ഷയും സമാധാനവും നല്‍കുന്നവന്‍</div>
+<div class="desc"> The One who is perfect, whole, prosperous and content. <br/>
+        The One who is the source of all peace, wholeness and safety. <br/>
+        The One who has rendered all of creation to be perfect, whole, prosperous and content. <br/>
+        The One whose creation is free of imperfections, free of faults and free of error.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who recites this ism continually, Allah will protect him from all <br/>
+      calamities and maladies. If said <strong>115</strong> times and blown on sick person, <br/>
+      Insha-Allah, Allah will restore his health. </div>
+</div>
+</div>
+<div align="center" class="card" id="name6" title="Ya Mu'min Ya Allah">
+<div class="atitle">المؤمن</div>
+<div class="etitle"> <span class="abjadvalue">136</span></div>
+<div class="emeaning">(The Inspirer of Faith)</div>
+<div class="mmeaning">അല്‍-മു'മിന്‍ : അഭയം നല്‍കുന്നവന്‍</div>
+<div class="desc"> The One who faithfully bestows the gifts of peace, safety and security. <br/>
+        The One who grants freedom from fear. The One who illuminates the heart with faith. <br/>
+        The One who is most trustworthy.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Whoever says this name <strong>630</strong> times in times of fear, Allah will protect <br/>
+      him from all calamities, mishaps and losses. If anyone writes it (on paper or by engraving it <br/>
+      on silver ring) and keeps it with him (as taweez), his physical and spiritual safety will remain the responsibility of Allah. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name7" title="Ya Muhaymin Ya Allah">
+<div class="atitle">المهيمن</div>
+<div class="etitle"><span class="abjadvalue">145</span></div>
+<div class="emeaning">(The Guardian, The Giver of Protection)</div>
+<div class="mmeaning">അല്‍-മുഹൈമിന്‍ : സര്‍വ്വരക്ഷാധികാരി </div>
+<div class="desc"> The One who ensures well-being. <br/>
+	      The One who extends wings of Love to cover and protect creation. <br/>
+	      The One who is ever watchful. The One who protects and guards. <br/>
+	      The One who offers peace and security. The One who proclaims the Truth.<br/>
+	    The one who sees the growth of His creation leading them where they are destined to go. </div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who offers 2 rakaat salaah after ghusl and reads with sincerity this Ism 100 times, Allah will purify him physically as well as spiritually. Also Allah will acquaint <br/>
+      one with the unseen if one reads it 115 times. </div>
+</div>
+</div>
+<div align="center" class="card" id="name8" title="Ya Aziz Ya Allah">
+<div class="atitle">العزيز</div>
+<div class="etitle"><span class="abjadvalue">94</span></div>
+<div class="emeaning">(The Mighty, The Victorious)</div>
+<div class="mmeaning">അല്‍-അസീസ്‌  : പ്രതാപമുള്ളവന്‍</div>
+<div class="desc"> The One who is the most Powerful and most Cherished. <br/>
+        The victorious One whose strength, glory and power are overwhelming and cannot be overcome or resisted. <br/>
+        The One whose dignity, majesty and power are unique, precious and unattainable by mankind. <br/>
+        The One whose respectability and nobility are above all others. The One who is the ultimate in honor and nobility. <br/>
+        The One who has complete mastery over all of creation. The One who overcomes everything. <br/>
+        The One who is incomparable and unparalleled. <br/>
+        The One who is the cherished source of all strength, power and potency.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who says this Ism <strong>40</strong> times each day for 40 days, Allah will grant him honor and self sufficiency. If read <strong>41</strong> time daily with constancy, the reader will become self-sufficient <br/>
+      and will attain honor if he is treated with dishonour. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name9" title="Ya Jabbar Ya Allah">
+<div class="atitle">الجبار</div>
+<div class="etitle"> <span class="abjadvalue">206</span></div>
+<div class="emeaning">(The Compeller)</div>
+<div class="mmeaning">അല്‍-ജബ്ബാര്‍ : പരമാധികാരമുള്ളവന്‍</div>
+<div class="desc"> The One who irresistibly restores all of creation to soundness and sufficiency. <br/>
+        The One who repairs, reforms and completes. <br/>
+        The One who irresistibly compels things to be set aright. <br/>
+        The One who compels each and every thing according to divine will, yet is never compelled. <br/>
+        The One who is high, above all creation and utterly irresistible.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who says this Ism <strong>226</strong> times each morning and each evening will be safeguarded against the oppression of tyrants and despots. If anyone engraves it on a silver ring and wears it, his awe and magnificence will become inborn in the hearts of people - InshaAllah. </div>
+</div>
+</div>
+<div align="center" class="card" id="name10" title="Ya Mutakabbir Ya Allah">
+<div class="atitle">المتكبر</div>
+<div class="etitle"><span class="abjadvalue">662</span></div>
+<div class="emeaning">(The Greatest, The Self Glorious)</div>
+<div class="mmeaning">അല്‍-മുതകബ്ബിര്‍ : മഹത്വമുള്ളവന്‍</div>
+<div class="desc"> The One who is supremely great. The One who is greater than all of creation. <br/>
+          The One who manifests greatness in all things and in all ways. <br/>
+          The One who has rights, privileges and attributes which others have not.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> The constant reciter of this Beautiful Name will be granted honour and greatness. If read continually before any task, it will be accomplished - InshaAllah.
+</div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name11" title="Ya Khaliq Ya Allah">
+<div class="atitle">الخالق</div>
+<div class="etitle"> <span class="abjadvalue">731</span></div>
+<div class="emeaning">(The Creator, The Planner)</div>
+<div class="mmeaning">അല്‍-ഖാലിഖ്‌ : സ്ര്‍ഷ്ടാവ്‌</div>
+<div class="desc"> The One who determines and creates according to the proper measure and proportion of each thing. <br/>
+          The One who plans and determines how, when and where to create. The One whose works are perfectly suited, appropriate, fitting and proper. The One who creates something from nothing. The One who creates both the inner and the outer in just proportions. The One who brings things into existence from a state of non-existence. The One who has the power to change things back and forth between the states of existing and non-existing.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who recites this Name of Allah <strong>100</strong> times for 7 days, will be safeguarded against all adversities. InshaAllah. And one who forms the habit of its continuous recital, Allah will appoint an angel who will worship Allah continuously on his behalf. </div>
+</div>
+</div>
+<div align="center" class="card" id="name12" title="Ya Bari Ya Allah">
+<div class="atitle">البارئ</div>
+<div class="etitle"><span class="abjadvalue">213</span></div>
+<div class="emeaning">(The Maker from Nothing, The One Who Gives Life)</div>
+<div class="mmeaning">അല്‍-ബാരിഉ : പടച്ചവന്‍</div>
+<div class="desc"> The One who creates form out of nothing. The One who creates with no model or similarity. The One who evolves and re-creates that which exists, both physically and spiritually. The One who sends new forms into existence. The One who manifests that which is in perfect harmony and proportion, without blemish or fault.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> If a barren women fasts for 7 days, and each day after making iftar with water and reads "Al bari'u Al musawwir <strong>21</strong> times, Allah will grant her male children - InshaAllah. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name13" title="Ya Musawwir Ya Allah">
+<div class="atitle">المصور</div>
+<div class="etitle"> <span class="abjadvalue">336</span></div>
+<div class="emeaning">(The Fashioner, The Shaper of Beauty)</div>
+<div class="mmeaning">അല്‍-മുസ്വവ്വിര്‍ : രൂപം നല്‍കുന്നവന്‍</div>
+<div class="desc"> The One who is the fashioner and former of each and every thing in all of creation. <br/>
+          The One who has given everything in creation a special inclination or desire. <br/>
+          The One who has given everything a special form and a special manner whereby it is distinguished.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> If a barren women fasts for 7 days, and each day after making iftar with water and reads "Al bari'u Al musawwir" <strong>21</strong> times, Allah will grant her male children - InshaAllah. </div>
+</div>
+</div>
+<div align="center" class="card" id="name14" title="Ya Ghaffar Ya Allah">
+<div class="atitle">الغفار</div>
+<div class="etitle"><span class="abjadvalue">1281</span></div>
+<div class="emeaning">(The Forgiving, The Absolver)</div>
+<div class="mmeaning">അല്‍-ഗഫ്ഫാര്‍ : ഏറ്റവും പൊറുക്കുന്നവന്‍</div>
+<div class="desc"> The One who accepts repentance and veils or forgives our faults and sins, time and time again. <br/>
+          The One who sets us free from the guilt and shame of our own sins and faults, such that we may discover inner harmony and peace. The One who protects us from the effects of our faults and sins, both in the present world and the future. <br/>
+          The One who accepts repentance and sets aright our faults and sins. The One who veils, forgives or transforms our faults and sins in such a manner that we may go on without guilt or shame. The One who can set aright, or transform, wrong deeds and change them into what become good deeds.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Any person who recites this Ism <strong>100 </strong>times after Jumua'h salah will soon begin to perceive Allah's forgiveness. And anyone who says, "Ya Ghaffar Igfirli" daily after Asr salaah, Allah will include him amongst those whom he has forgiven. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name15" title="Ya Qahhar Ya Allah">
+<div class="atitle">القهار</div>
+<div class="etitle"><span class="abjadvalue">306</span></div>
+<div class="emeaning">(The Conqueror,  The Prevailer)</div>
+<div class="mmeaning">അല്‍-കഹ്ഹാര്‍ : അടക്കി ഭരിക്കുന്നവന്‍ </div>
+<div class="desc"> The One who prevails over all of creation. The One who overcomes all obstacles. The One who is victorious over any opposition. The One whose will is irresistible. The One who is dominant. The Ever-Dominating One. The One who is master of all. The One to whom all submit.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> One who is fully inclined towards this world should say this Ism continually; if Allah wills, he will be freed from the love of this world and, instead, Allah's love will become inborn in his heart. </div>
+</div>
+</div>
+<div align="center" class="card" id="name16" title="Ya Wahhabu Ya Allah">
+<div class="atitle">الوهاب</div>
+<div class="etitle"><span class="abjadvalue">14</span></div>
+<div class="emeaning">(The Giver of All, The Great Giver)</div>
+<div class="mmeaning">അല്‍-വഹ്ഹാബ്‌ : അത്യുദാരന്‍</div>
+<div class="desc"> The One who continually bestows gifts, favors and blessings upon all of creation. The One who is the most generous and liberal giver. The One who gives freely and endlessly, without expectation of any return.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> If a poverty stricken person recites this Ism of Allah continuously or writes it and keeps it on him (as Tweeze) or recites this name of Allah <strong>40 </strong>times in the last Sajdah of Salat-ud-Dua (Chast prayer), Allah will free him from poverty in an unexpected and amazing manner. insha-Allah. <br/>
+<br/>
+          For a particular need to be fulfilled, observe sajdah 3 times in the courtyard of the house or Masjid  and then lift your hands (as in Dua) and recite this Name of Allah <strong>100</strong> times, Allah will fulfill your need. Insha-Allah. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name17" title="Ya Razzaq Ya Allah">
+<div class="atitle">الرزاق</div>
+<div class="etitle"><span class="abjadvalue">308</span></div>
+<div class="emeaning">(The Sustainer, The Providence)</div>
+<div class="mmeaning">അല്‍-റസ്സാഖ്‌ : ആഹാരം നല്‍കുന്നവന്‍ , നല്‍കുന്നവന്‍ </div>
+<div class="desc"> The One who creates all means of nourishment and subsistence. The One who is the giver of all things beneficial, both physical and spiritual. The One who provides everything that is needed. The One who causes the means of subsistence to come. The One who bestows all means of support and growth, for the body, the mind and the spiritual life.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who blows in all four corners of his house after saying this Name <strong>10 </strong>times in each corner before Fajr, Allah will open him his door of rizq (Sustenance). Sickness and Poverty will never enter in his home. (Note: Begin from the right hand corner while facing Qibla). </div>
+</div>
+</div>
+<div align="center" class="card" id="name18" title="Ya Fattah Ya Allah">
+<div class="atitle">الفتاح</div>
+<div class="etitle"><span class="abjadvalue">489</span></div>
+<div class="emeaning">(The Opener, The Granter of Success)</div>
+<div class="mmeaning">അല്‍-ഫത്താഹ്‌ : വിജയം നല്‍കുന്നവന്‍</div>
+<div class="desc"> The One who is the judge and revealer. The One who opens what is closed. The One who is the judge of what shall be opened. The One by whose guidance that which was closed is opened and the unclear is made clear. The One who lifts veils and who opens the heart. The One who unties the knots, and softens that which was hardened. The One who continually offers goodness and mercy.  The One who gives victory. The One who opens the door to success. The One who holds the keys to victory and success. The One who reveals the solution to all problems.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who places both hands on his bosom after Fajr salaah and says this Name <strong>70</strong> times, insha-Allah his heart will be illuminated with the "Noor" of Imaan.</div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name19" title="Ya Alim Ya Allah">
+<div class="atitle">العليم</div>
+<div class="etitle"><span class="abjadvalue">150</span></div>
+<div class="emeaning">(The Knower of All, The Omniscient)</div>
+<div class="mmeaning">അല്‍-അലീമു : എല്ലാം അറിയുന്നവന്‍</div>
+<div class="desc"> The One who comprehends everything. The One who is intuitively aware of all things, even before they happen.  The One who knows with certainty. The One whose knowledge of past, present and future is deeply rooted and complete in all respects. One from whom no knowledge is concealed. The One who is aware of the complete details of all matters. The Omniscient One.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who recites this name much, Allah will open the gates of knowledge and wisdom for them. Moreover, their heart will be filled with the Ma'rifah (cognizance) of Allah. </div>
+</div>
+</div>
+<div align="center" class="card" id="name20" title="Ya Qabid Ya Allah">
+<div class="atitle">القابض</div>
+<div class="etitle"><span class="abjadvalue">903</span></div>
+<div class="emeaning">(The Withholder, The Constrictor)</div>
+<div class="mmeaning">അല്‍-ഖാബിളു : പിടിച്ചെടുക്കുന്നവന്‍</div>
+<div class="desc"> The One whose wisdom causes withholding, either physically or spiritually. The One whose wisdom decides when to withhold something, or make something scarce. The One whose wisdom may elect to withhold joy and expansion of the heart. The One in whose hand all hearts are held. The One whose hand collects all souls at the time of death.</div>
+<div class="reward">
+<p><strong>Benefits of Reading :</strong> Whoever writes (With saffron or by mere action of ones finger) this Ism of Allah on four morsels of bread (roti) each day for <strong>4 </strong>days and eats them, will be safeguarded against hunger, thirst, injuries, pain etc.<br/>
+              Insha-Allah.
+</p>
+</div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name21" title="Ya Basit Ya Allah">
+<div class="atitle">الباسط</div>
+<div class="etitle"><span class="abjadvalue">72</span></div>
+<div class="emeaning">(The Un folder,  The Expander)</div>
+<div class="mmeaning">അല്‍-ബാസ്വിതു : വിശാലമാക്കുന്നവന്‍</div>
+<div class="desc"> The One who makes ample and plentiful all that is needed. The One who expands and amplifies all abundance. The One who makes the way wide and open. The One who stretches out a helping hand to mankind. The One whose open hand releases joy, comfort and abundance. The One who infuses the soul into body. The One who has filled the heart with spiritual abundance. The One whose glory and abundance fill and expand the heart.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Lift the hands towards the heavens (as in Dua) after Salatu Dua (Chast) and say this Name <strong>10</strong> times. Thereafter pass the hands across the face (as when finishing Dua) Insha-Allah, self sufficiency and independence will be granted by Allah. This must be done daily. </div>
+</div>
+</div>
+<div align="center" class="card" id="name22" title="Ya Khafid Ya Allah">
+<div class="atitle">الخافض</div>
+<div class="etitle"><span class="abjadvalue">1481</span></div>
+<div class="emeaning">(The Humbler,  The One who Softens, The Abaser)</div>
+<div class="mmeaning">അല്‍-ഖാഫിളു  : താഴ്ത്തുന്നവന്‍</div>
+<div class="desc"> The One who chooses the ones to be humbled, softened, made gentle. The One who decides which ones to weaken or diminish. The One who humbles the proud, haughty or insolent, to awaken them from their sleep.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who say this Name <strong>500</strong> times, Allah will fulfill all his needs and remove all his difficulties. InshaAllah. One who fasts for 3 days and on the fourth day says this Beautiful Name <strong>70 </strong>times while sitting in seclusion, will gain victory over his enemy - Insha Allah. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name23" title="Ya Rafi Ya Allah">
+<div class="atitle">الرافع</div>
+<div class="etitle"><span class="abjadvalue">351</span></div>
+<div class="emeaning">(The Uplifter, The Exalter)</div>
+<div class="mmeaning">അര്‍-റാഫിഉ : ഉയര്‍ത്തുന്നവന്‍ </div>
+<div class="desc"> The One whose wisdom chooses the ones to be uplifted. The One who uplifts and elevates mankind above petty desires and selfishness. The One who makes it possible to rise above the differences and distinctions that divide mankind.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Any person who says this Ism <strong>100</strong> times in the middle of the 14th night of every lunar month, Allah will grant him self sufficiency and independence of the entire creation. InshaAllah. </div>
+</div>
+</div>
+<div align="center" class="card" id="name24" title="Ya Mui'zz Ya Allah">
+<div class="atitle">المعز</div>
+<div class="etitle"><span class="abjadvalue">117</span></div>
+<div class="emeaning">(The Bestower of Honors, The Glorifier)</div>
+<div class="mmeaning">അല്‍-മുഇസ്സു : പ്രതാപം നല്‍കുന്നവന്‍</div>
+<div class="desc"> The One who gives invincible strength and honor. The One who grants honor and power. The One who strengthens and glorifies.  The One who makes it possible for someone or something to be respected, cherished and mighty.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> If this beautiful name of Allah is said <strong>40 </strong> times after Maghrib on every Monday and Friday, Allah will grant the reader honour and reverence - InshaAllah. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name25" title="Ya Mudhill Ya Allah">
+<div class="atitle">المذل</div>
+<div class="etitle"><span class="abjadvalue">770</span></div>
+<div class="emeaning">(The Humiliator, The Degrader)</div>
+<div class="mmeaning">അല്‍-മുദില്ലു : നിന്ദിക്കുന്നവന്‍, താഴ്‌ത്തുന്നവന്‍</div>
+<div class="desc"> The One whose wisdom creates situations that are low and despicable. The One who creates the appearance of dishonor or degradation. The One whose wisdom produces circumstances of humiliation and disgrace.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Whoever makes Dua for protection after saying this Ism <strong>75</strong> times, Allah will protect him from the evils of envious persons, oppressors and enemies - InshaAllah. If there is a particular enemy whom one fears then after saying the name in the manner mentioned above, one may observe sajdah wherein one may invoke Allah's help against ones enemy by actually mentioning his name in sajdah thus "O Allah, protect me from the evils of [Zaid] or [bakar]" If Allah wills he will be granted protection. </div>
+</div>
+</div>
+<div align="center" class="card" id="name26" title="Ya Sami' Ya Allah">
+<div class="atitle">السميع</div>
+<div class="etitle"><span class="abjadvalue">180</span></div>
+<div class="emeaning">(The Hearer of All, The Ever-Listening)</div>
+<div class="mmeaning">അല്‍-സമീഉ : എല്ലാം കേള്‍ക്കുന്നവന്‍</div>
+<div class="desc"> The One whose hearing and attention comprehends everything. The One who pays attention to every supplication and invocation. The One who listens to every voice. The One who hears and accepts every word, thought and secret. The One who listens to everything, perfectly, eternally, without limitations.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> One who say this beautiful name <strong>500 </strong>or <strong>50 </strong>times on Thursday after offering Salat Dua (Chast), all his duas will be assuredly granted - InshaAllah. It is necessary that no talking is done during the course of reciting it. If anyone reads it <strong>100 </strong> times on a Thursday between the Sunnah and Fardh of Fajr, Allah will favour him with his special blessings - InshaAllah. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name27" title="Ya Basir Ya Allah">
+<div class="atitle">البصير</div>
+<div class="etitle"><span class="abjadvalue">302</span></div>
+<div class="emeaning">(The Seer of All, The All-Perceiving)</div>
+<div class="mmeaning">അല്‍-ബസ്വീറു : എല്ലാം കാണുന്നവന്‍</div>
+<div class="desc"> The One whose insight sees all things clearly, both the apparent and the hidden. <br/>
+          The One who sees and understands all that has been, and all that will be. <br/>
+          The One who has insight into all things. The One who perceives every detail. <br/>
+          The One who understands all things, both outer and inner. <br/>
+          The One who has given to mankind the outer eye of the body, and the inner eye of the heart.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> One who says this Name <strong>100 </strong>times after Jumu'a prayers constantly, Allah will grant strength to his eye-sight (noor) to his heart - InshaAllah. </div>
+</div>
+</div>
+<div align="center" class="card" id="name28" title="Ya Hakam Ya Allah">
+<div class="atitle">الحكم</div>
+<div class="etitle"><span class="abjadvalue">68</span></div>
+<div class="emeaning">(The Judge, The Arbitrator)</div>
+<div class="mmeaning">അല്‍-ഹകമു  : തീര്‍പ്പ്‌ കല്‍പ്പിക്കുന്നവന്‍</div>
+<div class="desc"> The One who is the supreme arbitrating magistrate. <br/>
+            The One who is the only true judge. The One who always delivers justice in every situation. <br/>
+            The One whose judgments and decrees are never over-turned or thwarted. The One who makes the final <br/>
+            decision of the nature of all matters.  The One who arbitrates all disputes.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> One who says this Beautiful Name <strong>99</strong> times while in the state in wudu during the last portion of night, Allah will cause his heart to perceive all secrets and to be filled with noor. And anyone who says this Ism on Friday night in such a manner and ecstatic, then Allah will cherish his heart with manifestations and inspirations. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name29" title="Ya 'Adl Ya Allah">
+<div class="atitle">العدل</div>
+<div class="etitle"> <span class="abjadvalue">104</span></div>
+<div class="emeaning">(The Just, The Impartial)</div>
+<div class="mmeaning">അല്‍-അദ്‌ലു : നീതി ചെയ്യുന്നവന്‍</div>
+<div class="desc"> The One who rectifies and sets matters straight in a fair, impartial and equitable manner. <br/>
+          The One who always acts justly. The One who delivers absolute justice. <br/>
+          The One whose wisdom of justice is based upon complete knowledge of past, present and future.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who inscribes (with saffron or by the mere action of ones finger) this name of Allah on <strong>20</strong> pieces of bread (roti) on the day or night of Jumua', and consumes it, Allah will cause the entire creation to become subservient to him - InshaAllah. </div>
+</div>
+</div>
+<div align="center" class="card" id="name30" title="Ya Latif Ya Allah">
+<div class="atitle">اللطيف</div>
+<div class="etitle"><span class="abjadvalue">129</span></div>
+<div class="emeaning">(The Most Subtle,  The Gracious)</div>
+<div class="mmeaning">അല്‍-ലത്വീഫു : സൂക്ഷ്മമായത്‌ അറിയുന്നവന്‍</div>
+<div class="desc"> The One who is most subtle and gracious. <br/>
+          The One whose nature is gentle, affectionate, courteous and refined. <br/>
+          The One who is kind, gracious, and understanding, with regard for the subtle details of individual circumstances. <br/>
+          The One whose actions are so fine and subtle that they may be imperceptible, beyond our comprehension. <br/>
+          The One whose delicate perception reveals the subtleties of all things.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong>Whoever reads this name <strong>133</strong> times daily, Allah will grant abundance in his rizq (sustenance)  and cause all his tasks to be accomplished without difficulties. Anyone involved in misery, poverty, sickness, loneliness or any adversity at all should make wudhu in the proper manner and offer 2 rakaat salaah and then bearing in mind the objective (like deliverance from adversity) say this Ism <strong>100 </strong>times, Allah will surely grant him deliverance - InshaAllah. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name31" title="Ya Khabir Ya Allah">
+<div class="atitle">الخبير</div>
+<div class="etitle"><span class="abjadvalue">812</span></div>
+<div class="emeaning">(The All-Aware, The Knower of Reality)</div>
+<div class="mmeaning">അല്‍-ഖബീറു : സൂക്ഷ്മ ബോധവാന്‍</div>
+<div class="desc"> The One who knows the internal qualities and meanings of all things. The One who has perfect knowledge and understanding of the true reality of all things. The One who knows and understands the meaning of even the most hidden secrets. The One who know the inner truth of every condition and situation. The One who knows and understands secret requests and unspoken prayers. The One who knows and understands the real condition, the inner reality, of everything.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who reads this Name continually for 7 days, will begin to perceive hidden secrets. Any person who han an insatiable desire for pleasure should read this Ism continuously. InshaAllah - he will soon be freed from such base desires. </div>
+</div>
+</div>
+<div align="center" class="card" id="name32" title="Ya Halim Ya Allah">
+<div class="atitle">الحليم</div>
+<div class="etitle"><span class="abjadvalue">88</span></div>
+<div class="emeaning">(The Forbearing, The Most Kind and Gentle)</div>
+<div class="mmeaning">അല്‍-ഹലീമു : സഹനമുള്ളവന്‍</div>
+<div class="desc"> The One who is kind, gracious and serene in all situations. <br/>
+          The One who is calm and deliberate, never hasty, even with the rebellious and wrongdoers.<br/> 
+          The One whose manner is lenient and mild. The One who gives us the opportunity and <br/>
+          situations to learn to be kind, gracious and patient.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> If this Ism is written on paper, soaked in water and then the same water sprinkled on anything or rubbed onto something, then the quality of 'Barakah' will be imparted to such a thing and it'll be safeguarded against all calamities. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name33" title="Ya Azim Ya Allah">
+<div class="atitle">العظيم</div>
+<div class="etitle"><span class="abjadvalue">1020</span></div>
+<div class="emeaning">(The Supreme Glory,  The Mighty Splendor)</div>
+<div class="mmeaning">അല്‍-അളീമു : മഹത്വം ഉടയവന്‍</div>
+<div class="desc"> The One who is greatest, mightiest, grandest and above all. <br/>
+          The One who is of the greatest importance. The One who is magnificent, <br/>
+          vast and most revered. The One who is of perfect and absolute greatness.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> The reciter of this beautiful Name of Allah will be graced with great honour and dignity - InshaAllah. </div>
+</div>
+</div>
+<div align="center" class="card" id="name34" title="Ya Ghafur Ya Allah">
+<div class="atitle">الغفور</div>
+<div class="etitle"><span class="abjadvalue">1286</span></div>
+<div class="emeaning">(The Forgiver and Hider of Faults)</div>
+<div class="mmeaning">അല്‍-ഗഫൂറു : പാപങ്ങള്‍ പൊറുക്കുന്നവന്‍</div>
+<div class="desc"> The One who completely forgives our sins and faults. <br/>
+          The One who accepts repentance and pardons sins and faults. <br/>
+          The One who veils or forgives our faults and sins such that they are not seen <br/>
+          by anyone else, not even the angels. The One who is the perfection of forgiveness. <br/>
+          The One whose forgiving demonstrates excellence, completeness and perfection of forgiveness.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> One who repeats this Name frequently all his maladies, sorrow, and grief will be removed - InshaAllah. Moreover Allah will give Barakah in his wealth and offsprings. It is related in a hadith that anyone who says thrice "Ya Rabbi igfirlee" while in sajdah, Allah will forgive all his past sins and any sins that he may commit in future. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name35" title="Ya Shakur Ya Allah">
+<div class="atitle">الشكور</div>
+<div class="etitle"><span class="abjadvalue">526</span></div>
+<div class="emeaning">(The Most Grateful,  The Most Appreciative)</div>
+<div class="mmeaning">അല്‍-ശകൂറു : പ്രവര്‍ത്തനങ്ങള്‍ക്ക്‌ പ്രതിഫലം കൊടുക്കുന്നവന്‍</div>
+<div class="desc"> The One who is most thankful for righteousness and bestows great rewards for good deeds. <br/>
+          The One who gratefully gives large rewards, even for a small amount of good work. <br/>
+          The One who acknowledges and bountifully rewards all acts of goodness, thankfulness and praise. <br/>
+          The One who frequently and greatly approves, rewards and forgives.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Read this name <strong>41</strong> times, daily for any difficulties - financial, physical, spiritual, mental etc. InshaAllah - deliverance will be granted soon. </div>
+</div>
+</div>
+<div align="center" class="card" id="name36" title="Ya Ali Ya Allah">
+<div class="atitle">العلى</div>
+<div class="etitle"><span class="abjadvalue">110</span></div>
+<div class="emeaning">(The Exalted,  The Most High)</div>
+<div class="mmeaning"> അല്‍-അലിയ്യു : സമുന്നതനായവന്‍</div>
+<div class="desc"> The One Who is above and exceeds all others. The Most High, above whom there is nothing higher. <br/>
+          The One whose rank and station are the Most High. The One who is above and surpasses all that has<br/> 
+          ever been, all that there now is, and all that shall ever be.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who reads this name daily and constantly, and keeps with him a written copy of it, will be exalted, granted affluence, and all his desires will be fulfilled - InshaAllah </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name37" title="Ya Kabir Ya Allah">
+<div class="atitle">الكبير</div>
+<div class="etitle"><span class="abjadvalue">232</span></div>
+<div class="emeaning">(The Most Great,  The Greatest)</div>
+<div class="mmeaning">അല്‍-കബീറു : ഏറ്റവും വലിയവന്‍</div>
+<div class="desc"> The One whose essence is the perfection of greatness. <br/>
+          The One who is incomparably great. The One whose greatness is beyond measure. <br/>
+          The One whose nature is Greatness. The One whose own essence is unimaginably great perfection.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> If anyone who is dismissed from his post, pasts for seven days and each day repeats this Ism <strong>1,000</strong> times, he will be re-instated to his post and moreover graced with honour and dignity - InshaAllah </div>
+</div>
+</div>
+<div align="center" class="card" id="name38" title="Ya Hafiz Ya Allah">
+<div class="atitle">الحفيظ</div>
+<div class="etitle"><span class="abjadvalue">998</span></div>
+<div class="emeaning">(The Preserver,  The Protector)</div>
+<div class="mmeaning">അല്‍-ഹഫീദു : കാത്തു രക്ഷിക്കുന്നവന്‍</div>
+<div class="desc"> The One whose power preserves the heavens and the earth. <br/>
+          The One who is the guardian and preserver of all the worlds. The One who protects and <br/>
+          preserves all of creation from perishing. The One who is vigilantly guarding every detail of all that has been created. <br/>
+          The One who remembers and preserves all that has ever been and all that is, while keeping under <br/>
+          Divine protection the knowledge of all that shall be.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> The one who recites this Name of Allah constantly and keeps with him a written copy of this Ism, will be protected from all hazards, losses and harmful things - InshaAllah </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name39" title="Ya Muqit Ya Allah">
+<div class="atitle">المقيت</div>
+<div class="etitle"><span class="abjadvalue">550</span></div>
+<div class="emeaning">(The Sustainer, The Nourisher)</div>
+<div class="mmeaning">അല്‍-മുഖീതു : ആഹാരം നല്‍കുന്നവന്‍</div>
+<div class="desc"> The One who has the ability to nourish all of creation. <br/>
+          The One who maintains all that exists. The One who oversees all things. <br/>
+          The One who guards and preserves. The One who is the sustainer of all, the seen and the <br/>
+          unseen, the outer and the inner.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who blows in a bowl of water after repeating this Ism 7 times, and drinks water from it or to take a deep breath from such a bowl then all their desires will soon be fulfilled - InshaAllah </div>
+</div>
+</div>
+<div align="center" class="card" id="name40" title="Ya Hasib Ya Allah">
+<div class="atitle">الحسيب</div>
+<div class="etitle"><span class="abjadvalue">80</span></div>
+<div class="emeaning">(The Reckoner, The Accountant)</div>
+<div class="mmeaning">അല്‍-ഹസീബു : വിചാരണ ചെയ്യുന്നവന്‍</div>
+<div class="desc"> The One who takes account of all actions and reckons them. <br/>
+          The One who is the measurer and accountant of every deed. The One who is sufficient to <br/>
+          meet all needs. The One who gives what is sufficient and necessary in every situation.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> When in fear of any human being or anything repeat "Hasbiya Allahu Al Haseeb" <strong>70</strong> times in the morning and <strong>70</strong> times at night for eight days starting from Thursday. InshaAllah - protection will be granted against the such a person or thing. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name41" title="Ya Jalil Ya Allah">
+<div class="atitle">الجليل</div>
+<div class="etitle"><span class="abjadvalue">73</span></div>
+<div class="emeaning">(The Glorious,  The Majestic)</div>
+<div class="mmeaning"> അല്‍-ജലീലു : പ്രതാപമുള്ളവന്‍</div>
+<div class="desc"> The One who is majestic, glorious, sublime. <br/>
+          The One who is great and above all in rank and dignity. <br/>
+          The One who is above all, superior, independent. The One who is the owner and the <br/>
+          source of all attributes of greatness and majesty. The One whose greatness and majesty are immeasurable <br/>
+          and cannot be comprehended by the senses. The One whose glorious nature is indicated by the great things that are created.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who keeps with him anything (paper, cloth etc.) on which this Ism "Ya Jaleelu" is inscribed with saffron or musk Allah will give him honour, greatness, rank and dignity - InshaAllah. </div>
+</div>
+</div>
+<div align="center" class="card" id="name42" title="Ya Karim Ya Allah">
+<div class="atitle">الكريم</div>
+<div class="etitle"><span class="abjadvalue">270</span></div>
+<div class="emeaning">(The Most Generous,  The Most Bountiful)</div>
+<div class="mmeaning">അല്‍-കരീമു : ഔദാര്യവാന്‍</div>
+<div class="desc"> The One who is the most generous, both physically and spiritually. <br/>
+          The One who is continually giving forth the grandest and most precious bounty. <br/>
+          The One whose kind, noble and generous essence is most esteemed, valued and honored.<br/> 
+          The One who endlessly gives all manner of  precious gifts, including support and refuge. <br/>
+          The One who is eternally giving, even unto those who may not seem (to us) to be deserving.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone wishing to be revered and honoured by the Ulama and Pious people should continue saying this Name until they fall asleep. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name43" title="Ya Raqib Ya Allah">
+<div class="atitle">الرقيب</div>
+<div class="etitle"><span class="abjadvalue">312</span></div>
+<div class="emeaning">(The Watchful One, The All Observing)</div>
+<div class="mmeaning">അല്‍-റഖീബു : എല്ലാം വീക്ഷിക്കുന്നവന്‍</div>
+<div class="desc"> The One who watches all things. <br/>
+          The One who is the ever vigilant witness. <br/>
+          The One from whose observation nothing is hidden. <br/>
+          The One who observes all thoughts, deeds and feelings.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who desires that his family and wealth be protected from destruction and calamities should repeat this Ism each day <strong>7</strong> times and blow on them. He should also continue reading this Ism at all times so as to remain safeguarded at all times. </div>
+</div>
+</div>
+<div align="center" class="card" id="name44" title="Ya Mujib Ya Allah">
+<div class="atitle">المجيب</div>
+<div class="etitle"><span class="abjadvalue">55</span></div>
+<div class="emeaning">(The Responder to Prayer, The Fullfiller of Prayers)</div>
+<div class="mmeaning">അല്‍-മുജീബു : പ്രാര്‍ത്ഥനക്ക്‌ ഉത്തരം നല്‍കുന്നവന്‍</div>
+<div class="desc"> The One who answers prayers. The One who responds to needs. <br/>
+          The One who penetrates through every obstacle in order to respond. <br/>
+          The One who responds to an invitation. The One who responds to requests, prayers and <br/>
+          praise by means of gifts and acceptance.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> The constant reciter of this Ism will soon perceive that all his duaas are being granted. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name45" title="Ya Wasi Ya Allah">
+<div class="atitle">الواسع</div>
+<div class="etitle"><span class="abjadvalue">137</span></div>
+<div class="emeaning">(The All-Embracing,  The All-Sufficient)</div>
+<div class="mmeaning">അല്‍-വാസിഉ : അറിവും ഔദാര്യവും വിശാലമായവന്‍</div>
+<div class="desc"> The One whose expansive essence holds and embraces all of creation. <br/>
+          The One who is vast without limit. The One of limitless capacity and abundance. <br/>
+          The One who is ample-giving, all-embracing and all-pervading. <br/>
+          The One whose power, knowledge, mercy and generosity are boundless.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone desiring spiritual and material self sufficiency and independence should repeat this Ism over and over. </div>
+</div>
+</div>
+<div align="center" class="card" id="name46" title="Ya Hakim Ya Allah">
+<div class="atitle">الحكيم</div>
+<div class="etitle"><span class="abjadvalue">76</span></div>
+<div class="emeaning">(The Most Wise,  The Most Judicious)</div>
+<div class="mmeaning">അല്‍-ഹകീമു : യുക്തിപൂര്‍വ്വം പ്രവര്‍ത്തിക്കുന്നവന്‍</div>
+<div class="desc"> The One who is Most Knowing. The One who possesses the quality of discrimination between right and wrong and who is free from error or misunderstanding. The One who has perfect wisdom. The One whose wisdom turns mankind back from wrongdoing. The One who is qualified to judge the worth of all things.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who repeats this Ism constantly, Allah will open him the doors of knowledge and wisdom. Anyone whose particular task does not seem to be accomplished should repeat this Ism frequently and constantly. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name47" title="Ya Wadud Ya Allah">
+<div class="atitle">الودود</div>
+<div class="etitle"><span class="abjadvalue">20</span></div>
+<div class="emeaning">(The Beloved,  The Loving Kindness)</div>
+<div class="mmeaning">അല്‍-വദൂദു : സ്നേഹനിധി</div>
+<div class="desc"> The One who loves.  The One who is the source of all love and loving-kindness. <br/>
+          The One Love. The One who is most affectionate. The Beloved. The One who is deserving of all love and affection. <br/>
+          The One who is the goal of the highest love.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who repeats this Ism <strong>1,000</strong> times and blows on food, and such food is consumed by him and his wife together, their difference and dispute will soon be settled and a strong bond of love and affection will result between the spouses - InshaAllah </div>
+</div>
+</div>
+<div align="center" class="card" id="name48" title="Ya Majid Ya Allah">
+<div class="atitle">المجيد</div>
+<div class="etitle"><span class="abjadvalue">57</span></div>
+<div class="emeaning">(The All-Glorious, The Majestic One)</div>
+<div class="mmeaning">അല്‍-മജീദു : മഹത്വമുള്ളവന്‍</div>
+<div class="desc"> The One who is glorious, dignified, majestic, bountiful and exceedingly generous. <br/>
+          The One whose essence is the perfection of majesty and glory, abounding in goodness. <br/>
+          The One whose majesty, glory and generosity deserve all praise and honor.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who has contracted a fatal disease such as pox, leprosy etc. Should fast on the 13th, 14th, and 15th of the lunar month and after breaking fast repeat this Ism profusely and blow in water and drink such water. He will soon be cured -InshaAllah. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name49" title="Ya Ba'ith Ya Allah">
+<div class="atitle">الباعث</div>
+<div class="etitle"><span class="abjadvalue">573</span></div>
+<div class="emeaning">(The Resurrector, The Awakener)</div>
+<div class="mmeaning">അല്‍-ബാഇസു : പുനരുജ്ജീവിപ്പിക്കുന്നവന്‍ </div>
+<div class="desc"> The One who chooses who shall awaken and who shall be sent forth. The One who decides who to raise up. The One who awakens the dead. The One who resurrects. The One who rouses up mankind. The One who sends Light into the worlds. The One who dispatches messengers into the world.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone, who at bedtime, places his hand on his bosom and says this Ism 101 time, his heart will become alive with knowledge and wisdom - InshaAllah </div>
+</div>
+</div>
+<div align="center" class="card" id="name50" title="Ya Shaheed Ya Allah">
+<div class="atitle">الشهيد</div>
+<div class="etitle"><span class="abjadvalue">319</span></div>
+<div class="emeaning">(The Witness, The Certifier)</div>
+<div class="mmeaning">അല്‍-ശഹീദു : എല്ലാറ്റിനും സാക്ഷിയായവന്‍</div>
+<div class="desc"> The One who directly and ever-presently observes everything in creation. <br/>
+          The One from whose knowledge nothing is hidden. The One who witnesses both that <br/>
+          which is seen and that which is unseen. The One who has knowledge of all that happens <br/>
+          everywhere at all times. The One who is the ultimate witness on judgment day.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone wishing that his disobedient wife or children become obedient, should, while placing his hand on their foreheads, repeat this Ism <strong>21</strong> times and blow on them. Soon they will become obedient - InshaAllah. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name51" title="Ya Haqq Ya Allah">
+<div class="atitle">الحق</div>
+<div class="etitle"><span class="abjadvalue">108</span></div>
+<div class="emeaning">(The Truth, The Reality, The Truly Existing)</div>
+<div class="mmeaning">അല്‍-ഹഖ്ഖു : സത്യമായവന്‍</div>
+<div class="desc"> The One who is the truth, the real, and the truly-existing. <br/>
+          The One whose essence is the only substance and the only reality. <br/>
+          The One whose essence is wisdom, justice, right, rightness. The One who is just, right, proper, correct.<br/> 
+          The One whose essence is unavoidable. The One who acts in accord with the needs of every situation. <br/>
+          The One through whom all righteousness, justice, and truth are revealed.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone whose family member is missing or has absconded or anyone whose belongings are stolen should inscribe "AL HAQQ" on all 4 squares of a paper and at the time of sehri, place such paper on his palms and lift it toward the heavens and make dua. Soon, will the missing person return or the stolen goods be recovered - free from any harm or damage - InshaAllah </div>
+</div>
+</div>
+<div align="center" class="card" id="name52" title="Ya Wakil Ya Allah">
+<div class="atitle">الوكيل</div>
+<div class="etitle"><span class="abjadvalue">66</span></div>
+<div class="emeaning">(The Trustee, The Guardian)</div>
+<div class="mmeaning">അല്‍-വകീലു : ഭരമേല്‍പ്പിക്കപ്പെടുന്നവന്‍</div>
+<div class="desc"> The One and only One who can be entrusted with the management and resolution of all affairs. <br/>
+          The One who is the supreme trustee, guardian and administrator of all things. <br/>
+          The One who may be trusted to do better for us that we can do for ourselves. <br/>
+          The One who can be entrusted to provide the perfect resolution for all matters.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone fearing any calamity caused by an act of God should say this Ism repeatedly. He will be protected from all calamities - InshaAllah </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name53" title="Ya Qawiyy Ya Allah">
+<div class="atitle">القوى</div>
+<div class="etitle"><span class="abjadvalue">116</span></div>
+<div class="emeaning">(The Possessor of All Strength, The Supremely Strong)</div>
+<div class="mmeaning">അല്‍-ഖവിയ്യു : സര്‍വ്വ ശക്തന്‍</div>
+<div class="desc"> The One whose strength is supreme. <br/>
+          The One who possesses unlimited strength and endurance. <br/>
+          The One whose vigor and strength prevail over all of creation. The One who is beyond all weakness. <br/>
+          The One whose strength is inexhaustible.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone genuinely oppressed or victimized should read this Ism profusely with view to counteracting the oppressor. Allah will render him protection - InshaAllah. <br/>
+          (This should never be done if circumstances do not warrant it). </div>
+</div>
+</div>
+<div align="center" class="card" id="name54" title="Ya Matin Ya Allah">
+<div class="atitle">المتين</div>
+<div class="etitle"><span class="abjadvalue">500</span></div>
+<div class="emeaning">(The Firm, The steadfast)</div>
+<div class="mmeaning">അല്‍-മതീനു :  പ്രബലമായവന്‍</div>
+<div class="desc"> The One who is most steadfast and solid. <br/>
+          The One whose strength produces certitude. The One who is loyal, firm and constant. <br/>
+          The One whose nature is the utmost firmness and steadfastness. <br/>
+          The One who can easily overcome anything through supreme firmness and strength of determination.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Any lady whose breasts do not yield milk, should be made to drink water wherein the inscription "AL MATEEN" was soaked. Her breasts will abound in milk - InshaAllah. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name55" title="Ya Waliyy Ya Allah">
+<div class="atitle">الولى</div>
+<div class="etitle"><span class="abjadvalue">47</span></div>
+<div class="emeaning">(The Protecting Friend,  The Loving Defender)</div>
+<div class="mmeaning">അല്‍-വലിയ്യു : സര്‍വ്വ രക്ഷാധികാരി</div>
+<div class="desc"> The One who is lover, protector and lord. <br/>
+          The One who is lovingly supportive. The One who is the protecting friend. <br/>
+          The One who guards and rules all of creation. The One who lovingly guides mankind to <br/>
+          turn toward the path of righteousness.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> If anyone's wife is of ill character, this Ism should be recited constantly while in her presence. She will soon become of good character - InshaAllah. </div>
+</div>
+</div>
+<div align="center" class="card" id="name56" title="Ya Hamid Ya Allah">
+<div class="atitle">الحميد</div>
+<div class="etitle"><span class="abjadvalue">72</span></div>
+<div class="emeaning">(The Praised One, The Praiseworthy)</div>
+<div class="mmeaning">അല്‍-ഹമീദു : സ്തുതിക്കപ്പെട്ടവന്‍</div>
+<div class="desc"> The One who is praised and is praiseworthy. <br/>
+          The One who is worthy of all thankful praise. The One and only One who truly deserves <br/>
+          all praise, honor and adoration. The One who is exalted, praised and glorified by the very <br/>
+          existence of creation. The One who deserves every manner of praise, exaltation and <br/>
+          glorification, both public and private.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Should anyone recite in seclusion this Ism <strong>93</strong> times for 45 days, all his evil habits and bad qualities will change into good habits - InshaAllah. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name57" title="Ya Muhsi Ya Allah">
+<div class="atitle">المحصى</div>
+<div class="etitle"><span class="abjadvalue">148</span></div>
+<div class="emeaning">(The Reckoner, The Appraiser)</div>
+<div class="mmeaning">അല്‍-മുഹ്സ്വീ : എല്ലാം ക്ളിപ്തപ്പെടുത്തുന്നവന്‍</div>
+<div class="desc"> The One who knows the details of each and every thing. <br/>
+          The One who possesses all quantitative knowledge. The One who comprehends everything, <br/>
+          small or great, inner or outer. The One who registers and records every thought and deed.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> The reciter of this Ism <strong>20</strong> times daily and blowing on twenty pieces of bread and consuming it, will cause allah to make the entire creation subservient to the reciter - InshaAllah </div>
+</div>
+</div>
+<div align="center" class="card" id="name58" title="Ya Mubdi Ya Allah">
+<div class="atitle">المبدئ</div>
+<div class="etitle"><span class="abjadvalue">56</span></div>
+<div class="emeaning">(The Originator, The Starter)</div>
+<div class="mmeaning">അല്‍-മുബ്ദിഉ : തുടങ്ങുന്നവന്‍</div>
+<div class="desc"> The One who is the originator of all creation. <br/>
+          The One who is the founder of creation. The One who begins all things. The One who initiates all creation.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone, who, while placing his hand on the stomach of his pregnant wife, repeats this Ism <strong>99 </strong> times at the time of sehri, neither will she have a miscarriage will she give a birth prematurely - InshaAllah </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name59" title="Ya Mu'id Ya Allah">
+<div class="atitle">المعيد</div>
+<div class="etitle"><span class="abjadvalue">124</span></div>
+<div class="emeaning">(The Restorer, The Reviver)</div>
+<div class="mmeaning">അല്‍-മുഈദു : മടക്കുന്നവന്‍</div>
+<div class="desc"> The One who restores and repeats all that has been created. <br/>
+          The One who constantly renews, revives and repeats creation. The One who restores and <br/>
+          revives the spiritual essence of every person. The One who repeatedly renews mankind's proper relationship with goodness. The One who repeatedly restores and revives creation, both physically and spiritually.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> When any person is lost, then this name should be repeated <strong>70</strong> times in each corner of the house during the night when everyone asleep. He will either return within 7 days or his whereabouts will be known within that period - InshaAllah </div>
+</div>
+</div>
+<div align="center" class="card" id="name60" title="Ya Muhyi Ya Allah">
+<div class="atitle">المحيى</div>
+<div class="etitle"><span class="abjadvalue">68</span></div>
+<div class="emeaning">(The Giver of Life, The Bestower of Life)</div>
+<div class="mmeaning">അല്‍-മുഹ്‌യീ : ജീവിപ്പിക്കുന്നവന്‍</div>
+<div class="desc"> The One who created life. The One who makes all things live. <br/>
+          The One who decides what will be vitalized and brought to life. <br/>
+          The One, and only One, who can bring something to life. The One who brings the heart to life. <br/>
+          The One who revives and grants wholeness, even to the spiritually dead.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> The sick should constantly say "AL MUHYEE" or alternatively it could be said over and over and blow on a person who is ill. His health will be restored - InshaAllah. Anyone who says <strong>89 </strong>time "AL MUHYEE" and blows on himself, will be safeguarded against all obstacles and bondages - InshaAllah </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name61" title="Ya Mumit Ya Allah">
+<div class="atitle">المميت</div>
+<div class="etitle"><span class="abjadvalue">490</span></div>
+<div class="emeaning">(The Taker of Life, The Salyer)</div>
+<div class="mmeaning">അല്‍-മുമീതു : മരിപ്പിക്കുന്നവന്‍</div>
+<div class="desc"> The One who created the inanimate world, to which all living forms return. <br/>
+          The One who ordains what shall become lifeless. The One who creates the appearance of death, physically or spiritually.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who has no control over his Nafs should place his hand on his bosom and continue saying this Ism before he falls asleep. If Allah wills, he will be given the strength to control his self. </div>
+</div>
+</div>
+<div align="center" class="card" id="name62" title="Ya Hayy Ya Allah">
+<div class="atitle">الحي</div>
+<div class="etitle"><span class="abjadvalue">17</span></div>
+<div class="emeaning">(The Ever Living One, The Alive)</div>
+<div class="mmeaning"> അല്‍-ഹയ്യു : എന്നും ജീവിക്കുന്നവന്‍</div>
+<div class="desc"> The One who is undying, everlasting. <br/>
+          The One who is eternally whole and sound. The One Life from whom all life arises.<br/> 
+          The One who calls all life into being. The One who animates all life and who makes each living thing different and distinct.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone desiring sound health should say this Ism <strong>3,000 </strong>times daily. If a sick person writes this Ism in a bowl with a musk and rose water and washes such inscription with water and drinks the water, he will soon be cured from his illness - InshaAllah. Alternatively, if such water is given to a person who is ill, he will be cured - InshaAllah </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name63" title="Ya Qayyum Ya Allah">
+<div class="atitle">القيوم</div>
+<div class="etitle"><span class="abjadvalue">156</span></div>
+<div class="emeaning">(The Self-Existing One)</div>
+<div class="mmeaning">അല്‍-ഖയ്യൂമു : എന്നെന്നും നില നില്‍ക്കുന്നവന്‍</div>
+<div class="desc"> The One whose nature it is to exist. <br/>
+          The One who is free of any dependence on anything else for existence. <br/>
+          The One through whom all things arise. The One by whom all things are eternally managed aright. <br/>
+          The Ever-Living, Self-Existing One who is the foundation upon which all things exist.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who says this Ism continually will attain honour and dignity amongst people - InshaAllah. Anyone saying it constantly in seclusion will become affluent and wealthy - InshaAllah. Anyone who continues to say "Ya Haayu Ya Qayyum" from after fajr until after sunrise, his lethargy and laziness will vanish - InshaAllah </div>
+</div>
+</div>
+<div align="center" class="card" id="name64">
+<div class="atitle">الواجد</div>
+<div class="etitle"><span class="abjadvalue">14</span></div>
+<div class="emeaning">(The Finder, The Wealthy)</div>
+<div class="mmeaning">അല്‍-വാജിദു : എല്ലാം കണ്ടെത്തിക്കുന്നവന്‍</div>
+<div class="desc"> The One who has discovered and obtained everything. <br/>
+          The One who perceives and possesses everything. The One who has no wants and who lacks nothing.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> If anyone continues to say this Name while having meals, the food eaten will become a source of strength, illumination and Noor for his heart - InshaAllah </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name65">
+<div class="atitle">الماجد</div>
+<div class="etitle"><span class="abjadvalue">57</span></div>
+<div class="emeaning">(The Glorious, The Glorious and Majestic)</div>
+<div class="mmeaning">അല്‍-മാജിദു : മഹത്വമുള്ളവന്‍</div>
+<div class="desc"> The One who is glorious, dignified, majestic, bountiful and exceedingly generous. <br/>
+          The One whose essence is the perfection of majesty and glory, abounding in goodness. <br/>
+          The One whose majesty, glory and generosity deserve all praise and honor.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who says this Name of Allah in seclusion to such an extent and in such a manner that he becomes euphoric, then the Light and Noor of Allah will soon become evident in his heart - InshaAllah </div>
+</div>
+</div>
+<div align="center" class="card" id="name66">
+<div class="atitle">الواحد</div>
+<div class="etitle"><span class="abjadvalue">19</span></div>
+<div class="emeaning">(The One, The Manifestation of Unity)</div>
+<div class="mmeaning">അല്‍-വാഹിദു : ഏകനായവന്‍</div>
+<div class="desc"> The One unique starting point from which all else has arisen. <br/>
+          The One source from which all of creation springs forth. <br/>
+          The One whose unity includes all that appears as diverse, separate or individual.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Those who constantly alone recite "Ya Wahidu" in a quiet place will become immune to fear and delusion. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name67">
+<div class="atitle">الاحد</div>
+<div class="etitle"><span class="abjadvalue">13</span></div>
+<div class="emeaning">(The One, The Unity)</div>
+<div class="mmeaning">അല്‍ അഹദ്‌ : ഏകനായവന്‍</div>
+<div class="desc"> The One who has ever been and ever remains alone. <br/>
+                  The incomparable, unequalled, indivisible One. The One who is the essence of Unity. <br/>
+                  The Sole One. The One and Only One. The One who has no second [that shares] in the lordship, nor in the essence, nor in the attributes. The One who was not begotten and has never begotten. The One who depends upon no other, and to Whom there is no likeness. The One in whom all names, attributes and relationships are united.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who desires that the fear and love for the creation be driven out of his heart should recite this Ism <strong>1,000</strong> times daily. Anyone desiring good and pious children should inscribe this Ism (on paper, cloth etc) and keep it with him all the time. </div>
+</div>
+</div>
+<div align="center" class="card" id="name68">
+<div class="atitle">الصمد</div>
+<div class="etitle"><span class="abjadvalue">134</span></div>
+<div class="emeaning">(The Eternal, The Satisfier of All Needs)</div>
+<div class="mmeaning">അല്‍-സ്വമദു : ആരെയും ആശ്രയിക്കാത്തവനും എല്ലാവരും ആശ്രയിക്കുന്നവനുമായ അല്ലാഹു</div>
+<div class="desc"> The One who is eternal and above whom there is none. <br/>
+          The One who is unaffected, unchanged, and without any needs. <br/>
+          The One who is besought by all, and who is above all. The One who can satisfy every need and without whom no affair could be accomplished. The One who satisfies every need as it should be satisfied, and not necessarily as mankind might imagine. The One who is the sole recourse, the only one to turn to. The One upon whom all depend, yet who does not depend on any.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who places his head in Sajdah at the time of Sehri and repeats this Ism <strong>115</strong> times or <strong>125</strong> times will be granted spiritual and physical truthfulness - InshaAllah. Anyone saying this Ism constantly while i state of Wudu will soon become independent of the entire creations - InshaAllah </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name69">
+<div class="atitle">القادر</div>
+<div class="etitle"><span class="abjadvalue">305</span></div>
+<div class="emeaning">(The All Powerful, The All Capable)</div>
+<div class="mmeaning">അല്‍-ഖാദിറു : എല്ലാറ്റിനും കഴിവുള്ളവന്‍</div>
+<div class="desc"> The One who possesses the power and the ability to measure-out anything and everything. <br/>
+          The One who has the capability to make any decree and to determine what will be. The One whose decree determines the measure and distribution of all things. The One who does as He wills, acting or not acting in accord with whatever He decides.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who, after offering 2 rakaat Salaah, says this Ism <strong>100 </strong>times, Allah will humble and disgrace his (provided he is justified). And if it said <strong>41</strong> times before undertaking a difficult task, the difficulty will be removed. InshaAllah. </div>
+</div>
+</div>
+<div align="center" class="card" id="name70">
+<div class="atitle">المقتدر</div>
+<div class="etitle"><span class="abjadvalue">744</span></div>
+<div class="emeaning">(The Creator of All Power, The All-Determining)</div>
+<div class="mmeaning"> അല്‍-മുഖ്തദിറു : അതിശക്തനായവന്‍</div>
+<div class="desc"> The One whose supreme power determines and delivers the suitable measure of all things.<br/> 
+          The One whose decisions always prevail. The One who has power and ability to ordain all things. The One who is empowered to do whatever wisdom decides. The One who has the power and ability to decide the outcome of all matters. The One whose power enforces all decrees and ordains the course of all affairs. The One whose decree prevails in every situation..</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who continues to recite this Name after awakening or says it <strong>20</strong> times, Allah will have all his tasks fulfilled efficiently - InshaAllah. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name71">
+<div class="atitle">المقدم</div>
+<div class="etitle"><span class="abjadvalue">184</span></div>
+<div class="emeaning">(The Expediter, He Who Brings Forward)</div>
+<div class="mmeaning">അല്‍-മുഖദ്ദിമു : മുന്തിക്കുന്നവന്‍</div>
+<div class="desc"> The One who moves things forward. <br/>
+            The One who grants advancement. <br/>
+          The One who expedites things. <br/>
+          The One who advances or promotes..</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who says this Ism abundantly at the time of war, battle of jihaad, Allah will give courage (to make advances) and he will be safeguarded from the enemy - InshaAllah. And one who says this Ism at all times will become obedient and subservient to Allah - InshaAllah. </div>
+</div>
+</div>
+<div align="center" class="card" id="name72">
+<div class="atitle">المؤخر</div>
+<div class="etitle"><span class="abjadvalue">846</span></div>
+<div class="emeaning">(The Delayer, He Who Puts Far Away)</div>
+<div class="mmeaning">അല്‍-മുഅഖ്ഖിറു : പിന്തിക്കുന്നവന്‍</div>
+<div class="desc"> The One who delays or postpones. <br/>
+          The One who puts off advancement. The One who holds back or keeps something<br/> 
+          back to put it in its proper place. The One who causes something to lag behind.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> The frequent reciter of this Ism will soon resort to genuine repentance. One who recites it <strong>100</strong> times daily with constancy, will soon become dear and favorite to Allah - InshaAllah </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name73">
+<div class="atitle">الأول</div>
+<div class="etitle"><span class="abjadvalue">37</span></div>
+<div class="emeaning">(The First, The Beginning-less)</div>
+<div class="mmeaning">അല്‍-അവ്വലു : അനാദ്യനായവന്‍</div>
+<div class="desc"> The One who is the first, the beginning, the foremost. <br/>
+          The Prior-Existing One who existed before all of creation. <br/>
+          The One who was before any thing or any being. The One who is the cause of all the worlds. <br/>
+          The One who is the beginning of every action, command or thought.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who desirous of male children should say this Ism <strong>40</strong> times daily for 40 days. His need will soon be fulfilled - InshaAllah. And if any wayfarer (musafir) says it <strong>10,000</strong> times on a friday, he will soon return to his people safe and sound - InshaAllah. </div>
+</div>
+</div>
+<div align="center" class="card" id="name74">
+<div class="atitle">الأخر</div>
+<div class="etitle"><span class="abjadvalue">801</span></div>
+<div class="emeaning">(The Last, The Endless)</div>
+<div class="mmeaning">അല്‍-ആഖിറു : അന്ത്യമില്ലാത്തവന്‍</div>
+<div class="desc"> The One who remains after all of creation has passed away. <br/>
+          The One who is the last, the conclusion, the ultimate. The One who is behind all of creation. <br/>
+          The One beyond whom there is nothing.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone wishing that (i) the love for Allah becomes firmly established in his heart, (ii) the love for anything or anyone besides Allah be driven out of his heart (iii) compensation should be made for all his sins (iv) he dies in the state of Iman, then he should say this Ism <strong>1,000</strong> times daily. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name75">
+<div class="atitle">الظاهر</div>
+<div class="etitle"><span class="abjadvalue">1106</span></div>
+<div class="emeaning">(The Manifest, The Evident, The Outer)</div>
+<div class="mmeaning"> അല്‍-ളാഹിറു : പ്രത്യക്ഷനായവന്‍</div>
+<div class="desc"> The One who has manifest all of creation and who is manifest in all of creation. <br/>
+          The One whose nature and existence is demonstrated in all of creation. The One whose essence and attributes are shown throughout all of creation. The One who is above creation, yet who is made visible through creation.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> The one who repeats this Ism <strong>500</strong> times daily after Ishraaq, Allah will cause his sight and heart to be filled with Light and Noor. </div>
+</div>
+</div>
+<div align="center" class="card" id="name76">
+<div class="atitle">الباطن</div>
+<div class="etitle"><span class="abjadvalue">62</span></div>
+<div class="emeaning">(The Hidden, The Unmanifest, The Inner)</div>
+<div class="mmeaning">അല്‍-ബാത്വിനു : പരോക്ഷനായവന്‍</div>
+<div class="desc"> The One who is veiled from our sensory perception. <br/>
+          The One who is unseen, yet whose existence and essence are made known through signs. <br/>
+          The One who knows the inner states, inner circumstances and inner thoughts of all of creation. The One who enters unseen into all of creation. The One who is concealed within all of creation. The One who is the secret inner companion.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who says this Ism <strong>33</strong> times daily, will soon begin to perceive the deeper secrets of Allah. Moreover a strong bond of love and affection will result between him and Allah - InshaAllah. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name77">
+<div class="atitle">الوالي</div>
+<div class="etitle"><a href="assets/index.html">AL-WALI</a><span class="abjadvalue">46</span></div>
+<div class="emeaning">(The Protecting Friend, The Friendly Lord)</div>
+<div class="mmeaning">അല്‍-വാലീ : സര്‍വ്വാധിപന്‍</div>
+<div class="desc"> The One who is the sole planner, implementer, governor and ruler of all things. <br/>
+            The One who is the supportive, helpful master of all things. The One who is the friendly and <br/>
+            protective ruler and governor of all of creation.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who recites this Ism repeatedly will be safeguarded from all unexpected calamities. If it is inscribed in a new earthen tumbler or jug, and then the same tumbler filled with water, and then the water is then sprinkled in the house then such a house will be safeguarded against all calamities - InshaAllah. If one wishes to subdue another, one should say it <strong>11</strong> times. </div>
+</div>
+</div>
+<div align="center" class="card" id="name78">
+<div class="atitle">المتعالي</div>
+<div class="etitle"><a href="assets/index.html">AL-MUTA'ALI</a><span class="abjadvalue">541</span></div>
+<div class="emeaning">(The Supremely Exalted, The Most High)</div>
+<div class="mmeaning">അല്‍-മുത്തആലീ : ഔന്നത്യമുള്ളവന്‍</div>
+<div class="desc"> The One who is exalted above all of creation. <br/>
+          The One who is beyond the highest.... beyond the beyond. <br/>
+          The One who far beyond any imagination, thought, limitation or ideal of mankind.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> The reciter of this name will soon find all his problems solved. The women who recites it much during her menstruations will soon find relief from all ailments - InshaAllah. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name79">
+<div class="atitle">البر</div>
+<div class="etitle"><a href="assets/index.html">AL-BARR</a><span class="abjadvalue">202</span></div>
+<div class="emeaning">(The Righteous, The Beneficent)</div>
+<div class="mmeaning">അല്‍-ബര്‍റു : ഗുണം ചെയ്യുന്നവന്‍</div>
+<div class="desc"> The One who is kind, gentle and ample in goodness. <br/>
+          The One who is the doer of good, both materially and spiritually. <br/>
+          The One who is kindly and gracious. The One from whom every good deed comes. <br/>
+          The One who is the source of all kindness and goodness. The One who bountifully bestows the gifts of tolerance, gentleness, goodness and kindness. The One who is ever-merciful and compassionate.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone in the habit of taking intoxicants, committing adultery or indulging in any other evils should recite this Ism <strong>7</strong> times daily.  He will soon receive guidance - InshaAllah. Excessive recitation is very effective in expelling from the heart the love for this world. Anyone who reads it <strong>7</strong> times and blows on his or her child soon after birth, Allah will grant the child protection from calamities until puberty. </div>
+</div>
+</div>
+<div align="center" class="card" id="name80">
+<div class="atitle">التواب</div>
+<div class="etitle"><a href="assets/index.html">AL-TAWWAB</a><span class="abjadvalue">409</span></div>
+<div class="emeaning">(The Ever-Returning, Ever-Relenting)</div>
+<div class="mmeaning">അല്‍-തവ്വാബു : പശ്ചാത്താപം സ്വീകരിക്കുന്നവന്‍</div>
+<div class="desc"> The One who beckons for our return. <br/>
+          The One who repeatedly turns mankind toward repentance. <br/>
+          The One who forgives those who return to goodness. The One who restores to grace those who repent. <br/>
+          The One who rewards good deeds. The One who forgives those who forgive others.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who is desirous that Allah guides him to seek sincere repentance should read this beautiful name <strong>360</strong> times daily after Salaat-Dua (Chast). Anyone who desires all his tasks be accomplished without any difficulty, should read this Ism abundantly. If this Name said <strong>10</strong> times in the presence of a tyrant, the reader will be freed from his oppression - InshaAllah. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name81">
+<div class="atitle">المنتقم</div>
+<div class="etitle"><a href="assets/index.html">AL-MUNTAQIM</a><span class="abjadvalue">680</span></div>
+<div class="emeaning">(The Avenger, The Disapprover)</div>
+<div class="mmeaning">അല്‍-മുന്‍തഖിമു : ശിക്ഷിക്കുന്നവന്‍</div>
+<div class="desc"> The One who disapproves of wrongdoers. <br/>
+          The One who reminds us when our behavior is not right. <br/>
+          The One who is the avenger (such that we need not seek any personal revenge). <br/>
+          The One and Only One who has the right to exact vengeance.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who is justified and desires to take revenge against his enemy, but hasn't the power to do so, should read this Ism continually for 3 Fridays, Allah Himself will take revenge on his behalf - InshaAllah. </div>
+</div>
+</div>
+<div align="center" class="card" id="name82">
+<div class="atitle">العفو</div>
+<div class="etitle"><a href="assets/index.html">AL-AFU</a><span class="abjadvalue">156</span></div>
+<div class="emeaning">(The Pardoner, The Effacer, The Forgiver)</div>
+<div class="mmeaning">അല്‍-അഫുവ്വു : മാപ്പേകുന്നവന്‍</div>
+<div class="desc"> The One who blots out and leaves no trace of any sin or fault. <br/>
+          The One who passes over and absolves any fault. The One who can remove and obliterate all traces of <br/>
+          wrong actions. The One who can make any sin, error or fault disappear.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Allah will forgive the one who recites this Ism abundantly - InshaAllah. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name83">
+<div class="atitle">الرؤوف</div>
+<div class="etitle"><a href="assets/index.html">AL-RAUF</a><span class="abjadvalue">286</span></div>
+<div class="emeaning">(The Most Kind, The Tenderly Merciful)</div>
+<div class="mmeaning">അല്‍-റഉൂഫു : അനുകമ്പയുള്ളവന്‍</div>
+<div class="desc"> The One who bestows boundless clemency, tenderness and affection. <br/>
+            The One who shows the utmost compassion, pity and tender mercy. <br/>
+            The One whose gentleness, kindness and mercy are beyond understanding.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> One who desires that the entire creation becomes affectionate towards him and vice versa should recite this Ism repeatedly. Anyone who desires that his anger be subdued, should recite first salawaat (durood) <strong>10</strong> times, then this name of Allah <strong>10</strong> times. Alternatively, if someone recites it as shown above, and blows on an angry man, his anger will soon be subdued - InshaAllah. </div>
+</div></div>
+<div align="center" class="card" id="name84">
+<div class="atitle">مالك الملك</div>
+<div class="etitle"><span class="abjadvalue">212</span></div>
+<div class="emeaning">(Owner of all Sovereignty, The Master of Kingdom)</div>
+<div class="mmeaning">മാലികുല്‍-മുല്‍കി : രാജാധിരാജന്‍</div>
+<div class="desc"> The One who is sole owner, possessor and ruler of all kingdoms. <br/>
+          The One whose ruling power and authority have no limit. The One who possesses all authority to act in any manner, at any time, in any way. The One who is lord and master over all worlds, whether manifest or un-manifest. The One who has all mastery and authority to decide what shall be created, what shall be sustained and what shall be cease to be.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> The constant reader of this Ism will be granted wealth, self-sufficiency and independence - InshaAllah. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name85">
+<div class="atitle">ذو الجلال والإكرام</div>
+<div class="etitle"><span class="abjadvalue">1100</span></div>
+<div class="emeaning">(Lord of Majesty and Generosity, Lord of Glory and Honor)</div>
+<div class="mmeaning">ദല്‍ജലാലി-വല്‍ഇക്‌റാം : പ്രൌഡിയും മഹത്വവുള്ളവന്‍</div>
+<div class="desc"> The One who is most precious, revered and honored. <br/>
+          The One who is the glorious and majestic lord of all generosity and bounty. The One who is the possessor of all glory and honor. The One who is the owner of every manner of blessing, perfection, honor and majesty. The One whose presence bestows majesty and generosity. The One who is the source of awesome splendor and abundance.    <br/>
+<br/>
+          This beautiful Arabic phrase begins with a pronoun, followed by two attributes of Allâh. Dhû (pronounced "thoo") = Lord of, Possessor of l = al = the Jalâl = Majesty, Glory wa = and l = al = the Ikrâm = Generosity, Bounty.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> The constant reciter of this Ism will be granted honour, dignity and self sufficiency - InshaAllah. </div>
+</div></div>
+<div align="center" class="card" id="name86">
+<div class="atitle">المقسط</div>
+<div class="etitle"><span class="abjadvalue">209</span></div>
+<div class="emeaning">(The Most Equitable, The Just)</div>
+<div class="mmeaning">അല്‍-മുഖ്സ്വിതു : നീതി ചെയ്യുന്നവന്‍</div>
+<div class="desc"> The One who is most equitable and just. <br/>
+          The One whose ways are balanced and just. The One who establishes justice. <br/>
+          The One who creates harmony and balance. The One who does away with injustice.<br/> 
+          The One who leads mankind to justice and harmony.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> One who recites this Ism daily with constancy, Allah will protect him from evil doubts created by the Shaytaan. If it is read <strong>700 </strong> times for a purpose, it will be acquired - InshaAllah. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name87">
+<div class="atitle">الجامع</div>
+<div class="etitle"><span class="abjadvalue">114</span></div>
+<div class="emeaning">(The Gatherer, The Uniter)</div>
+<div class="mmeaning">അല്‍-ജാമിഉ : മഹത്വങ്ങള്‍ ഒരുമിച്ച്‌ കൂടിയവന്‍ , ഒരുമിച്ച്‌ കൂട്ടുന്നവന്‍</div>
+<div class="desc"> The One who reconciles and unites. <br/>
+          The One who gathers together that which had been dispersed. <br/>
+          The One who assembles and arranges. The One who composes, arranges and connects together.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> If anyone's family or relatives are scattered (due to war, earthquake, floods etc.) He should bath at the time of Doha (Chast), and lifting the gaze towards heavens say this Ism <strong>10 </strong>times. But this should be enumerated with the fingers in such a way that with each reading, one finger should be closed. Thereafter the hand should be passed across the face (as when completing dua). By doing so, the dispersed members of his family will soon come together - InshaAllah. </div>
+</div></div>
+<div align="center" class="card" id="name88">
+<div class="atitle">الغني</div>
+<div class="etitle"><span class="abjadvalue">1060</span></div>
+<div class="emeaning">(The Rich, The Independent)</div>
+<div class="mmeaning">അല്‍-ഗനിയ്യു : ഐശ്വര്യവാന്‍</div>
+<div class="desc"> The One who is self-sufficient. <br/>
+          The One without need of anything. The One who transcends all needs.<br/> 
+          The One who is completely satisfied. The One who is free from any wants. The One who is free from any dependence.  <br/>
+          The One who flourishes without help or aid of any sort, yet who is needed by all. <br/>
+          The One upon whose wealth and riches all others depend.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> If anyone recites this Ism <strong>70 </strong>times daily, Allah will grant him Barakah in wealth and self sufficiency - InshaAllah. Anyone involved in any physical or spiritual sickness or other difficulty should say this Name much and blow on the entire body - to be soon relieved of the difficulty - InshaAllah. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name89">
+<div class="atitle">المغني</div>
+<div class="etitle"><span class="abjadvalue">1100</span></div>
+<div class="emeaning">(The Enricher, The Bestower of Wealth)</div>
+<div class="mmeaning">അല്‍ മുഗ്‌നീ : ഐശ്വര്യം നല്‍കുന്നവന്‍</div>
+<div class="desc"> The One who gives wealth abundantly. <br/>
+          The One who provides all that is needed. The One whose wealth fulfills all needs. <br/>
+          The One who enriches all of creation. The One who creates all appearances of independence or self-sufficiency. <br/>
+          The One who bestows satisfaction and contentment. The One who bestows spiritual wealth.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who reads the Salawaat (durood) <strong>11</strong> times before or after saying this Ism <strong>1,111 </strong>times, he will be granted both material as well as spiritual wealth - InshaAllah. This should be done after Fajr or Isha Salaah. But Surah Muzammil should also be recited with it. </div>
+</div>
+</div>
+<div align="center" class="card" id="name90">
+<div class="atitle">المانع</div>
+<div class="etitle"><span class="abjadvalue">161</span></div>
+<div class="emeaning">(The Preventer, The Protector, The Defender)</div>
+<div class="mmeaning">അല്‍-മാനിഉ : തടയുന്നവന്‍, പ്രതിരോധിക്കുന്നവന്‍</div>
+<div class="desc"> The One who averts harm, physical or spiritual. <br/>
+          The One who guards from harmful situations. The One who prevents undesirable actions.<br/> 
+          The One who impedes or hinders wrongful action. The One who stops one thing from harming another.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> If one has any dispute with ones spouse one should recite this Ism <strong>29 </strong>times while lying down on the bed - InshaAllah, the dispute will be settled and, instead love and affection will result. The constant reciter of this Ism will be safeguarded against all calamities - InshaAllah. If recited for any legitimate purpose, it will materialize - InshaAllah. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name91">
+<div class="atitle">الضار</div>
+<div class="etitle"><span class="abjadvalue">1001</span></div>
+<div class="emeaning">(The Distressor, The Afflictor)</div>
+<div class="mmeaning">അല്‍-ദാര്‍റു : പ്രയാസം നല്‍കുന്നവന്‍</div>
+<div class="desc"> The One whose wisdom may choose to use forceful corrections. <br/>
+            The One who creates adversity or distress in order to discourage or correct wrongful behavior. <br/>
+            The One whose wisdom may use situations that have an outward appearance of being harmful.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who says this Ism <strong>100</strong> times on the eve of Jumua'h, will be safeguarded against all physical and spiritual calamities. This will also draw him near to Allah - InshaAllah. If recited any legitimate purpose, 1it will materialize - InshaAllah. </div>
+</div>
+</div>
+<div align="center" class="card" id="name92">
+<div class="atitle">النافع</div>
+<div class="etitle"><span class="abjadvalue">201</span></div>
+<div class="emeaning">(The Propitious, The Benefiter, The Source of Good)</div>
+<div class="mmeaning"> അല്‍-നാഫിഉ : ഉപകാരം ചെയ്യുന്നവന്‍</div>
+<div class="desc"> The One who helps and who grants all advantages. <br/>
+          The One who creates all that produces benefit and usefulness. <br/>
+          The One who grants all favorable circumstances.  The One who confers all benefits. <br/>
+          The One who is continually blessing all of creation with goodness and all that is useful. <br/>
+          The One through whom all needs are fulfilled.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone embarking a ship, or boarding any conveyance should read this Ism abundantly. He will be safeguarded against all hazards - if Allah wills. If read <strong>41</strong> times before a task, it will be accomplished efficiently - InshaAllah. If said prior to intercourse, Allah will grant them good and pious children - InshaAllah. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name93">
+<div class="atitle">النور</div>
+<div class="etitle"><span class="abjadvalue">256</span></div>
+<div class="emeaning">(The Light, The Illuminator)</div>
+<div class="mmeaning"> അല്‍-നൂറു : പ്രകാശിക്കുന്നവന്‍, പ്രകാശിപ്പിക്കുന്നവന്‍</div>
+<div class="desc"> The One who is the divine light of all the worlds. <br/>
+            The One whose light who illuminates the heart. <br/>
+            The One who is the light of wisdom and guidance. The One whose light clarifies, manifests and reveals. <br/>
+            The One light by which the obscure is made clear. The One who clears away all darkness and directs aright.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Any person who says this Ism <strong>1001</strong> times after reciting Surah Nur, his heart will become illuminated with the Nur and light of Allah - InshaAllah. </div>
+</div>
+</div>
+<div align="center" class="card" id="name94">
+<div class="atitle">الهادي</div>
+<div class="etitle"><span class="abjadvalue">20</span></div>
+<div class="emeaning">(The Guide, The Leader)</div>
+<div class="mmeaning">അല്‍-ഹാദീ : സന്‍മാര്‍ഗത്തിലാക്കുന്നവന്‍</div>
+<div class="desc"> The One who continually shows the right way. <br/>
+          The One who kindly guides aright. The One who sends prophets and messengers to guide mankind. <br/>
+          The One who guides hearts to a knowledge of the Divine essence. The One who is the source of all guidance. <br/>
+          The One who faithfully continues to guide aright until the goal is finally attained.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who lifts both hands (as in dua), whilst lifting the gaze towards the heavens and recites this Ism several times and passes both hands on his face (as when completing dua), Allah will grant him complete guidance and associate him with the devout and pious - InshaAllah. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name95">
+<div class="atitle">البديع</div>
+<div class="etitle"><span class="abjadvalue">86</span></div>
+<div class="emeaning">(The Incomparable, The Absolute Cause)</div>
+<div class="mmeaning">അല്‍-ബദീഉ : മാത്ര്‍ക സ്ര്‍ഷ്ടിക്കുന്നവന്‍</div>
+<div class="desc"> The marvelous One who originates, commences, invents and creates all that exists, without any model or material. <br/>
+            The One whose incomparable will-power first brings into existence all of the unique and amazing creation without any similarity to anything else that has ever existed. 
+            The One who creates in wonderful, awesome, amazingly original ways that have no precedent whatsoever.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> If a person in grief should recite <strong>1,001</strong> times "Ya Badi'u ssamawaa ti wal ardh", Allah will soon grant him relief from his misery. Likewise, if someone is involved in difficulties or in perturbed. If a particular venture is to be undertaken, but one is not certain as to its feasibility then one should say this Ism before falling asleep. One will receive guidance in ones sleep by way of dream - InshaAllah. Anyone wishing for a particular task to be accomplished should say "Ya Badi'ul-Ajaa'ibi-bil-Khayri-yaBadee'u" <strong>1,200</strong> times; before the passing of 12 days his task will be accomplished - InshaAllah. </div>
+</div>
+</div>
+<div align="center" class="card" id="name96">
+<div class="atitle">الباقي</div>
+<div class="etitle"><span class="abjadvalue">113</span></div>
+<div class="emeaning">(The Everlasting,  The Eternal, The Everlasting)</div>
+<div class="mmeaning">അല്‍-ബാഖീ : എന്നെന്നും ശേഷിക്കുന്നവന്‍, അനന്തമായവന്‍</div>
+<div class="desc"> The One who has always existed and who will never cease to be. <br/>
+          The One whose existence has neither beginning nor end. The One whose existence is beyond the realm of time.<br/> 
+          The One who existed before all of creation, and who will remain after all of this creation has come and gone. The One who is everlasting, perpetual, beginning-less, endless. The One whose existence is eternal. <br/>
+          The One who remains forever, unaffected by time.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Allah will grant protection and accept all the virtuous deeds of one who says this Ism <strong>1,000</strong> times on the night of Jumua'h. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name97">
+<div class="atitle">الوارث</div>
+<div class="etitle"><span class="abjadvalue">707</span></div>
+<div class="emeaning">(The Supreme Heir, The Inheritor of All)</div>
+<div class="mmeaning">അല്‍-വാരിസു : അവകാശിയായവന്‍</div>
+<div class="desc"> The One who remains after all of creation has perished. The One to whom all returns. <br/>
+            The One who has everlasting ownership of all that has ever been and that will ever be. <br/>
+            The One to whom all possessions return when the possessor is gone. <br/>
+            The One who inherits all that we have done.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> If this name is repeated <strong>100</strong> times at sunrise, protection will be given against all sorrows, grief, hardships and calamities. Moreover the reader will die as a Mu'min - InshaAllah. Anyone who desires to be safeguarded against perplexities, perturbations and disturbances should repeat this name <strong>1,000</strong> times between Maghrib and Isha. </div>
+</div></div>
+<div align="center" class="card" id="name98">
+<div class="atitle">الرشيد</div>
+<div class="etitle"><span class="abjadvalue">514</span></div>
+<div class="emeaning">(The Guide to the Right Path)</div>
+<div class="mmeaning">അല്‍-റശീദു : നേര്‍മാര്‍ഗ്ഗത്തില്‍ നടത്തുന്നവന്‍</div>
+<div class="desc"> The One who unerringly decrees, appoints or ordains the right way. <br/>
+            The One who is the supreme director to the right path and right belief. <br/>
+            The One who perfectly and righteously directs all matters toward their proper conclusion. <br/>
+        The One who needs no aid to direct all affairs rightly.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who does not have the know how about a particular task or is unable to work out plans for a certain task should say this Name <strong>1,000</strong> times between Maghrib and Isha. The plan and scheme will soon become evident for him either by way of a dream or by instinct. For financial progress and safety against all mishaps, one should read it daily. </div>
+</div>
+<div class="cardbg">
+<div align="center" class="card" id="name99">
+<div class="atitle">الصبور</div>
+<div class="etitle"><span class="abjadvalue">298</span></div>
+<div class="emeaning">(The Timeless, The Patient)</div>
+<div class="mmeaning">അല്‍-സബൂറു : അത്യധികം ക്ഷമിക്കുന്നവന്‍</div>
+<div class="desc"> The One who is most patient, steadfast, and enduring. <br/>
+            The One who is not moved by haste to carry out any action before it's proper time. <br/>
+            The One who patiently endures and does everything in its proper time and proper manner, <br/>
+            no matter how long that may take. The One who patiently accomplishes each thing in its proper time, <br/>
+            in the way it needs to be and according to what it requires.</div>
+<div class="reward"> <strong>Benefits of Reading :</strong> Anyone who repeats this Name <strong>100 </strong>times before sunrise will be safeguarded against all calamities for the remainder of the day. Moreover, Allah will cause his enemies not to utter a single word against him. Any person in difficulty should repeat this Ism <strong>1,020</strong> times; he will soon find relief and be granted peace and contentment of heart - InshaAllah. </div>
+</div></div>
+<div align="center" class="card" id="endcard">
+<div class="atitle">اَلحَمْدُ لِله </div>
+<div style="line-height:16px;font-size:12px; color:#333333; font-family:Verdana, Arial, Helvetica, sans-serif;">Yo've Finished Reading The glorious names of Allâh, subhâna wa ta'âlâ,  <br/>
+      These are the greatest and most beautiful names of all the names.  <br/>
+      The name Allâh encompasses all of the divine names and attributes of perfection.<br/>
+<br/>
+<span><strong>WHAT TO DO NEXT?</strong></span> <br/><br/>
+<li>Mark this page as favorite page.</li>
+<li>Share this page with others.</li>
+<li>Try to memorize them all by heart.</li>
+<li>Let us know what to improve for the best.</li>
+<br/>
+      You Know? Allah’s Apostle (Sallallahu ‘Alaihi Wa Sallam) said:<br/> 
+      “Allah has ninety-nine Names, one-hundred less one; and he who memorized them <br/>
+      all by heart <strong>will enter Paradise.</strong>”   Bukhari Vol. 9 : No. 489 اَللَّهُ اَكْبَر<br/>
+<br/>
+      അള്ളാഹുവിണ്റ്റെ റസൂല്‍ (സ) പറഞ്ഞു: "അള്ളാഹു (സു) വിന്‌ തൊണ്ണൂറ്റി ഒന്‍പത്‌ പേരുണ്ട്‌. <br/>
+      ആരാണോ ആ പേരുകള്‍ ഹ്ര്‍ദിസ്ഥമാക്കുന്നത്‌ അവര്‍ സ്വര്‍ഗ്ഗത്തില്‍ പ്രവേശിക്കും. " - ബുഖാരി<br/><br/><br/>
+<div class="fb-like" data-action="like" data-href="https://www.com/Osmanli-Naksibendi-Way-Kerala-India-997644333643489/" data-layout="button" data-share="true" data-show-faces="false"></div><br/><br/><br/>
+<br/><br/><br/>
+</div>
+</div>
+</div>
+</div>
+<div align="center" style="background:#CCCCCC; color:#666666; padding:15px; font-family:Verdana, Arial, Helvetica, sans-serif; font-size:10px; padding-top:25px;">See also:  | ALHAMDULILLAH - ALL PRAISES TO GOD.<br/> Helped articles from: https://wahiduddin.net/, 99 Devine Names Of Allah android app, <br/>
+Abjad values from the book 99 Devine Names of Allah.<br/>
+<br/>
+</div>
+</body>
+</html>
+<!--
+playback timings (ms):
+  captures_list: 0.65
+  exclusion.robots: 0.044
+  exclusion.policy: 0.032
+  esindex: 0.011
+  cdx.remote: 4.711
+  LoadShardBlock: 215.926 (3)
+  PetaboxLoader3.datanode: 128.359 (4)
+  PetaboxLoader3.resolve: 252.235 (3)
+  load_resource: 214.967
+  nav: 0.175 (6)
+-->
