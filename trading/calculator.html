@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kalkulator Trading Crypto - BTC, ETH, SOL</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .crypto-selector {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .crypto-btn {
+            padding: 20px;
+            border: 3px solid #e0e0e0;
+            border-radius: 15px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+        }
+
+        .crypto-btn:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+        }
+
+        .crypto-btn.active {
+            border-color: #667eea;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .crypto-btn .crypto-icon {
+            font-size: 40px;
+            margin-bottom: 10px;
+        }
+
+        .crypto-btn .crypto-name {
+            font-weight: 700;
+            font-size: 18px;
+            margin-bottom: 5px;
+        }
+
+        .crypto-btn .crypto-symbol {
+            font-size: 14px;
+            opacity: 0.7;
+        }
+
+        .crypto-btn .crypto-price {
+            font-size: 12px;
+            margin-top: 8px;
+            font-weight: 600;
+        }
+
+        .input-section {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        .input-group label {
+            display: block;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .input-group input, .input-group select {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        .input-group input:focus, .input-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .input-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .price-info {
+            background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .price-info h4 {
+            font-size: 14px;
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        .price-info .current-price {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1a1a1a;
+        }
+
+        .price-info .price-change {
+            font-size: 12px;
+            margin-top: 5px;
+        }
+
+        .price-change.positive {
+            color: #22c55e;
+        }
+
+        .price-change.negative {
+            color: #ef4444;
+        }
+
+        .calculate-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .calculate-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .calculate-btn:active {
+            transform: translateY(0);
+        }
+
+        .results {
+            display: none;
+            margin-top: 30px;
+        }
+
+        .results.show {
+            display: block;
+            animation: fadeIn 0.5s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .result-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+        }
+
+        .result-card h3 {
+            font-size: 20px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid rgba(255,255,255,0.3);
+            padding-bottom: 10px;
+        }
+
+        .result-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+        }
+
+        .result-item:last-child {
+            border-bottom: none;
+        }
+
+        .result-label {
+            font-weight: 500;
+            opacity: 0.9;
+        }
+
+        .result-value {
+            font-weight: 700;
+            font-size: 18px;
+        }
+
+        .warning-box {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .warning-box h4 {
+            color: #856404;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        .warning-box ul {
+            color: #856404;
+            margin-left: 20px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .highlight {
+            background: rgba(255,255,255,0.2);
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+
+        .info-box {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .info-box p {
+            color: #1565c0;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        @media (max-width: 768px) {
+            .input-row {
+                grid-template-columns: 1fr;
+            }
+
+            .crypto-selector {
+                grid-template-columns: 1fr;
+            }
+
+            .container {
+                margin: 10px;
+            }
+
+            .header h1 {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🪙 Kalkulator Trading Multi-Crypto</h1>
+            <p>Bitcoin (BTC) • Ethereum (ETH) • Solana (SOL)</p>
+            <p style="font-size: 12px; margin-top: 5px;">Manajemen Risiko 1% • Stop-Loss Otomatis • Risk-Reward Optimal</p>
+        </div>
+
+        <div class="content">
+            <div class="crypto-selector">
+                <div class="crypto-btn active" onclick="selectCrypto('BTC')" id="btn-BTC">
+                    <div class="crypto-icon">₿</div>
+                    <div class="crypto-name">Bitcoin</div>
+                    <div class="crypto-symbol">BTC</div>
+                    <div class="crypto-price">~IDR 1,55 T</div>
+                </div>
+
+                <div class="crypto-btn" onclick="selectCrypto('ETH')" id="btn-ETH">
+                    <div class="crypto-icon">Ξ</div>
+                    <div class="crypto-name">Ethereum</div>
+                    <div class="crypto-symbol">ETH</div>
+                    <div class="crypto-price">~IDR 53 Jt</div>
+                </div>
+
+                <div class="crypto-btn" onclick="selectCrypto('SOL')" id="btn-SOL">
+                    <div class="crypto-icon">◎</div>
+                    <div class="crypto-name">Solana</div>
+                    <div class="crypto-symbol">SOL</div>
+                    <div class="crypto-price">~IDR 2,3 Jt</div>
+                </div>
+            </div>
+
+            <div class="info-box">
+                <p><strong>💡 Data Harga Terkini (12 Jan 2026):</strong> BTC ~IDR 1.550.000.000 | ETH ~IDR 53.095.000 | SOL ~IDR 2.332.000. Update harga sesuai platform trading Anda sebelum menghitung.</p>
+            </div>
+
+            <div class="input-section">
+                <div class="price-info">
+                    <h4>Cryptocurrency Terpilih</h4>
+                    <div class="current-price" id="selectedCrypto">Bitcoin (BTC)</div>
+                </div>
+
+                <div class="input-group">
+                    <label for="capital">💰 Modal Trading Total (IDR)</label>
+                    <input type="number" id="capital" placeholder="Contoh: 10000000" value="10000000">
+                </div>
+
+                <div class="input-row">
+                    <div class="input-group">
+                        <label for="cryptoPrice"><span id="cryptoLabel">₿</span> Harga <span id="cryptoNameLabel">Bitcoin</span> Saat Ini (IDR)</label>
+                        <input type="number" id="cryptoPrice" placeholder="Contoh: 1550000000" value="1550000000">
+                    </div>
+
+                    <div class="input-group">
+                        <label for="riskPercent">⚠️ Risiko per Trade (%)</label>
+                        <select id="riskPercent">
+                            <option value="1" selected>1% (Konservatif - Rekomendasi)</option>
+                            <option value="2">2% (Moderat)</option>
+                            <option value="3">3% (Agresif)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="input-row">
+                    <div class="input-group">
+                        <label for="stopLoss">🛑 Stop-Loss (%)</label>
+                        <select id="stopLoss">
+                            <option value="3">3% (Ketat)</option>
+                            <option value="5" selected>5% (Normal)</option>
+                            <option value="8">8% (Longgar)</option>
+                            <option value="10">10% (Sangat Longgar)</option>
+                        </select>
+                    </div>
+
+                    <div class="input-group">
+                        <label for="riskReward">🎯 Risk-Reward Ratio</label>
+                        <select id="riskReward">
+                            <option value="1.5">1:1.5</option>
+                            <option value="2" selected>1:2 (Rekomendasi)</option>
+                            <option value="3">1:3</option>
+                            <option value="4">1:4</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button class="calculate-btn" onclick="calculateTrade()">📊 Hitung Formulasi Trading</button>
+            </div>
+
+            <div class="results" id="results">
+                <div class="result-card">
+                    <h3>📋 Hasil Perhitungan Trading <span id="resultCrypto">BTC</span></h3>
+
+                    <div class="result-item">
+                        <span class="result-label">Risiko Maksimal per Trade:</span>
+                        <span class="result-value" id="maxRisk">-</span>
+                    </div>
+
+                    <div class="result-item">
+                        <span class="result-label">Harga Entry:</span>
+                        <span class="result-value" id="entryPrice">-</span>
+                    </div>
+
+                    <div class="result-item">
+                        <span class="result-label">Harga Stop-Loss:</span>
+                        <span class="result-value" id="stopLossPrice">-</span>
+                    </div>
+
+                    <div class="result-item">
+                        <span class="result-label">Selisih Risiko:</span>
+                        <span class="result-value" id="riskDiff">-</span>
+                    </div>
+
+                    <div class="highlight">
+                        <div class="result-item">
+                            <span class="result-label">📍 Jumlah <span id="cryptoUnit">Bitcoin</span> yang Dibeli:</span>
+                            <span class="result-value" id="cryptoAmount">-</span>
+                        </div>
+
+                        <div class="result-item">
+                            <span class="result-label">💵 Nilai Investasi (IDR):</span>
+                            <span class="result-value" id="investAmount">-</span>
+                        </div>
+                    </div>
+
+                    <div class="result-item">
+                        <span class="result-label">Target Profit (IDR):</span>
+                        <span class="result-value" id="targetProfit">-</span>
+                    </div>
+
+                    <div class="result-item">
+                        <span class="result-label">🎯 Harga Take-Profit:</span>
+                        <span class="result-value" id="takeProfitPrice">-</span>
+                    </div>
+
+                    <div class="result-item">
+                        <span class="result-label">% Take-Profit dari Entry:</span>
+                        <span class="result-value" id="profitPercent">-</span>
+                    </div>
+                </div>
+
+                <div class="warning-box">
+                    <h4>⚠️ Panduan Eksekusi Trading</h4>
+                    <ul>
+                        <li>Set order <strong>stop-loss</strong> segera setelah membeli di harga yang sudah dihitung</li>
+                        <li>Set order <strong>take-profit</strong> untuk lock profit otomatis</li>
+                        <li>Jangan ubah stop-loss saat harga bergerak melawan posisi Anda</li>
+                        <li>Maksimal <strong>3 posisi terbuka</strong> secara bersamaan</li>
+                        <li>Catat setiap transaksi untuk evaluasi strategi</li>
+                        <li>Pajak 0,21% akan otomatis dipotong di platform berlisensi OJK</li>
+                        <li>Update harga crypto sesuai platform Anda (Pluang, Indodax, Pintu, dll.)</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentCrypto = 'BTC';
+
+        const cryptoData = {
+            'BTC': {
+                name: 'Bitcoin',
+                symbol: '₿',
+                defaultPrice: 1550000000,
+                decimals: 8,
+                fullName: 'Bitcoin'
+            },
+            'ETH': {
+                name: 'Ethereum',
+                symbol: 'Ξ',
+                defaultPrice: 53095000,
+                decimals: 6,
+                fullName: 'Ethereum'
+            },
+            'SOL': {
+                name: 'Solana',
+                symbol: '◎',
+                defaultPrice: 2332000,
+                decimals: 6,
+                fullName: 'Solana'
+            }
+        };
+
+        function selectCrypto(crypto) {
+            currentCrypto = crypto;
+
+            // Update button states
+            document.querySelectorAll('.crypto-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.getElementById('btn-' + crypto).classList.add('active');
+
+            // Update labels and price
+            const data = cryptoData[crypto];
+            document.getElementById('selectedCrypto').textContent = data.fullName + ' (' + crypto + ')';
+            document.getElementById('cryptoLabel').textContent = data.symbol;
+            document.getElementById('cryptoNameLabel').textContent = data.name;
+            document.getElementById('cryptoPrice').value = data.defaultPrice;
+
+            // Hide results when switching
+            document.getElementById('results').classList.remove('show');
+        }
+
+        function formatIDR(number) {
+            return 'IDR ' + number.toLocaleString('id-ID', {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            });
+        }
+
+        function formatCrypto(number, crypto) {
+            const decimals = cryptoData[crypto].decimals;
+            return number.toFixed(decimals) + ' ' + crypto;
+        }
+
+        function calculateTrade() {
+            // Get input values
+            const capital = parseFloat(document.getElementById('capital').value);
+            const cryptoPrice = parseFloat(document.getElementById('cryptoPrice').value);
+            const riskPercent = parseFloat(document.getElementById('riskPercent').value);
+            const stopLossPercent = parseFloat(document.getElementById('stopLoss').value);
+            const riskRewardRatio = parseFloat(document.getElementById('riskReward').value);
+
+            // Validation
+            if (!capital || !cryptoPrice || capital <= 0 || cryptoPrice <= 0) {
+                alert('⚠️ Mohon isi semua data dengan benar!');
+                return;
+            }
+
+            // Calculate risk management
+            const maxRisk = capital * (riskPercent / 100);
+            const entryPrice = cryptoPrice;
+            const stopLossPrice = entryPrice * (1 - stopLossPercent / 100);
+            const riskDiff = entryPrice - stopLossPrice;
+
+            // Calculate position size
+            const cryptoAmount = maxRisk / riskDiff;
+            const investAmount = cryptoAmount * entryPrice;
+
+            // Calculate take profit
+            const targetProfit = maxRisk * riskRewardRatio;
+            const takeProfitPrice = entryPrice + (targetProfit / cryptoAmount);
+            const profitPercent = ((takeProfitPrice - entryPrice) / entryPrice) * 100;
+
+            // Display results
+            document.getElementById('maxRisk').textContent = formatIDR(maxRisk);
+            document.getElementById('entryPrice').textContent = formatIDR(entryPrice);
+            document.getElementById('stopLossPrice').textContent = formatIDR(stopLossPrice);
+            document.getElementById('riskDiff').textContent = formatIDR(riskDiff);
+            document.getElementById('cryptoAmount').textContent = formatCrypto(cryptoAmount, currentCrypto);
+            document.getElementById('investAmount').textContent = formatIDR(investAmount);
+            document.getElementById('targetProfit').textContent = formatIDR(targetProfit);
+            document.getElementById('takeProfitPrice').textContent = formatIDR(takeProfitPrice);
+            document.getElementById('profitPercent').textContent = '+' + profitPercent.toFixed(2) + '%';
+
+            // Update result headers
+            document.getElementById('resultCrypto').textContent = currentCrypto;
+            document.getElementById('cryptoUnit').textContent = cryptoData[currentCrypto].fullName;
+
+            // Show results
+            document.getElementById('results').classList.add('show');
+
+            // Scroll to results
+            document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        // Allow Enter key to calculate
+        document.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                calculateTrade();
+            }
+        });
+    </script>
+</body>
+</html>
