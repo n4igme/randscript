@@ -1,42 +1,63 @@
 # Randscript
 
-Randscript is a collection of utility scripts and tools for various web scraping, archiving, and automation tasks.
+A collection of utility scripts and tools for document AI, security testing, web archiving, and automation.
 
 ## Project Structure
 
 ```
 randscript/
-├── asmin/                 # Cloned archived website of Asmaul Husna
-│   ├── index.html        # Main HTML file
-│   ├── css/              # Stylesheets and favicon
-│   ├── images/           # Website images
-│   └── js/               # JavaScript files
-├── automate/             # Automation scripts
-├── scanner/              # Scanning tools
-└── README.md             # This file
+├── rag-agent/        # RAG system with local LLM support via Ollama
+├── scanner/          # XSS vulnerability scanner
+├── trading/          # Crypto trading calculator (BTC, ETH, SOL)
+├── asmin/            # Archived Asmaul Husna website
+├── context_aware/    # Security analysis templates
+├── secops/           # Security operations tools
+├── winapi/           # Windows API utilities
+└── llm_model/        # LLM training/tuning scripts
 ```
 
-## Featured Projects
+## Components
 
-### Asmaul Husna Archive
-The `asmin/` directory contains a complete clone of the archived website "Asmaul Husna" (99 Names of Allah) from the Internet Archive. This site was archived from http://www.asmaulhusna.in/ as of July 7, 2020.
+### [rag-agent/](rag-agent/)
+Retrieval Augmented Generation (RAG) system with local LLM support. Features semantic search, multi-format document processing (PDF, Office, HTML, audio), and PostgreSQL+PGVector integration.
 
-The archive includes:
-- Complete HTML structure with all 99 names
-- Associated images and styling
-- JavaScript functionality
-- All content preserved for offline viewing
+**Tech:** Python, Ollama, Docling, Whisper, PostgreSQL, PGVector
+
+### [scanner/](scanner/)
+Automated XSS vulnerability scanner that parses Swagger YAML files and tests endpoints with various payloads. Includes email notification support.
+
+**Tech:** Python, requests, YAML
+
+### [trading/](trading/)
+Crypto trading calculator with web interface supporting BTC, ETH, and SOL calculations. Indonesian language interface.
+
+**Tech:** HTML, CSS, JavaScript
+
+### [asmin/](asmin/)
+Complete archive of the "Asmaul Husna" (99 Names of Allah) website from [asmaulhusna.in](http://www.asmaulhusna.in/), preserved as of July 7, 2020.
+
+### [context_aware/](context_aware/)
+Security analysis templates including static code analysis formats, vulnerability assessment templates (ca001-ca007), and threat modeling (TM001).
+
+### [secops/](secops/)
+Security operations tools for email analysis and related tasks.
+
+### [winapi/](winapi/)
+Windows API utilities and system-level tools.
+
+### [llm_model/](llm_model/)
+Scripts and tuning configurations for LLM training and fine-tuning.
 
 ## Usage
 
-The scripts in this repository are designed for educational and research purposes. The archived content is provided for personal study and offline reference.
+All scripts are designed for educational and research purposes. See individual component directories for specific setup and usage instructions.
 
 ## Contributing
 
-Contributions to improve the archiving and cleaning processes are welcome. Please feel free to submit pull requests or create issues for improvements.
+Contributions are welcome. Please feel free to submit pull requests or create issues for improvements.
 
 ## License
 
-[This project is licensed under the MIT License - see the LICENSE file for details]
+MIT License - see the LICENSE file for details.
 
-Note: The archived content in the asmin directory is copyright of the original website owners. This repository serves to preserve educational content that may no longer be available online.
+**Note:** Archived content in `asmin/` is copyright of the original website owners. This repository serves to preserve educational content.

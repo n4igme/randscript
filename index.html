@@ -5,101 +5,243 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Randscript - Utility Scripts Collection</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            line-height: 1.6;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
             padding: 20px;
-            background-color: #f5f5f5;
         }
+
         .container {
-            background-color: white;
-            padding: 30px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            max-width: 900px;
+            margin: 0 auto;
         }
-        h1 {
+
+        .header {
+            background: white;
+            padding: 40px;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 1.1rem;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+
+        .card {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+        }
+
+        .card-icon {
+            font-size: 2rem;
+            margin-bottom: 15px;
+        }
+
+        .card h2 {
+            font-size: 1.3rem;
             color: #333;
-            border-bottom: 2px solid #4CAF50;
-            padding-bottom: 10px;
+            margin-bottom: 10px;
         }
-        .project-section {
-            margin: 20px 0;
-            padding: 15px;
-            border-left: 4px solid #4CAF50;
-            background-color: #f9f9f9;
+
+        .card p {
+            color: #666;
+            font-size: 0.95rem;
+            margin-bottom: 15px;
         }
-        .project-title {
-            color: #4CAF50;
-            margin-top: 0;
+
+        .card-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
         }
-        a {
-            color: #4CAF50;
+
+        .tag {
+            background: #f0f0f0;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            color: #555;
+        }
+
+        .card-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            color: #667eea;
             text-decoration: none;
+            font-weight: 500;
+            margin-top: 10px;
         }
-        a:hover {
+
+        .card-link:hover {
             text-decoration: underline;
         }
-        .directory-listing {
-            margin: 10px 0;
-            padding-left: 20px;
+
+        .footer {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            margin-top: 30px;
+            color: #777;
+            font-size: 0.9rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
         }
-        .directory-listing li {
-            margin: 5px 0;
+
+        @media (max-width: 600px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+
+            .grid {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Randscript</h1>
-        <p>Randscript is a collection of utility scripts and tools for various web scraping, archiving, and automation tasks.</p>
-
-        <div class="project-section">
-            <h2 class="project-title">Asmaul Husna Archive</h2>
-            <p>The <a href="asmin/">asmin/</a> directory contains a complete clone of the archived website "Asmaul Husna" (99 Names of Allah) from the Internet Archive. This site was archived from http://www.asmaulhusna.in/ as of July 7, 2020.</p>
-            <p>The archive includes:</p>
-            <ul>
-                <li>Complete HTML structure with all 99 names</li>
-                <li>Associated images and styling</li>
-                <li>JavaScript functionality</li>
-                <li>All content preserved for offline viewing</li>
-            </ul>
-            <p><a href="asmin/index.html">View the archived website</a></p>
+        <div class="header">
+            <h1>Randscript</h1>
+            <p>A collection of utility scripts for document AI, security testing, and automation</p>
         </div>
 
-        <div class="project-section">
-            <h2 class="project-title">Automation Scripts</h2>
-            <p>The <a href="automate/">automate/</a> directory contains various automation scripts for different tasks.</p>
+        <div class="grid">
+            <!-- RAG Agent -->
+            <div class="card">
+                <div class="card-icon">🤖</div>
+                <h2>rag-agent</h2>
+                <p>RAG system with local LLM support via Ollama. Semantic search, multi-format document processing, and PostgreSQL integration.</p>
+                <div class="card-tags">
+                    <span class="tag">Python</span>
+                    <span class="tag">Ollama</span>
+                    <span class="tag">PGVector</span>
+                </div>
+                <a href="rag-agent/" class="card-link">Explore →</a>
+            </div>
+
+            <!-- Scanner -->
+            <div class="card">
+                <div class="card-icon">🔍</div>
+                <h2>scanner</h2>
+                <p>Automated XSS vulnerability scanner. Parses Swagger YAML files and tests endpoints with various payloads.</p>
+                <div class="card-tags">
+                    <span class="tag">Python</span>
+                    <span class="tag">Security</span>
+                </div>
+                <a href="scanner/" class="card-link">Explore →</a>
+            </div>
+
+            <!-- Trading -->
+            <div class="card">
+                <div class="card-icon">📈</div>
+                <h2>trading</h2>
+                <p>Crypto trading calculator with web interface supporting BTC, ETH, and SOL calculations.</p>
+                <div class="card-tags">
+                    <span class="tag">JavaScript</span>
+                    <span class="tag">Trading</span>
+                </div>
+                <a href="trading/" class="card-link">Explore →</a>
+            </div>
+
+            <!-- Asmin -->
+            <div class="card">
+                <div class="card-icon">🕌</div>
+                <h2>asmin</h2>
+                <p>Archive of the "Asmaul Husna" (99 Names of Allah) website, preserved from July 7, 2020.</p>
+                <div class="card-tags">
+                    <span class="tag">Archive</span>
+                    <span class="tag">HTML</span>
+                </div>
+                <a href="asmin/" class="card-link">Explore →</a>
+            </div>
+
+            <!-- Context Aware -->
+            <div class="card">
+                <div class="card-icon">🛡️</div>
+                <h2>context_aware</h2>
+                <p>Security analysis templates including static code analysis formats and threat modeling templates.</p>
+                <div class="card-tags">
+                    <span class="tag">Templates</span>
+                    <span class="tag">Security</span>
+                </div>
+                <a href="context_aware/" class="card-link">Explore →</a>
+            </div>
+
+            <!-- SecOps -->
+            <div class="card">
+                <div class="card-icon">🔐</div>
+                <h2>secops</h2>
+                <p>Security operations tools for email analysis and related defensive tasks.</p>
+                <div class="card-tags">
+                    <span class="tag">Security</span>
+                    <span class="tag">Tools</span>
+                </div>
+                <a href="secops/" class="card-link">Explore →</a>
+            </div>
+
+            <!-- WinAPI -->
+            <div class="card">
+                <div class="card-icon">🪟</div>
+                <h2>winapi</h2>
+                <p>Windows API utilities and system-level tools for Windows automation.</p>
+                <div class="card-tags">
+                    <span class="tag">Windows</span>
+                    <span class="tag">API</span>
+                </div>
+                <a href="winapi/" class="card-link">Explore →</a>
+            </div>
+
+            <!-- LLM Model -->
+            <div class="card">
+                <div class="card-icon">🧠</div>
+                <h2>llm_model</h2>
+                <p>Scripts and tuning configurations for LLM training and fine-tuning.</p>
+                <div class="card-tags">
+                    <span class="tag">LLM</span>
+                    <span class="tag">Training</span>
+                </div>
+                <a href="llm_model/" class="card-link">Explore →</a>
+            </div>
         </div>
 
-        <div class="project-section">
-            <h2 class="project-title">Scanner Tools</h2>
-            <p>The <a href="scanner/">scanner/</a> directory contains scanning tools and utilities.</p>
+        <div class="footer">
+            <p>Randscript Repository · Educational and research purposes · <a href="README.md">View README</a></p>
         </div>
-
-        <h2>Project Structure</h2>
-        <ul class="directory-listing">
-            <li><a href="./">randscript/</a> (current directory)</li>
-            <ul class="directory-listing">
-                <li><a href="asmin/">├── asmin/</a> - Cloned archived website of Asmaul Husna</li>
-                <ul class="directory-listing">
-                    <li><a href="asmin/index.html">├── index.html</a> - Main HTML file</li>
-                    <li>├── css/ - Stylesheets and favicon</li>
-                    <li>├── images/ - Website images</li>
-                    <li>└── js/ - JavaScript files</li>
-                </ul>
-                <li>├── automate/ - Automation scripts</li>
-                <li>├── scanner/ - Scanning tools</li>
-                <li>└── <a href="README.md">README.md</a> - Project documentation</li>
-            </ul>
-        </ul>
-
-        <h2>About</h2>
-        <p>This repository serves to preserve educational content that may no longer be available online and to provide utility scripts for various web-related tasks.</p>
-        
-        <p style="text-align: center; margin-top: 30px; color: #777; font-size: 0.9em;">
-            Randscript Repository | Created for educational and research purposes
-        </p>
     </div>
 </body>
 </html>
