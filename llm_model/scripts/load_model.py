@@ -1,5 +1,14 @@
-from mlx_lm import load
+from mlx_lm import load, generate
 
-# This should load from your central folder if HF_HOME is set
-model, tokenizer = load("lmstudio-community/Qwen2.5-Coder-7B-Instruct-GGUF")
+model, tokenizer = load("mlx-community/VulnLLM-R-7B-4bit")
+
+prompt = "hello"
+
+if tokenizer.chat_template is not None:
+    messages = [{"role": "user", "content": prompt}]
+    prompt = tokenizer.apply_chat_template(
+        messages, add_generation_prompt=True, return_dict=False,
+    )
+
+response = generate(model, tokenizer, prompt=prompt, verbose=True)
 
