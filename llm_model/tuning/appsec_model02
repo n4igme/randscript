@@ -77,7 +77,7 @@ Always provide working examples with explanations of why each step matters.
 """
 
 # M4-optimized parameters (Metal GPU acceleration enabled automatically by Ollama on macOS)
-PARAMETER temperature 0.6
+PARAMETER temperature 0.4
 PARAMETER top_p 0.85
 PARAMETER top_k 40
 PARAMETER repeat_penalty 1.15
