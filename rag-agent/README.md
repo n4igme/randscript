@@ -1,8 +1,25 @@
 # Docling RAG Agent (Ollama Edition)
 
-An intelligent text-based CLI agent that provides conversational access to a knowledge base stored in PostgreSQL with PGVector. Uses RAG (Retrieval Augmented Generation) to search through embedded documents and provide contextual, accurate responses with source citations. Supports multiple document formats including audio files with Whisper transcription.
+An intelligent agent that provides conversational access to a knowledge base stored in PostgreSQL with PGVector. Uses RAG (Retrieval Augmented Generation) to search through embedded documents and provide contextual, accurate responses with source citations. Supports multiple document formats including audio files with Whisper transcription.
 
 > **[Ollama Edition]** This is a modified version of the original [Docling RAG Agent](https://github.com/coleam00/ottomator-agents/tree/main/docling-rag-agent) from the [ottomator-agents](https://github.com/coleam00/ottomator-agents) repository, adapted to run with local LLMs via Ollama instead of requiring OpenAI API keys.
+
+## 🌟 New: Web Interface Available!
+
+A modern web interface is now available with:
+- 💬 **Real-time Chat** - Streaming conversations with source citations
+- 📁 **Document Management** - Drag-and-drop upload and ingestion
+- 🕷️ **Web Crawler** - Crawl websites directly into your knowledge base
+- 📊 **Live Statistics** - Real-time knowledge base metrics
+
+```bash
+# Start the web interface
+uv run python web_app.py
+```
+
+Then open **http://localhost:8000** in your browser.
+
+See [`WEB_INTERFACE.md`](./WEB_INTERFACE.md) for full documentation.
 
 ## 🎓 New to Docling?
 
@@ -17,23 +34,61 @@ These tutorials provide the foundation for understanding how this full RAG agent
 
 ## Features
 
-- 💬 Interactive text-based CLI with streaming responses
-- 🔍 Semantic search through vector-embedded documents
-- 📚 Context-aware responses using RAG pipeline
-- 🎯 Source citation for all information provided
-- 🔄 Real-time streaming text output as tokens arrive
-- 💾 PostgreSQL/PGVector for scalable knowledge storage
-- 🧠 Conversation history maintained across turns
-- 🎙️ Audio transcription with Whisper ASR (MP3 files)
-- 🏠 **Local LLM support via Ollama** - Run entirely on your machine without API costs!
+### Interface Options
+
+**Choose how you want to interact:**
+
+| Interface | Best For | Command |
+|-----------|----------|---------|
+| 🌐 **Web Interface** | Visual UI, file uploads, web crawling | `uv run python web_app.py` |
+| 💻 **CLI** | Terminal workflows, SSH access | `uv run python cli.py` |
+
+### Core Features
+
+- 💬 **Multiple Interfaces** - Web UI and CLI with streaming responses
+- 🔍 **Semantic Search** - Vector-based document search with PGVector
+- 📚 **Context-Aware Responses** - RAG pipeline for accurate answers
+- 🎯 **Source Citations** - All responses include document references
+- 🔄 **Real-time Streaming** - Token-by-token response streaming
+- 💾 **PostgreSQL/PGVector** - Scalable vector knowledge base
+- 🧠 **Conversation History** - Context maintained across turns
+- 🎙️ **Audio Transcription** - Whisper ASR for MP3 files
+- 🕷️ **Web Crawling** - Crawl documentation sites to markdown
+- 🏠 **Local LLM via Ollama** - Run entirely offline without API costs
+
+### Supported Document Formats
+
+| Format | Extensions | Processing |
+|--------|------------|------------|
+| 📄 PDF | `.pdf` | Docling conversion |
+| 📝 Word | `.docx`, `.doc` | Docling conversion |
+| 📊 PowerPoint | `.pptx`, `.ppt` | Docling conversion |
+| 📈 Excel | `.xlsx`, `.xls` | Docling conversion |
+| 🌐 HTML | `.html`, `.htm` | Docling conversion |
+| 📋 Markdown | `.md`, `.markdown` | Direct processing |
+| 📃 Text | `.txt` | Direct processing |
+| 🎵 Audio | `.mp3`, `.wav`, `.m4a` | Whisper transcription |
 
 ## Prerequisites
 
-- Python 3.9 or later
+- **Python 3.10 or later** (Python 3.11+ recommended for full compatibility)
 - PostgreSQL with PGVector extension (Supabase, Neon, self-hosted Postgres, etc.)
 - **Ollama** (for local LLM) OR OpenAI API key
   - Install Ollama: https://ollama.com/download
   - Pull models: `ollama pull <model>` (e.g., `ollama pull mistral`, `ollama pull nomic-embed-text`)
+
+### System Dependencies
+
+**macOS:**
+```bash
+# Install required libraries for audio/video processing
+brew install opus opusfile
+```
+
+**Linux (Ubuntu/Debian):**
+```bash
+sudo apt-get install libopus0 libopusfile0
+```
 
 ## Quick Start
 
@@ -99,33 +154,57 @@ You must set up your PostgreSQL database with the PGVector extension and create 
 
 The schema file (`sql/schema.sql`) creates:
 - `documents` table for storing original documents with metadata
-- `chunks` table for text chunks with 1536-dimensional embeddings
+- `chunks` table for text chunks with 768-dimensional embeddings
 - `match_chunks()` function for vector similarity search
 
-### 4. Ingest Documents
+### 4. Choose Your Interface
 
-Add your documents to the `documents/` folder. **Multiple formats supported via Docling**:
-
-**Supported Formats:**
-- 📄 **PDF** (`.pdf`)
-- 📝 **Word** (`.docx`, `.doc`)
-- 📊 **PowerPoint** (`.pptx`, `.ppt`)
-- 📈 **Excel** (`.xlsx`, `.xls`)
-- 🌐 **HTML** (`.html`, `.htm`)
-- 📋 **Markdown** (`.md`, `.markdown`)
-- 📃 **Text** (`.txt`)
-- 🎵 **Audio** (`.mp3`) - transcribed with Whisper
+#### Option A: Web Interface (Recommended for First-Time Users)
 
 ```bash
-# Ingest all supported documents in the documents/ folder
+# Start the web server
+uv run python web_app.py
+```
+
+Then open **http://localhost:8000** in your browser.
+
+**Web Interface Features:**
+- 📁 Drag-and-drop file upload
+- 🔄 Visual progress tracking for ingestion
+- 🕷️ Built-in web crawler
+- 📊 Real-time statistics dashboard
+- 💬 Chat with streaming responses
+
+#### Option B: CLI Interface
+
+```bash
+# Run the CLI agent
+uv run python cli.py
+```
+
+**CLI Commands:**
+- `help` - Show help information
+- `clear` - Clear conversation history
+- `stats` - Show session statistics
+- `exit` or `quit` - Exit the CLI
+
+### 5. Ingest Documents
+
+Add your documents to the `documents/` folder, then ingest:
+
+```bash
+# Ingest all documents in the documents/ folder
 # NOTE: By default, this CLEARS existing data before ingestion
 uv run python -m ingestion.ingest --documents documents/
 
 # Adjust chunk size (default: 1000)
 uv run python -m ingestion.ingest --documents documents/ --chunk-size 800
+
+# Append without cleaning (keep existing data)
+uv run python -m ingestion.ingest --documents documents/ --no-clean
 ```
 
-**⚠️ Important:** The ingestion process **automatically deletes all existing documents and chunks** from the database before adding new documents. This ensures a clean state and prevents duplicate data.
+**⚠️ Important:** The ingestion process **automatically deletes all existing documents and chunks** from the database before adding new documents (unless `--no-clean` is used). This ensures a clean state and prevents duplicate data.
 
 The ingestion pipeline will:
 1. **Auto-detect file type** and use Docling for PDFs, Office docs, HTML, and audio
@@ -135,64 +214,51 @@ The ingestion pipeline will:
 5. **Generate embeddings** using Ollama or OpenAI
 6. **Store in PostgreSQL** with PGVector for similarity search
 
-### 5. Run the Agent
-
-```bash
-# Run the Docling RAG Agent CLI
-uv run python cli.py
-```
-
-**Features:**
-- 🎨 **Colored output** for better readability
-- 📊 **Session statistics** (`stats` command)
-- 🔄 **Clear history** (`clear` command)
-- 💡 **Built-in help** (`help` command)
-- ✅ **Database health check** on startup
-- 🔍 **Real-time streaming** responses
-
-**Available commands:**
-- `help` - Show help information
-- `clear` - Clear conversation history
-- `stats` - Show session statistics
-- `exit` or `quit` - Exit the CLI
-
-**Example interaction:**
-```
-============================================================
-🤖 Docling RAG Knowledge Assistant
-============================================================
-AI-powered document search with streaming responses
-Type 'exit', 'quit', or Ctrl+C to exit
-Type 'help' for commands
-============================================================
-
-✓ Database connection successful
-✓ Knowledge base ready: 20 documents, 156 chunks
-Ready to chat! Ask me anything about the knowledge base.
-
-You: What topics are covered in the knowledge base?
-🤖 Assistant: Based on the knowledge base, the main topics include...
-
-────────────────────────────────────────────────────────────
-You: quit
-👋 Thank you for using the knowledge assistant. Goodbye!
-```
-
 ## Architecture
 
+### System Overview
+
 ```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│   CLI User  │────▶│  RAG Agent   │────▶│ PostgreSQL  │
-│   (Input)   │     │ (PydanticAI) │     │  PGVector   │
-└─────────────┘     └──────────────┘     └─────────────┘
-                           │
-                    ┌──────┴──────┐
-                    │             │
-              ┌─────▼────┐  ┌────▼─────┐
-              │  LLM     │  │Embeddings│
-              │ (Ollama  │  │(Ollama/  │
-              │ or OpenAI)│ │ OpenAI)  │
-              └──────────┘  └──────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                      USER INTERFACES                            │
+│  ┌─────────────────────┐           ┌─────────────────────┐      │
+│  │   Web Interface     │           │     CLI Interface   │      │
+│  │   (FastAPI + HTML)  │           │   (Python async)    │      │
+│  └──────────┬──────────┘           └──────────┬──────────┘      │
+└─────────────┼─────────────────────────────────┼────────────────┘
+              │                                 │
+              └─────────────┬───────────────────┘
+                            │
+              ┌─────────────▼───────────────────┐
+              │       RAG Agent Core            │
+              │  ┌───────────────────────────┐  │
+              │  │ PydanticAI Agent          │  │
+              │  │ + search_knowledge_base() │  │
+              │  └───────────────────────────┘  │
+              └─────────────┬───────────────────┘
+                            │
+         ┌──────────────────┼──────────────────┐
+         │                  │                  │
+┌────────▼────────┐  ┌──────▼───────┐  ┌──────▼───────┐
+│  Embeddings     │  │    LLM       │  │  PostgreSQL  │
+│  (Ollama/       │  │  (Ollama/    │  │  + PGVector  │
+│   OpenAI)       │  │   OpenAI)    │  │              │
+└─────────────────┘  └──────────────┘  └──────────────┘
+```
+
+### Data Flow
+
+```
+┌──────────────────┐     ┌─────────────────┐     ┌────────────────┐
+│  Data Sources    │────▶│   Ingestion     │────▶│  Knowledge     │
+│  • Local files   │     │   Pipeline      │     │  Base (PGVec)  │
+│  • Web crawl     │     │  (Docling)      │     │                │
+└──────────────────┘     └─────────────────┘     └───────┬────────┘
+                                                         │
+┌──────────────────┐     ┌─────────────────┐     ┌───────▼────────┐
+│   User Query     │◀────│   RAG Agent     │◀────│  Semantic      │
+│  (Web or CLI)    │     │  + Streaming    │     │  Search        │
+└──────────────────┘     └─────────────────┘     └────────────────┘
 ```
 
 ## Audio Transcription Feature
@@ -349,23 +415,129 @@ Returns chunks with:
 
 ```
 docling-rag-agent/
-├── cli.py                   # Enhanced CLI with colors and features (recommended)
+├── cli.py                   # Enhanced CLI with colors and features
 ├── rag_agent.py             # Basic CLI agent with PydanticAI
+├── web_app.py               # FastAPI web interface server ⭐ NEW
+│
+├── web/                     # Web interface frontend ⭐ NEW
+│   └── index.html           # Single-page application (HTML/CSS/JS)
+│
 ├── ingestion/
 │   ├── ingest.py            # Document ingestion pipeline
 │   ├── embedder.py          # Embedding generation with caching
 │   └── chunker.py           # Document chunking logic
+│
+├── web_crawler/             # Web scraping utilities ⭐ NEW
+│   ├── 1-crawl_single_page.py
+│   ├── 2-crawl_docs_sequential.py
+│   ├── 3-crawl_sitemap_in_parallel.py
+│   ├── 4-crawl_llms_txt.py
+│   ├── 5-crawl_site_recursively.py
+│   └── _crawl_utils.py      # Shared utilities for web app
+│
+├── docling_basics/          # Docling tutorials
+│   ├── 01_simple_pdf.py
+│   ├── 02_multiple_formats.py
+│   ├── 03_audio_transcription.py
+│   └── 04_hybrid_chunking.py
+│
 ├── utils/
 │   ├── providers.py         # OpenAI/Ollama model/client configuration
 │   ├── db_utils.py          # Database connection pooling
 │   └── models.py            # Pydantic models for config
+│
 ├── sql/
-│   └── schema.sql           # PostgreSQL schema with PGVector
+│   ├── schema.sql           # PostgreSQL schema with PGVector
+│   ├── backup.sh            # Database backup script
+│   └── restore.sh           # Database restore script
+│
 ├── documents/               # Sample documents for ingestion
 ├── pyproject.toml           # Project dependencies
 ├── .env.example             # Environment variables template
-└── README.md                # This file
+│
+├── README.md                # This file
+├── WEB_INTERFACE.md         # Web interface documentation ⭐ NEW
+└── DATA_PIPELINE.md         # Data collection guide ⭐ NEW
 ```
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [`README.md`](./README.md) | Main project documentation |
+| [`WEB_INTERFACE.md`](./dev_logs/WEB_INTERFACE.md) | Web interface usage guide |
+| [`DATA_PIPELINE.md`](./dev_logs/DATA_PIPELINE.md) | Data collection pipeline guide |
+| [`docling_basics/README.md`](./docling_basics/README.md) | Docling tutorials |
+
+## Troubleshooting
+
+### Python Version Error: `unsupported operand type(s) for |`
+
+**Error:**
+```
+TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'
+```
+
+**Cause:** You're using Python 3.9, but `crawl4ai` requires Python 3.10+.
+
+**Solution:** Upgrade to Python 3.10 or later (Python 3.11+ recommended):
+
+```bash
+# Check your Python version
+python --version
+
+# If using Python 3.9, recreate the virtual environment with Python 3.10+
+uv venv --python 3.11 --clear
+uv sync
+```
+
+### Port Already in Use
+
+**Error:**
+```
+ERROR: [Errno 48] Address already in use
+```
+
+**Solution:**
+```bash
+# Kill the process using port 8000
+lsof -ti:8000 | xargs kill -9
+
+# Or use a different port
+uv run python web_app.py --port 8001
+```
+
+### Missing System Libraries
+
+**Error:**
+```
+fatal error: 'opus/opus.h' file not found
+```
+
+**Solution:** Install required system dependencies:
+
+```bash
+# macOS
+brew install opus opusfile
+
+# Linux (Ubuntu/Debian)
+sudo apt-get install libopus0 libopusfile0
+```
+
+### Database Connection Failed
+
+**Error:**
+```
+Database not initialized. Please check your DATABASE_URL configuration.
+```
+
+**Solution:**
+1. Verify PostgreSQL is running: `pg_isready`
+2. Check `DATABASE_URL` in your `.env` file
+3. Ensure the database exists and PGVector extension is installed:
+   ```sql
+   CREATE EXTENSION IF NOT EXISTS vector;
+   ```
 
 ## Acknowledgments
 
