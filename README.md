@@ -10,10 +10,9 @@ randscript/
 ├── scanner/          # XSS vulnerability scanner
 ├── trading/          # Crypto trading calculator (BTC, ETH, SOL)
 ├── asmin/            # Archived Asmaul Husna website
-├── context_aware/    # Security analysis templates
 ├── secops/           # Security operations tools
-├── winapi/           # Windows API utilities
-└── llm_model/        # LLM training/tuning scripts
+├── winapi/           # Windows API utilities & game cheat examples
+└── llm_model/        # LLM training/tuning scripts & security templates
 ```
 
 ## Components
@@ -42,14 +41,8 @@ Crypto trading calculator with web interface supporting BTC, ETH, and SOL calcul
 ### [asmin/](asmin/)
 Complete archive of the "Asmaul Husna" (99 Names of Allah) website from [asmaulhusna.in](http://www.asmaulhusna.in/), preserved as of July 7, 2020.
 
-### [context_aware/](context_aware/)
-Security analysis templates including:
-- Static code analysis formats (`ca001-ca007`)
-- Threat modeling (`TM001`)
-- Security engineering prompts (`se001.md`)
-
 ### [secops/](secops/)
-Security operations tools for email analysis and related tasks.
+Security operations tools for email analysis.
 
 **Files:**
 - `emlckr.html` - Email analysis/locker interface
@@ -58,7 +51,11 @@ Security operations tools for email analysis and related tasks.
 Windows API utilities and system-level tools.
 
 **Files:**
-- `gcheats/` - Game cheat/anti-cheat code examples (C++, C#)
+- `gcheats/` - Game cheat/anti-cheat code examples:
+  - `ac_ammo.cpp` - Anti-cheat ammo detection
+  - `ac_PID.cpp` - Process ID validation
+  - `echo_anti-cheat.cpp` - Echo-based anti-cheat
+  - `get_baseaddress.cs` - Base address retrieval (C#)
 - `idafreekei.py` - IDA Free keygen tool
 
 **Tech:** Python, C++, C#
@@ -69,6 +66,10 @@ Scripts and tuning configurations for LLM training and fine-tuning.
 **Structure:**
 - `scripts/` - Model download, load, and security-focused LLM scripts
 - `tuning/` - AppSec model tuning configurations (`appsec_model01`, `appsec_model02`)
+- `context_aware/` - Security analysis templates:
+  - `ca001-ca007.md` - Static code analysis formats
+  - `TM001.md` - Threat modeling template
+  - `se001.md` - Security engineering prompts
 
 **Tech:** Python, Hugging Face
 
