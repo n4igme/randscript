@@ -2,7 +2,7 @@
 
 An intelligent agent that provides conversational access to a knowledge base stored in PostgreSQL with PGVector. Uses RAG (Retrieval Augmented Generation) to search through embedded documents and provide contextual, accurate responses with source citations. Supports multiple document formats including audio files with Whisper transcription.
 
-> **[Ollama Edition]** This is a modified version of the original [Docling RAG Agent](https://github.com/coleam00/ottomator-agents/tree/main/docling-rag-agent) from the [ottomator-agents](https://github.com/coleam00/ottomator-agents) repository, adapted to run with local LLMs via Ollama instead of requiring OpenAI API keys.
+> **Inspired by** the [Docling RAG Agent](https://github.com/coleam00/ottomator-agents/tree/main/docling-rag-agent) from [coleam00/ottomator-agents](https://github.com/coleam00/ottomator-agents), adapted to run with local LLMs via Ollama instead of requiring OpenAI API keys.
 
 ## 🌟 New: Web Interface Available!
 
@@ -541,7 +541,7 @@ Database not initialized. Please check your DATABASE_URL configuration.
 
 ## Acknowledgments
 
-This project is a modified version of the [Docling RAG Agent](https://github.com/coleam00/ottomator-agents/tree/main/docling-rag-agent) from the excellent [ottomator-agents](https://github.com/coleam00/ottomator-agents) collection by [coleam00](https://github.com/coleam00).
+This project is inspired by the [Docling RAG Agent](https://github.com/coleam00/ottomator-agents/tree/main/docling-rag-agent) from the excellent [ottomator-agents](https://github.com/coleam00/ottomator-agents) collection by [coleam00](https://github.com/coleam00).
 
 **Modifications made:**
 - Added Ollama support via `OPENAI_BASE_URL` environment variable
