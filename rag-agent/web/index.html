@@ -731,10 +731,13 @@
                         </div>
                     </div>
                     <div class="form-group">
-                        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-                            <input type="checkbox" id="cleanBefore" checked>
-                            <span>Clean existing data before ingestion</span>
+                        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; color: var(--warning-color);">
+                            <input type="checkbox" id="cleanBefore">
+                            <span>⚠️ Delete existing data before ingestion</span>
                         </label>
+                        <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.5rem;">
+                            When enabled, all existing documents and chunks will be removed from the database
+                        </p>
                     </div>
                     <button class="btn btn-primary" onclick="startIngestion()" id="ingestBtn">
                         <span>🔄</span> Start Ingestion
@@ -993,6 +996,18 @@
             const progressText = document.getElementById('ingestProgressText');
             const progressPercent = document.getElementById('ingestProgressPercent');
 
+            // Check if user wants to delete existing data
+            const cleanBefore = document.getElementById('cleanBefore').checked;
+            
+            if (cleanBefore) {
+                const confirmed = confirm(
+                    '⚠️ WARNING: This will DELETE all existing documents and chunks from the database.\n\n' +
+                    'This action CANNOT be undone.\n\n' +
+                    'Are you sure you want to continue?'
+                );
+                if (!confirmed) return;
+            }
+
             ingestBtn.disabled = true;
             progressContainer.classList.add('active');
             progressFill.style.width = '0%';
@@ -1006,7 +1021,7 @@
                         documents_path: document.getElementById('ingestPath').value,
                         chunk_size: parseInt(document.getElementById('chunkSize').value),
                         chunk_overlap: parseInt(document.getElementById('chunkOverlap').value),
-                        clean_before: document.getElementById('cleanBefore').checked
+                        clean_before: cleanBefore
                     })
                 });
 
