@@ -36,3 +36,5 @@ For security assessments, structure your response as follows:
 - **Secure Code Example**:
   ```[language]
   // Secure implementation showing proper validation/sanitization
+  ```
+"""
