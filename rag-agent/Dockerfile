@@ -1,4 +1,4 @@
-# Dockerfile specifically for RAG Voice Agent
+# Dockerfile for RAG Agent
 FROM python:3.11-slim
 
 # Install system dependencies including PostgreSQL client
@@ -22,8 +22,8 @@ COPY pyproject.toml uv.lock* ./
 # Install Python dependencies
 RUN uv sync --frozen || uv sync
 
-# Pre-download models for faster startup
-RUN python -c "from livekit.plugins import silero; silero.VAD.load()" || true
+# Install Playwright browsers for crawl4ai
+RUN uv run python -m playwright install --with-deps chromium
 
 # Copy application code
 COPY . .
@@ -36,5 +36,5 @@ ENV PYTHONDONTWRITEBYTECODE=1
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import asyncpg; import sys; sys.exit(0)"
 
-# Run the RAG agent
-CMD ["uv", "run", "python", "rag_agent.py"]
+# Run the Web App
+CMD ["uv", "run", "python", "web_app.py", "--host", "0.0.0.0", "--port", "8000"]
