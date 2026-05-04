@@ -11,14 +11,21 @@ from pathlib import Path
 from urllib.parse import urldefrag, urlparse
 from crawl4ai import (
     AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode,
-    MemoryAdaptiveDispatcher
+    MemoryAdaptiveDispatcher, UndetectedAdapter
 )
+from crawl4ai.async_crawler_strategy import AsyncPlaywrightCrawlerStrategy
 
 async def crawl_recursive_batch(start_urls, max_depth=3, max_concurrent=10, output_dir="documents/crawled"):
-    browser_config = BrowserConfig(headless=True, verbose=False)
+    browser_config = BrowserConfig(
+        headless=True, 
+        verbose=False,
+        enable_stealth=True,
+        user_agent_mode="random"
+    )
     run_config = CrawlerRunConfig(
         cache_mode=CacheMode.BYPASS,
-        stream=False
+        stream=False,
+        page_timeout=120000  # Increase timeout to 2 minutes
     )
     dispatcher = MemoryAdaptiveDispatcher(
         memory_threshold_percent=70.0,      # Don't exceed 70% memory usage
@@ -37,7 +44,13 @@ async def crawl_recursive_batch(start_urls, max_depth=3, max_concurrent=10, outp
         return urldefrag(url)[0]
     current_urls = set([normalize_url(u) for u in start_urls])
 
-    async with AsyncWebCrawler(config=browser_config) as crawler:
+    # Initialize strategy with UndetectedAdapter for better stealth
+    strategy = AsyncPlaywrightCrawlerStrategy(
+        browser_config=browser_config,
+        browser_adapter=UndetectedAdapter()
+    )
+
+    async with AsyncWebCrawler(crawler_strategy=strategy) as crawler:
         for depth in range(max_depth):
             print(f"\n=== Crawling Depth {depth+1} ===")
             # Only crawl URLs we haven't seen yet (ignoring fragments)

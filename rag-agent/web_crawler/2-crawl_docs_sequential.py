@@ -1,6 +1,7 @@
 import asyncio
 from typing import List
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
+from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, UndetectedAdapter
+from crawl4ai.async_crawler_strategy import AsyncPlaywrightCrawlerStrategy
 from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 import requests
 from xml.etree import ElementTree
@@ -12,14 +13,23 @@ async def crawl_sequential(urls: List[str]):
         headless=True,
         # For better performance in Docker or low-memory environments:
         extra_args=["--disable-gpu", "--disable-dev-shm-usage", "--no-sandbox"],
+        enable_stealth=True,
+        user_agent_mode="random"
     )
 
     crawl_config = CrawlerRunConfig(
-        markdown_generator=DefaultMarkdownGenerator()
+        markdown_generator=DefaultMarkdownGenerator(),
+        page_timeout=120000  # Increase timeout to 2 minutes
+    )
+
+    # Initialize strategy with UndetectedAdapter for better stealth
+    strategy = AsyncPlaywrightCrawlerStrategy(
+        browser_config=browser_config,
+        browser_adapter=UndetectedAdapter()
     )
 
     # Create the crawler (opens the browser)
-    crawler = AsyncWebCrawler(config=browser_config)
+    crawler = AsyncWebCrawler(crawler_strategy=strategy)
     await crawler.start()
 
     try:
