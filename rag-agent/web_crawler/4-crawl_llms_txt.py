@@ -6,16 +6,30 @@ Prints each chunk for further processing or inspection.
 Usage: Set the target URL in main(), then run as a script.
 """
 import asyncio
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
+from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, UndetectedAdapter
+from crawl4ai.async_crawler_strategy import AsyncPlaywrightCrawlerStrategy
 import re
 
 async def scrape_and_chunk_markdown(url: str):
     """
     Scrape a Markdown page and split into chunks by # and ## headers.
     """
-    browser_config = BrowserConfig(headless=True)
-    crawl_config = CrawlerRunConfig()
-    async with AsyncWebCrawler(config=browser_config) as crawler:
+    browser_config = BrowserConfig(
+        headless=True,
+        enable_stealth=True,
+        user_agent_mode="random"
+    )
+    crawl_config = CrawlerRunConfig(
+        page_timeout=120000
+    )
+
+    # Initialize strategy with UndetectedAdapter for better stealth
+    strategy = AsyncPlaywrightCrawlerStrategy(
+        browser_config=browser_config,
+        browser_adapter=UndetectedAdapter()
+    )
+
+    async with AsyncWebCrawler(crawler_strategy=strategy) as crawler:
         result = await crawler.arun(url=url, config=crawl_config)
         if not result.success:
             print(f"Failed to crawl {url}: {result.error_message}")

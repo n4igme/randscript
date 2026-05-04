@@ -346,6 +346,31 @@ sudo apt-get install chromium-browser
 export CRAWL4AI_CHROMIUM_PATH=$(which chromium)
 ```
 
+### Issue: Connection Closed (net::ERR_CONNECTION_CLOSED)
+
+This error often indicates the server has detected a bot and abruptly closed the connection.
+
+**Solution:** Use "Stealth Mode" and random User-Agents.
+```python
+browser_config = BrowserConfig(
+    enable_stealth=True,      # Bypass common bot detection
+    user_agent_mode="random"  # Rotate browser identity
+)
+```
+*Note: All scripts in this directory have been updated to use the **UndetectedAdapter** (via `patchright`) and a 120s timeout by default for maximum stealth.*
+
+### Issue: Navigation Timeouts (60000ms exceeded)
+
+Some slow documentation sites might exceed the default 60-second timeout.
+
+**Solution:** Increase `page_timeout` in `CrawlerRunConfig`:
+```python
+crawl_config = CrawlerRunConfig(
+    page_timeout=120000  # Increase to 120 seconds
+)
+```
+*Note: All scripts in this directory have been updated to use a 120s timeout by default.*
+
 ### Issue: Memory Exhaustion
 
 **Solution:** Reduce concurrency

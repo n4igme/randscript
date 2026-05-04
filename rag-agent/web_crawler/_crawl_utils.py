@@ -37,7 +37,8 @@ async def crawl_site_recursive(
     """
     # Lazy import to avoid import errors when not using crawl functionality
     try:
-        from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode, MemoryAdaptiveDispatcher
+        from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode, MemoryAdaptiveDispatcher, UndetectedAdapter
+        from crawl4ai.async_crawler_strategy import AsyncPlaywrightCrawlerStrategy
     except (TypeError, ImportError) as e:
         logger.error(f"crawl4ai import failed: {e}")
         raise RuntimeError("crawl4ai requires Python 3.10+. Please upgrade Python or install a compatible version.")
@@ -45,12 +46,15 @@ async def crawl_site_recursive(
     browser_config = BrowserConfig(
         headless=True,
         verbose=False,
-        extra_args=["--disable-gpu", "--disable-dev-shm-usage", "--no-sandbox"]
+        extra_args=["--disable-gpu", "--disable-dev-shm-usage", "--no-sandbox"],
+        enable_stealth=True,
+        user_agent_mode="random"
     )
 
     run_config = CrawlerRunConfig(
         cache_mode=CacheMode.BYPASS,
-        stream=False
+        stream=False,
+        page_timeout=120000,  # Increase timeout to 2 minutes
     )
 
     dispatcher = MemoryAdaptiveDispatcher(
@@ -70,7 +74,13 @@ async def crawl_site_recursive(
     current_urls = [normalize_url(start_url)]
     saved_files = []
 
-    async with AsyncWebCrawler(config=browser_config) as crawler:
+    # Initialize strategy with UndetectedAdapter for better stealth
+    strategy = AsyncPlaywrightCrawlerStrategy(
+        browser_config=browser_config,
+        browser_adapter=UndetectedAdapter()
+    )
+
+    async with AsyncWebCrawler(crawler_strategy=strategy) as crawler:
         for depth in range(max_depth):
             logger.info(f"Crawling depth {depth + 1}/{max_depth}")
 
@@ -140,15 +150,24 @@ async def crawl_single_url(
     browser_config = BrowserConfig(
         headless=True,
         verbose=False,
-        extra_args=["--disable-gpu", "--disable-dev-shm-usage", "--no-sandbox"]
+        extra_args=["--disable-gpu", "--disable-dev-shm-usage", "--no-sandbox"],
+        enable_stealth=True,
+        user_agent_mode="random"
     )
 
     run_config = CrawlerRunConfig(
         cache_mode=CacheMode.BYPASS,
-        stream=False
+        stream=False,
+        page_timeout=120000,  # Increase timeout to 2 minutes
     )
 
-    async with AsyncWebCrawler(config=browser_config) as crawler:
+    # Initialize strategy with UndetectedAdapter for better stealth
+    strategy = AsyncPlaywrightCrawlerStrategy(
+        browser_config=browser_config,
+        browser_adapter=UndetectedAdapter()
+    )
+
+    async with AsyncWebCrawler(crawler_strategy=strategy) as crawler:
         result = await crawler.arun(url, config=run_config)
 
         if not result.success:
