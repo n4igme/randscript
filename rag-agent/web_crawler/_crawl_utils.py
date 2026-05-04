@@ -8,7 +8,7 @@ Note: Requires Python 3.10+ for crawl4ai compatibility.
 
 import asyncio
 from pathlib import Path
-from urllib.parse import urldefrag, urlparse
+from urllib.parse import urldefrag, urlparse, urljoin
 from typing import List, Optional, Callable
 import logging
 
@@ -71,6 +71,10 @@ async def crawl_site_recursive(
     def normalize_url(url: str) -> str:
         return urldefrag(url)[0]
 
+    def is_binary_file(url: str) -> bool:
+        binary_extensions = {'.exe', '.zip', '.pdf', '.dmg', '.bin', '.iso', '.msi'}
+        return any(url.lower().endswith(ext) for ext in binary_extensions)
+
     current_urls = [normalize_url(start_url)]
     saved_files = []
 
@@ -121,8 +125,12 @@ async def crawl_site_recursive(
 
                     # Collect internal links for next depth
                     for link in result.links.get("internal", []):
-                        next_url = normalize_url(link["href"])
-                        if next_url not in visited:
+                        raw_href = link["href"]
+                        # Resolve relative URLs against the current page URL
+                        absolute_url = urljoin(norm_url, raw_href)
+                        next_url = normalize_url(absolute_url)
+                        
+                        if next_url not in visited and not is_binary_file(next_url):
                             next_level_urls.add(next_url)
                 else:
                     logger.error(f"[ERROR] {result.url}: {result.error_message}")
