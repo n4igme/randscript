@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Randscript - Utility Scripts Collection</title>
+    <title>Randscript - Research Lab</title>
     <style>
         * {
             margin: 0;
@@ -294,117 +294,106 @@
     <div class="container">
         <div class="header">
             <h1>Randscript</h1>
-            <p>A curated research laboratory of utility scripts for AI/LLM development, security research, web archiving, and automation</p>
+            <p>A personal research lab of utility scripts and tools for AI/LLM development, security research, and automation</p>
             <div class="tagline">
-                <span>🤖 AI/LLM</span>
-                <span>🔐 Security</span>
-                <span>🕷️ Automation</span>
-                <span>📚 Archives</span>
+                <span>AI/LLM</span>
+                <span>Security</span>
+                <span>Automation</span>
+                <span>Archives</span>
             </div>
         </div>
 
         <div class="quick-start">
-            <h3>🚀 Quick Start</h3>
-            <code><span class="comment"># Clone and navigate to any component</span>
+            <h3>Quick Start</h3>
+            <code><span class="comment"># Clone the repo</span>
 <span class="command">git clone</span> https://github.com/n4igme/randscript.git
 <span class="command">cd</span> randscript
 
-<span class="comment"># RAG Agent (Featured) - Install dependencies</span>
+<span class="comment"># RAG Agent (featured)</span>
 <span class="command">cd</span> rag-agent
-<span class="command">uv sync</span>
-<span class="command">cp</span> .env.example .env
-<span class="command">uv run python</span> web_app.py
+<span class="command">uv sync</span> && <span class="command">cp</span> .env.example .env
+<span class="command">uv run python</span> web_app.py    <span class="comment"># Web UI at localhost:8000</span>
 
 <span class="comment"># XSS Scanner</span>
-<span class="command">cd</span> scanner
-<span class="command">python</span> xss_scanner.py
-
-<span class="comment"># LLM Security Skills</span>
-<span class="command">cd</span> ai_llm/skills
-<span class="comment"># scode/ → 5-phase bug bounty with 28 vuln scanners</span>
-<span class="comment"># ptest/ → Pentest framework with gateway system</span></code>
+<span class="command">cd</span> scanner && <span class="command">python</span> xss_scanner.py</code>
         </div>
 
         <div class="grid">
-            <!-- RAG Agent - Featured -->
             <div class="card featured">
                 <div class="card-header">
-                    <div class="card-icon">🤖</div>
+                    <div class="card-icon">&#x1f916;</div>
                     <div>
-                        <h2>RAG Agent <span style="font-size: 0.7em; color: #667eea;">⭐ Featured</span></h2>
+                        <h2>RAG Agent</h2>
                         <span class="card-path">rag-agent/</span>
                     </div>
                 </div>
-                <p>Full-featured RAG system with local LLM support via Ollama. Features semantic chunking, high-fidelity document parsing via Docling, and audio ingestion via Whisper. Web UI + CLI interfaces.</p>
+                <p>Local RAG system with Ollama. Semantic chunking, document parsing via Docling, audio ingestion via Whisper, web crawling, and PostgreSQL/PGVector for vector search. Web UI + CLI.</p>
                 <div class="card-features">
-                    <span class="feature-tag">Web Interface</span>
+                    <span class="feature-tag">Web UI</span>
                     <span class="feature-tag">CLI</span>
                     <span class="feature-tag">Web Crawler</span>
                     <span class="feature-tag">Audio Transcription</span>
-                    <span class="feature-tag">Docker Ready</span>
+                    <span class="feature-tag">Docker</span>
                 </div>
                 <div class="card-tags">
                     <span class="tag python">Python</span>
+                    <span class="tag ai">PydanticAI</span>
                     <span class="tag ai">Ollama</span>
                     <span class="tag python">PGVector</span>
                     <span class="tag docker">Docker</span>
-                    <span class="tag python">FastAPI</span>
                 </div>
-                <a href="rag-agent/" class="card-link">Explore RAG Agent →</a>
+                <a href="https://github.com/n4igme/randscript/tree/main/rag-agent" class="card-link">View Source &rarr;</a>
             </div>
 
-            <!-- Scanner -->
             <div class="card">
                 <div class="card-header">
-                    <div class="card-icon">🔍</div>
-                    <div>
-                        <h2>XSS Scanner</h2>
-                        <span class="card-path">scanner/</span>
-                    </div>
-                </div>
-                <p>Automated XSS vulnerability scanner for API security testing. Parses OpenAPI/Swagger specifications and tests endpoints with multiple payloads.</p>
-                <div class="card-tags">
-                    <span class="tag python">Python</span>
-                    <span class="tag security">Security</span>
-                    <span class="tag python">YAML</span>
-                </div>
-                <a href="scanner/" class="card-link">Explore Scanner →</a>
-            </div>
-
-            <!-- LLM Skills -->
-            <div class="card">
-                <div class="card-header">
-                    <div class="card-icon">🧠</div>
+                    <div class="card-icon">&#x1f9e0;</div>
                     <div>
                         <h2>LLM Security Skills</h2>
                         <span class="card-path">ai_llm/skills/</span>
                     </div>
                 </div>
-                <p>Structured AI-assisted security workflows. Includes a 5-phase bug bounty methodology with 28 vulnerability scanners (scode), a pentest framework with quality gates (ptest), and a finding-to-Jira converter (parse-finding).</p>
+                <p>Structured AI-assisted security workflows. 5-phase bug bounty methodology with 22 vulnerability scanners (scode), pentest framework with quality gates (ptest), and finding-to-Jira converter (parse-finding).</p>
                 <div class="card-features">
-                    <span class="feature-tag">Bug Bounty (scode)</span>
-                    <span class="feature-tag">Pentest (ptest)</span>
+                    <span class="feature-tag">Bug Bounty</span>
+                    <span class="feature-tag">Pentest</span>
+                    <span class="feature-tag">Web3</span>
                     <span class="feature-tag">Jira Export</span>
-                    <span class="feature-tag">Web3 Scanners</span>
                 </div>
                 <div class="card-tags">
                     <span class="tag ai">Prompt Engineering</span>
                     <span class="tag security">Security</span>
                     <span class="tag ai">LLM Workflows</span>
                 </div>
-                <a href="ai_llm/" class="card-link">Explore LLM Skills →</a>
+                <a href="https://github.com/n4igme/randscript/tree/main/ai_llm/skills" class="card-link">View Source &rarr;</a>
             </div>
 
-            <!-- WinAPI -->
             <div class="card">
                 <div class="card-header">
-                    <div class="card-icon">🪟</div>
+                    <div class="card-icon">&#x1f50d;</div>
+                    <div>
+                        <h2>XSS Scanner</h2>
+                        <span class="card-path">scanner/</span>
+                    </div>
+                </div>
+                <p>Automated XSS vulnerability scanner for API security testing. Parses OpenAPI/Swagger specs and tests endpoints with 9 common payloads. Reflection-based detection with email alerts and HTML reports.</p>
+                <div class="card-tags">
+                    <span class="tag python">Python</span>
+                    <span class="tag security">Security</span>
+                    <span class="tag python">PyYAML</span>
+                </div>
+                <a href="https://github.com/n4igme/randscript/tree/main/scanner" class="card-link">View Source &rarr;</a>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon">&#x1fa9f;</div>
                     <div>
                         <h2>WinAPI Tools</h2>
                         <span class="card-path">winapi/</span>
                     </div>
                 </div>
-                <p>Windows API utilities and reverse engineering tools. Game cheat/anti-cheat examples and IDA Pro utilities for educational purposes.</p>
+                <p>Windows API research and reverse engineering tools. Anti-cheat PoCs (process scanning, file hashing, process termination) and IDA Pro utilities. Educational purposes.</p>
                 <div class="card-features">
                     <span class="feature-tag">Anti-Cheat PoCs</span>
                     <span class="feature-tag">Reverse Engineering</span>
@@ -415,62 +404,56 @@
                     <span class="tag cpp">C#</span>
                     <span class="tag security">Windows API</span>
                 </div>
-                <a href="winapi/" class="card-link">Explore WinAPI →</a>
+                <a href="https://github.com/n4igme/randscript/tree/main/winapi" class="card-link">View Source &rarr;</a>
             </div>
 
-            <!-- SecOps -->
             <div class="card">
                 <div class="card-header">
-                    <div class="card-icon">🔐</div>
+                    <div class="card-icon">&#x1f4e7;</div>
                     <div>
                         <h2>SecOps</h2>
                         <span class="card-path">secops/</span>
                     </div>
                 </div>
-                <p>Security operations tools for email forensics. Client-side EML analyzer with SPF/DKIM/DMARC validation, URL defanging, and phishing detection.</p>
+                <p>Client-side email forensics tool. Analyzes .eml files with SPF/DKIM/DMARC validation, URL defanging, and phishing detection. Runs entirely in the browser.</p>
                 <div class="card-tags">
                     <span class="tag javascript">HTML</span>
                     <span class="tag javascript">JavaScript</span>
                     <span class="tag security">Security</span>
                 </div>
-                <a href="secops/" class="card-link">Explore SecOps →</a>
+                <a href="https://github.com/n4igme/randscript/tree/main/secops" class="card-link">View Source &rarr;</a>
             </div>
 
-            <!-- Asmin Archive -->
             <div class="card">
                 <div class="card-header">
-                    <div class="card-icon">🕌</div>
+                    <div class="card-icon">&#x1f54c;</div>
                     <div>
                         <h2>Asmin Archive</h2>
                         <span class="card-path">asmin/</span>
                     </div>
                 </div>
-                <p>Complete archive of the "Asmaul Husna" (99 Names of Allah) website, preserved from July 7, 2020. Indonesian language interface.</p>
+                <p>Complete archive of the "Asmaul Husna" (99 Names of Allah) website, preserved from July 2020. Indonesian language interface.</p>
                 <div class="card-tags">
                     <span class="tag javascript">Archive</span>
                     <span class="tag javascript">HTML</span>
                     <span class="tag javascript">CSS</span>
                 </div>
-                <a href="asmin/" class="card-link">View Archive →</a>
+                <a href="asmin/" class="card-link">View Archive &rarr;</a>
             </div>
         </div>
 
         <div class="warning">
-            <h4>⚠️ Legal & Ethical Notice</h4>
+            <h4>Legal & Ethical Notice</h4>
             <p>This repository is for <strong>educational and research purposes only</strong>. Use security tools only on systems you own or have explicit permission to test. Comply with all applicable laws and regulations.</p>
         </div>
 
         <div class="footer">
-            <p><strong>Randscript</strong> · Educational and research purposes</p>
+            <p><strong>Randscript</strong></p>
             <div class="footer-links">
                 <a href="https://github.com/n4igme/randscript">GitHub</a>
-                <a href="README.md">README</a>
-                <a href="rag-agent/">RAG Agent</a>
-                <a href="LICENSE">MIT License</a>
+                <a href="https://github.com/n4igme/randscript/blob/main/README.md">README</a>
+                <a href="https://github.com/n4igme/randscript/blob/main/LICENSE">MIT License</a>
             </div>
-            <p style="margin-top: 15px; font-size: 0.85rem; color: #999;">
-                Made with ❤️ for learning, research, and experimentation
-            </p>
         </div>
     </div>
 </body>
