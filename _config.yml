@@ -1,0 +1,13 @@
+exclude:
+  - ai_llm/
+  - rag-agent/
+  - scanner/
+  - winapi/
+  - secops/
+  - "*.py"
+  - "*.cpp"
+  - "*.cs"
+  - docker-compose.yml
+  - Dockerfile
+  - pyproject.toml
+  - uv.lock
