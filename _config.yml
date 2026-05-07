@@ -1,9 +1,7 @@
 exclude:
   - ai_llm/
-  - rag-agent/
   - scanner/
   - winapi/
-  - secops/
   - "*.py"
   - "*.cpp"
   - "*.cs"
@@ -11,3 +9,10 @@ exclude:
   - Dockerfile
   - pyproject.toml
   - uv.lock
+  - "*.lock"
+  - __pycache__/
+  - .env
+  - .env.example
+
+include:
+  - rag-agent/index.html
