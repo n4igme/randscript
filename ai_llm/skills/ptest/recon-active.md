@@ -1,134 +1,104 @@
 ---
 name: recon-active
-description: Active reconnaissance and enumeration — directly probe targets to identify services and vulnerabilities.
-version: 2.1.0
+description: Active reconnaissance — network-layer discovery through direct probing of targets.
+version: 3.0.0
 metadata:
-  category: enumeration
+  category: reconnaissance
   phase: 2
   scope_types: [web, network, cloud, mobile, mixed]
 ---
 
-# Skill: Active Reconnaissance & Enumeration
+# Skill: Active Reconnaissance
 
 ## When to Use
 - After passive recon is complete (Gateway 1 PASSED).
-- When you need to identify live services, versions, and potential attack vectors.
+- When you need to identify live hosts, open ports, and running services.
+
+## Scope
+This phase covers **network-layer discovery only**:
+- Port scanning
+- Service detection and banner grabbing
+- OS fingerprinting
+- Network topology mapping
+
+Application-layer enumeration (directories, APIs, parameters) belongs in Phase 3 (Enumeration).
 
 ## Techniques & Tools
 
-### 1. Port Scanning
-Identify open ports and services.
+### 1. Port Scanning (MANDATORY: nmap)
+Identify open ports and services on all in-scope hosts.
 ```bash
-# TCP full scan
-nmap -sV -sC -p- -oA ./ptest-output/recon-active/nmap-tcp target.com
+# Full TCP scan on primary targets
+nmap -sV -sC -p- -oA ./ptest-output/recon-active/nmap-full-tcp target.com
 
-# UDP top 1000
-nmap -sU --top-ports 1000 -oA ./ptest-output/recon-active/nmap-udp target.com
+# Fast initial scan (top ports)
+nmap -sV --top-ports 1000 -T4 -oA ./ptest-output/recon-active/nmap-top1000 target.com
 
-# Fast initial scan
-nmap -sV --top-ports 100 -T4 target.com
+# UDP top 100
+nmap -sU --top-ports 100 -oA ./ptest-output/recon-active/nmap-udp target.com
+
+# Scan multiple IPs from passive recon
+nmap -sV --top-ports 1000 -T4 -iL ./ptest-output/recon-passive/live-ips.txt -oA ./ptest-output/recon-active/nmap-all-hosts
 
 # Masscan for speed on large ranges
 masscan -p1-65535 --rate=1000 -oL ./ptest-output/recon-active/masscan.txt 10.0.0.0/24
 ```
 
-### 2. Service Enumeration
-Banner grabbing and version detection.
+**Requirements:**
+- Scan ALL unique public IPs discovered in Phase 1 (not just the primary target)
+- Document every open port with service version
+- If nmap is unavailable, document the gap and use alternative (masscan + banner grab)
+
+### 2. Service Detection & Banner Grabbing
+Detailed version fingerprinting on discovered open ports.
 ```bash
-# Detailed service probing
-nmap -sV --version-intensity 5 -p 22,80,443,8080 target.com
+# Intensive version detection
+nmap -sV --version-intensity 9 -p <open-ports> target.com
 
-# Netcat banner grab
-nc -nv target.com 80 <<< "HEAD / HTTP/1.0\r\n\r\n"
+# Manual banner grab
+nc -nv target.com 22 <<< ""
+curl -sI http://target.com:8080
 
-# SMB enumeration
+# SMB enumeration (if port 445 open)
 enum4linux -a target.com
 smbclient -L //target.com -N
 
-# SNMP
+# SNMP (if port 161 open)
 snmpwalk -v2c -c public target.com
 ```
 
-### 3. Web Enumeration
-Directory brute-forcing, vhost discovery, API mapping.
+### 3. OS Fingerprinting
 ```bash
-# Directory brute-force
-gobuster dir -u https://target.com -w /usr/share/wordlists/dirb/common.txt -o ./ptest-output/recon-active/gobuster.txt
+# OS detection
+nmap -O target.com
 
-# feroxbuster (recursive)
-feroxbuster -u https://target.com -w /usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt -o ./ptest-output/recon-active/ferox.txt
-
-# Virtual host discovery
-gobuster vhost -u https://target.com -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt
-
-# API endpoint discovery
-ffuf -u https://target.com/api/FUZZ -w /usr/share/seclists/Discovery/Web-Content/api/api-endpoints.txt -mc 200,301,302,403
-
-# Parameter discovery
-arjun -u https://target.com/endpoint
+# TTL-based inference
+ping -c 1 target.com | grep ttl
 ```
 
-### 4. Vulnerability Scanning
-Automated scanning for known CVEs.
+### 4. Network Topology Mapping
 ```bash
-# Nuclei
-nuclei -u https://target.com -o ./ptest-output/recon-active/nuclei.txt
+# Traceroute
+traceroute target.com
 
-# Nikto (web server scanner)
-nikto -h https://target.com -o ./ptest-output/recon-active/nikto.txt
-
-# Nmap NSE vulnerability scripts
-nmap --script vuln -p 80,443 target.com
-```
-
-### 5. Authentication Probing
-Default credentials and auth mechanism analysis.
-```bash
-# Check for default creds on common services
-hydra -L users.txt -P /usr/share/seclists/Passwords/Default-Credentials/default-passwords.txt target.com ssh -t 4
-
-# Web login page discovery
-curl -sI https://target.com/admin
-curl -sI https://target.com/login
-curl -sI https://target.com/wp-admin
-
-# Auth mechanism fingerprinting
-curl -v https://target.com/api/auth 2>&1 | grep -i "www-authenticate\|set-cookie\|x-auth"
-```
-
-### 6. SSL/TLS Analysis
-Certificate and cipher evaluation.
-```bash
-# testssl.sh
-testssl.sh --html https://target.com
-
-# sslscan
-sslscan target.com
-
-# Nmap SSL scripts
-nmap --script ssl-enum-ciphers -p 443 target.com
-
-# Certificate details
-openssl s_client -connect target.com:443 </dev/null 2>/dev/null | openssl x509 -text -noout
+# Identify shared hosting / CDN
+# Compare IPs across subdomains to identify load balancers, CDNs, shared infrastructure
 ```
 
 ## Scope Type Adjustments
 
-- **web/API only:** Focus on techniques 3, 4, 5, 6. Skip deep network scanning.
-- **network:** Focus on techniques 1, 2, 4, 5. Expand port scanning to full ranges.
-- **cloud:** Add cloud-specific enumeration (S3 buckets, Azure blobs, GCP storage).
-- **mobile:** Focus on API endpoints the app communicates with, certificate pinning checks.
+- **web/API:** Focus on HTTP/HTTPS ports (80, 443, 8080, 8443, 3000, 5000, 8000). Light UDP scan.
+- **network:** Full TCP + UDP scan. All techniques apply.
+- **cloud:** Focus on common cloud service ports. Check for metadata endpoints.
+- **mobile:** Focus on API backend ports the app communicates with.
 
 ## Output
 
 Document findings in `./ptest-output/recon-active/`:
-- `summary.md` — consolidated enumeration results
-- `ports-services.md` — open ports and services per host
-- `versions.md` — software versions identified
-- `web-enum.md` — web application enumeration results
-- `vectors.md` — potential vulnerability vectors, prioritized
-- `auth-mechanisms.md` — authentication mechanisms found
-- `misconfigurations.md` — misconfigurations detected
+- `summary.md` — consolidated scan results
+- `ports-services.md` — open ports and services per host (table format)
+- `nmap-*.xml/txt` — raw nmap output files
+- `network-map.md` — topology and infrastructure notes
 
 Write `./ptest-output/recon-active/checklist.md`:
 
@@ -137,17 +107,17 @@ Write `./ptest-output/recon-active/checklist.md`:
 
 | # | Technique | Status | Notes |
 |---|-----------|--------|-------|
-| 1 | Port Scanning | PENDING | |
-| 2 | Service Enumeration | PENDING | |
-| 3 | Web Enumeration | PENDING | |
-| 4 | Vulnerability Scanning | PENDING | |
-| 5 | Authentication Probing | PENDING | |
-| 6 | SSL/TLS Analysis | PENDING | |
+| 1 | Port Scanning (nmap — MANDATORY) | PENDING | |
+| 2 | Service Detection & Banner Grabbing | PENDING | |
+| 3 | OS Fingerprinting | PENDING | |
+| 4 | Network Topology Mapping | PENDING | |
 ```
 
+Mark each technique as `DONE` or `SKIPPED (reason)` after execution.
+
 ## Exit Criteria
-- [ ] All in-scope hosts port-scanned.
-- [ ] Service versions fingerprinted.
-- [ ] Web applications enumerated (directories, endpoints).
-- [ ] Potential attack vectors prioritized.
+- [ ] All in-scope public IPs port-scanned (nmap executed).
+- [ ] Open ports documented with service versions.
+- [ ] Network topology understood (CDN, load balancers, shared infra).
 - [ ] Checklist shows all applicable techniques executed.
+- [ ] Mandatory tool (nmap) was run — or gap documented with justification.
