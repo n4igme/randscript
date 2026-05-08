@@ -1,24 +1,26 @@
 ---
 name: report
 description: Compile all findings into a structured penetration test report.
-version: 2.1.0
+version: 3.0.0
 metadata:
   category: reporting
-  phase: 5
+  phase: 8
   scope_types: [web, network, cloud, mobile, mixed]
 ---
 
 # Skill: Pentest Report Generation
 
 ## When to Use
-- After post-exploitation is complete (Gateway 4 PASSED).
+- After post-exploitation is complete (Gateway 7 PASSED).
 - Final phase of the engagement.
 
 ## Report Structure
 1. **Executive Summary:** High-level overview for non-technical stakeholders.
-2. **Scope & Methodology:** What was tested, rules of engagement, tools used.
-3. **Findings Summary:** Table of all findings with severity ratings.
-4. **Detailed Findings:** For each vulnerability (use Finding Template from SKILL.md):
+2. **Scope & Methodology:** What was tested, rules of engagement, tools used, 8-phase methodology.
+3. **Attack Surface Overview:** Asset inventory, network topology, technology stack (from Phase 4).
+4. **Threat Model:** Attack trees and prioritized vectors (from Phase 5).
+5. **Findings Summary:** Table of all findings with severity ratings.
+6. **Detailed Findings:** For each vulnerability (use Finding Template from SKILL.md):
    - Title and severity (Critical/High/Medium/Low/Info)
    - Affected asset
    - Description
@@ -27,11 +29,16 @@ metadata:
    - Impact
    - Remediation recommendation
    - CVSS score
-5. **Attack Narrative:** Story of the engagement from recon to final impact.
-6. **Remediation Roadmap:** Prioritized fix list.
+7. **Attack Narrative:** Story of the engagement from recon to final impact.
+8. **Remediation Roadmap:** Prioritized fix list.
+9. **Appendices:**
+   - A: Full asset inventory
+   - B: Dismissed assets and false positives
+   - C: Tool output summaries
+   - D: Vulnerability scan results
 
 ## Procedure
-1. **Aggregate:** Collect all findings from `./ptest-output/exploit/` and `./ptest-output/post-exploit/`.
+1. **Aggregate:** Collect all findings from all phases (Phases 1-7).
 2. **Include Escalations:** Merge any findings from `./ptest-output/escalations/`.
 3. **Deduplicate:** Merge related findings.
 4. **Classify:** Assign final severity ratings (CVSS 3.1).
@@ -54,6 +61,7 @@ Final report in `./ptest-output/report/pentest-report.md`.
 Optionally generate:
 - `./ptest-output/report/executive-summary.md` — standalone exec summary
 - `./ptest-output/report/remediation-roadmap.md` — prioritized fix list for engineering
+- `./ptest-output/report/attack-narrative.md` — full attack story
 
 ## Exit Criteria
 - [ ] All findings included with evidence.
@@ -61,4 +69,6 @@ Optionally generate:
 - [ ] Remediation recommendations provided.
 - [ ] Executive summary written.
 - [ ] Attack narrative complete.
+- [ ] Attack surface overview included.
+- [ ] Threat model / attack trees included.
 - [ ] Report reviewed for completeness.

@@ -1,7 +1,7 @@
 ---
 name: recon-passive
 description: Passive reconnaissance — gather intelligence without touching the target directly.
-version: 2.1.0
+version: 3.0.0
 metadata:
   category: reconnaissance
   phase: 1
@@ -93,15 +93,96 @@ shodan search hostname:target.com
 shodan host 1.2.3.4
 ```
 
+### 6. Asset Validation
+
+**This step is MANDATORY before reporting any subdomain-related findings.**
+
+After enumeration, validate every discovered subdomain for liveness. DNS existence alone is NOT evidence of exposure.
+
+#### Step 1: DNS Resolution Check
+```bash
+# Batch resolve all enumerated subdomains
+while read sub; do
+  ip=$(dig +short "$sub" | head -1)
+  if [ -n "$ip" ]; then
+    echo "RESOLVES|$sub|$ip"
+  else
+    echo "DEAD|$sub|"
+  fi
+done < subdomains.txt
+```
+
+Categorize results:
+- **RESOLVES** — has a DNS A/AAAA record pointing to an IP
+- **DEAD** — no DNS resolution (historical/decommissioned, exclude from findings)
+
+#### Step 2: HTTP Probe (for resolving hosts)
+```bash
+# Probe each resolving subdomain for HTTP/HTTPS response
+while read sub; do
+  status=$(curl -sI --max-time 5 -o /dev/null -w "%{http_code}" "https://$sub" 2>/dev/null)
+  if [ "$status" != "000" ]; then
+    echo "LIVE|$sub|https|$status"
+  else
+    status=$(curl -sI --max-time 5 -o /dev/null -w "%{http_code}" "http://$sub" 2>/dev/null)
+    if [ "$status" != "000" ]; then
+      echo "LIVE|$sub|http|$status"
+    else
+      echo "NO_HTTP|$sub||"
+    fi
+  fi
+done < resolving-subs.txt
+```
+
+Categorize results:
+- **LIVE** — responds to HTTP/HTTPS (confirmed attack surface)
+- **NO_HTTP** — resolves but no HTTP response (may have non-HTTP services; pass to active recon for port scanning)
+
+#### Step 3: Classify
+| Category | Meaning | Action |
+|----------|---------|--------|
+| LIVE | Resolves + HTTP response | Confirmed attack surface. Eligible for findings. |
+| NO_HTTP | Resolves but no HTTP | Potential target. Pass to active recon for port scan. Do NOT report as finding. |
+| DEAD | Does not resolve | Historical/inactive. Informational only. Not a finding. |
+
+**Important:** When the subdomain list is very large (100+), batch the validation. Probe high-value targets first (admin panels, APIs, monitoring tools, databases), then sample the rest. Document the sampling methodology.
+
+---
+
+## Finding Standards
+
+**These rules are mandatory for Phase 1 findings:**
+
+1. **DNS existence is NOT a finding.** A subdomain appearing in CT logs or DNS is informational context for attack surface mapping — it is not a vulnerability.
+
+2. **Only report a finding if ALL of the following are true:**
+   - The host is **confirmed accessible** (LIVE status from validation)
+   - The accessible service presents a **security concern** (e.g., unauthenticated panel, version disclosure, sensitive data exposure)
+   - You have **direct evidence** (HTTP response, screenshot, or response body proving the concern)
+
+3. **Severity guidance for passive recon findings:**
+   - **Info:** Technology/version disclosure on confirmed-accessible hosts (e.g., `X-Powered-By` header)
+   - **Low:** Confirmed information exposure with minor impact (e.g., directory listing with non-sensitive files)
+   - **Medium:** Only if the service is confirmed accessible AND lacks authentication or exposes sensitive data (must be verified with evidence)
+   - **High/Critical:** Extremely unlikely in passive recon. Requires confirmed unauthenticated access to sensitive systems with direct evidence.
+
+4. **What to do with unverified potential issues:**
+   - Document them in `domains-potential.md` as targets for active recon
+   - Do NOT create findings for them
+   - Note them in the phase summary as "requires active verification"
+
+---
+
 ## Output
 
 Document findings in `./ptest-output/recon-passive/`:
 - `summary.md` — consolidated attack surface overview
-- `domains.md` — target domains and subdomains
+- `domains-live.md` — confirmed accessible subdomains (resolved + HTTP response), with response codes
+- `domains-potential.md` — resolved but not HTTP-accessible (for active recon to port scan)
+- `domains-dead.md` — did not resolve (informational/historical only)
 - `network.md` — IP ranges and ASNs
-- `tech-stack.md` — technology stack per target
+- `tech-stack.md` — technology stack per confirmed-live target
 - `emails-usernames.md` — potential usernames/emails discovered
-- `exposed-services.md` — publicly exposed services or data
 
 Write `./ptest-output/recon-passive/checklist.md`:
 
@@ -115,13 +196,15 @@ Write `./ptest-output/recon-passive/checklist.md`:
 | 3 | Technology Fingerprinting | PENDING | |
 | 4 | Email & Username Discovery | PENDING | |
 | 5 | Network Mapping | PENDING | |
+| 6 | Asset Validation (DNS + HTTP probe) | PENDING | |
 ```
 
 Mark each technique as `DONE` or `SKIPPED (reason)` after execution.
 
 ## Exit Criteria
 - [ ] Attack surface is mapped (domains, IPs, subdomains).
-- [ ] Technology stack identified.
-- [ ] Potential entry points listed.
-- [ ] No direct contact with target systems was made.
+- [ ] Enumerated subdomains validated for liveness (DNS + HTTP probe).
+- [ ] Only confirmed-accessible hosts reported as findings.
+- [ ] Technology stack identified on live hosts.
+- [ ] Potential entry points listed (verified).
 - [ ] Checklist shows all applicable techniques executed.
