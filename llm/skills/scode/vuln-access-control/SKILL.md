@@ -52,6 +52,7 @@ $ARGUMENTS
 3. **Check object-level access** — for each endpoint with an ID param, verify ownership check exists
 4. **Check function-level access** — for admin/privileged operations, verify role checks
 5. **Test escalation paths** — can a user modify their role, access other tenants, or reach admin functions?
+6. **Verify preconditions for workflow bypasses** — before reporting "missing check X at endpoint Y", trace the data lifecycle to confirm the vulnerable state can actually exist. For example, if endpoint Y operates on a resource that is ONLY created by endpoint Z (which enforces the check), then the "missing" check at Y may be redundant, not a vulnerability. Report it as a defense-in-depth recommendation, not a finding.
 
 ## Output
 

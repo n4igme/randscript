@@ -63,8 +63,14 @@ For each priority target from threat-model.md:
 1. **Identify sinks** — find all dangerous function calls (query executors, command runners, template renderers, HTML output points)
 2. **Trace back to source** — for each sink, trace backwards to find if user input can reach it
 3. **Check sanitization** — is there parameterization, escaping, or validation between source and sink?
-4. **Confirm exploitability** — can a crafted input actually trigger the injection?
-5. **Assess impact** — what can the attacker achieve? (RCE, data exfil, XSS session hijack)
+4. **Check framework-level protections** — many frameworks auto-escape by default:
+   - **React/JSX**: Text interpolation `{value}` auto-escapes HTML. Only `dangerouslySetInnerHTML` and `href`/`src` attributes are XSS sinks. Do NOT report XSS for values rendered via normal JSX text nodes.
+   - **Vue**: `{{ value }}` auto-escapes. Only `v-html` is a sink.
+   - **Angular**: Interpolation `{{ value }}` auto-escapes. Only `[innerHTML]` with `bypassSecurityTrustHtml()` is a sink.
+   - **Supabase/PostgREST**: The JS client's `.eq()`, `.ilike()`, `.in()` methods parameterize values — they are NOT vulnerable to SQL injection. Only raw `.rpc()` with string interpolation or unescaped LIKE wildcards (%, _) are concerns.
+   - **Next.js**: Server components auto-escape. Only `dangerouslySetInnerHTML` in client/server components is a sink.
+5. **Confirm exploitability** — can a crafted input actually trigger the injection given framework protections?
+6. **Assess impact** — what can the attacker achieve? (RCE, data exfil, XSS session hijack)
 
 ## Output
 

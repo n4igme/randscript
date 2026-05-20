@@ -93,6 +93,14 @@ If no results → mark ALL Web3 scanners as `SKIPPED (no smart contract code)` i
 
 Each sub-skill appends its findings to `./assessment/vulnerabilities.md`.
 
+## Cross-Scanner Deduplication
+
+Before writing findings, each scanner should check if `vulnerabilities.md` already contains a finding for the same vulnerable code location (file:line). If a prior scanner already reported the same sink/location:
+- If the new finding adds a different angle (e.g., vuln-dos reports ReDoS on the same regex that vuln-injection reported as XSS), note the overlap but still report it — sc4-validate will merge them.
+- If the new finding is essentially identical (same location, same attack, same impact), skip it and add a note: "Already reported by {prior scanner} as VULN-{ID}."
+
+This reduces duplicate work in sc4-validate while preserving findings that offer genuinely different exploitation angles on the same code.
+
 ## Idempotency Rule
 
 Each sub-scanner's output section is identified by its header (e.g., `# Vulnerability Findings — Injection`). When writing output:
