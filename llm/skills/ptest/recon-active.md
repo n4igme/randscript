@@ -149,7 +149,125 @@ done < /tmp/permutation-wordlist.txt > ./ptest-output/recon-active/dns-expanded.
 
 **Key insight:** Once you see a naming pattern in Phase 1 (e.g., `dev-*`, `*-data`, `lab-*`), you have enough signal to generate targeted permutations. Organizations typically have 3-5x more services than what's publicly indexed.
 
-#### 0b. Reverse DNS on Known IP Ranges
+#### 0b. DNS-Level Subdomain Brute-Force (dnsx / puredns / massdns)
+
+**Why this matters:** `ffuf` brute-force is HTTP-based — it only finds subdomains that respond to HTTP. Many internal services (SFTP, databases, message queues, internal APIs) resolve in DNS but don't serve HTTP. DNS-level tools catch ALL resolving subdomains regardless of protocol.
+
+**Tool priority:**
+1. `dnsx` (recommended) — fast, handles wildcards, ProjectDiscovery ecosystem
+2. `puredns` — mass resolution with automatic wildcard filtering
+3. `massdns` — raw speed for massive wordlists (100K+), needs post-processing
+4. `dnsrecon` — all-in-one (brute-force, zone transfer, SRV, zone walking)
+5. `dnsenum` — classic, includes Google scraping and reverse lookups
+
+```bash
+# === Option 1: dnsx (recommended) ===
+# Install: go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest
+
+# Generate full wordlist (permutations + SecLists)
+cat /tmp/permutation-wordlist.txt > /tmp/dns-bruteforce.txt
+cat $SECLISTS_PATH/Discovery/DNS/subdomains-top1million-5000.txt >> /tmp/dns-bruteforce.txt
+sort -u /tmp/dns-bruteforce.txt -o /tmp/dns-bruteforce.txt
+
+# DNS resolution brute-force (finds ALL resolving subdomains, not just HTTP)
+cat /tmp/dns-bruteforce.txt | dnsx -d target.com -silent -a -resp \
+  -o ./ptest-output/recon-active/dnsx-bruteforce.txt
+
+# Wildcard detection (important! avoids false positives)
+cat /tmp/dns-bruteforce.txt | dnsx -d target.com -silent -a -resp \
+  -wd target.com \
+  -o ./ptest-output/recon-active/dnsx-no-wildcards.txt
+
+# Also resolve all known subdomains for A, AAAA, CNAME, MX, TXT, NS
+cat ./ptest-output/recon-passive/subdomains-all.txt | dnsx -silent \
+  -a -aaaa -cname -mx -txt -ns -resp \
+  -o ./ptest-output/recon-active/dnsx-full-records.txt
+
+# === Option 2: puredns (mass resolution + wildcard filtering) ===
+# Install: go install github.com/d3mondev/puredns/v2@latest
+# Requires massdns: brew install massdns
+
+puredns bruteforce /tmp/dns-bruteforce.txt target.com \
+  --resolvers /tmp/resolvers.txt \
+  --wildcard-batch 500 \
+  -w ./ptest-output/recon-active/puredns-results.txt
+
+# === Option 3: massdns (raw speed, needs post-processing) ===
+# Install: brew install massdns
+
+# Prepare input (FQDN format)
+sed 's/$/.target.com/' /tmp/dns-bruteforce.txt > /tmp/massdns-input.txt
+
+massdns -r /tmp/resolvers.txt -t A -o S \
+  /tmp/massdns-input.txt > ./ptest-output/recon-active/massdns-raw.txt
+
+# Filter to only resolved entries
+grep -E "IN\s+A\s+" ./ptest-output/recon-active/massdns-raw.txt | \
+  awk '{print $1}' | sed 's/\.$//' | sort -u > ./ptest-output/recon-active/massdns-resolved.txt
+
+# === Option 4: dnsrecon (all-in-one) ===
+# Install: pip3 install dnsrecon
+
+# Brute-force + zone transfer + SRV enumeration
+dnsrecon -d target.com -t brt -D /tmp/dns-bruteforce.txt \
+  --xml ./ptest-output/recon-active/dnsrecon-brute.xml
+
+# SRV record enumeration (finds internal services)
+dnsrecon -d target.com -t srv \
+  --xml ./ptest-output/recon-active/dnsrecon-srv.xml
+
+# Zone walking (NSEC/NSEC3 — works on some DNSSEC-enabled domains)
+dnsrecon -d target.com -t zonewalk \
+  --xml ./ptest-output/recon-active/dnsrecon-zonewalk.xml
+
+# === Option 5: dnsenum ===
+# Install: brew install dnsenum (or apt install dnsenum)
+
+dnsenum --enum -f /tmp/dns-bruteforce.txt \
+  --threads 30 --noreverse \
+  -o ./ptest-output/recon-active/dnsenum-results.xml \
+  target.com
+```
+
+**Resolver list setup** (required for puredns/massdns):
+```bash
+# Create a reliable resolver list
+cat > /tmp/resolvers.txt << 'EOF'
+8.8.8.8
+8.8.4.4
+1.1.1.1
+1.0.0.1
+9.9.9.9
+208.67.222.222
+208.67.220.220
+EOF
+```
+
+**When to use which tool:**
+
+| Scenario | Best Tool | Why |
+|----------|-----------|-----|
+| Standard engagement (< 5K wordlist) | dnsx | Fast, wildcard-aware, clean output |
+| Large wordlist (50K+) | puredns or massdns | Handles scale, auto-filters wildcards |
+| Need SRV/SOA/zone walk | dnsrecon | Only tool that does SRV enumeration |
+| Quick-and-dirty + Google scraping | dnsenum | All-in-one legacy tool |
+| Already have subfinder output | dnsx (resolve mode) | Validates and enriches existing list |
+
+**Critical: Wildcard detection**
+Before trusting brute-force results, check for wildcard DNS:
+```bash
+# Test if wildcard exists
+dig +short "randomnonexistent12345.target.com"
+# If this returns an IP → wildcard is active → filter results against that IP
+WILDCARD_IP=$(dig +short "randomnonexistent12345.target.com" | head -1)
+if [ -n "$WILDCARD_IP" ]; then
+  echo "[!] Wildcard DNS detected: *.target.com -> $WILDCARD_IP"
+  echo "[!] Filter all results matching this IP"
+  grep -v "$WILDCARD_IP" dnsx-bruteforce.txt > dnsx-filtered.txt
+fi
+```
+
+#### 0c. Reverse DNS on Known IP Ranges
 
 When Phase 1 reveals the target uses specific IP ranges (GCP, AWS, on-prem), scan adjacent IPs:
 
@@ -174,7 +292,7 @@ cat ./ptest-output/recon-passive/subdomains-resolved.txt | \
 
 **When to use:** Most effective on non-cloud infrastructure (Hetzner, DigitalOcean, on-prem) where PTR records are configured. GCP/AWS load balancer IPs rarely have useful PTR records.
 
-#### 0c. Virtual Host Enumeration
+#### 0d. Virtual Host Enumeration
 
 For Cloudflare-proxied targets, brute-force `Host:` headers to discover hidden vhosts:
 
@@ -206,7 +324,7 @@ ffuf -u "https://${DIRECT_IP}" \
 
 **Limitations:** Cloudflare may return the same default page for all unknown Host headers. Filter by response size (`-fs`) to find unique responses. More effective against direct-IP hosts (non-proxied).
 
-#### 0d. DNS Zone Transfer Attempt
+#### 0e. DNS Zone Transfer Attempt
 
 Always attempt zone transfer — it rarely works but costs nothing:
 
@@ -221,7 +339,7 @@ for ns in $(dig +short NS target.com); do
 done
 ```
 
-#### 0e. Merge & Deduplicate
+#### 0f. Merge & Deduplicate
 
 After all DNS expansion techniques, merge results with Phase 1:
 
@@ -327,10 +445,11 @@ Write `./ptest-output/recon-active/checklist.md`:
 | # | Technique | Status | Notes |
 |---|-----------|--------|-------|
 | 0a | Pattern-Based Permutation Brute-Force (MANDATORY) | PENDING | |
-| 0b | Reverse DNS on Known IP Ranges | PENDING | |
-| 0c | Virtual Host Enumeration | PENDING | |
-| 0d | DNS Zone Transfer Attempt | PENDING | |
-| 0e | Merge & Deduplicate Expanded Subdomains | PENDING | |
+| 0b | DNS-Level Subdomain Brute-Force — dnsx/puredns/massdns (MANDATORY) | PENDING | |
+| 0c | Reverse DNS on Known IP Ranges | PENDING | |
+| 0d | Virtual Host Enumeration | PENDING | |
+| 0e | DNS Zone Transfer Attempt | PENDING | |
+| 0f | Merge & Deduplicate Expanded Subdomains | PENDING | |
 | 1 | Port Scanning (nmap — MANDATORY) | PENDING | |
 | 2 | Service Detection & Banner Grabbing | PENDING | |
 | 3 | OS Fingerprinting | PENDING | |
