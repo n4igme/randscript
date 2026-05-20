@@ -83,6 +83,7 @@ Append to `./assessment/vulnerabilities.md`:
 ### VULN-DEP-001: {Title}
 
 **Severity**: {Critical/High/Medium/Low}
+**Confidence**: {High/Medium/Low}
 **Category**: {Known CVE / Dependency Confusion / Typosquatting / Lockfile Issue / Version Pinning}
 **Location**: `{file}`
 **CVE**: {CVE-XXXX-XXXXX if applicable}
@@ -114,4 +115,5 @@ Append to `./assessment/vulnerabilities.md`:
 - **Prioritize reachable vulnerabilities** — a CVE in an unused transitive dep is lower priority.
 - **Check if the vulnerable code path is exercised** — not all CVEs are exploitable in every context.
 - **For dependency confusion, verify the private package is actually claimable** on the public registry.
+- **Idempotent output** — if `vulnerabilities.md` already has a `# Vulnerability Findings — Dependency & Supply Chain` section, replace it entirely. See `sc3-vuln-scan` idempotency rule.
 - **Save to `./assessment/vulnerabilities.md`** and confirm.

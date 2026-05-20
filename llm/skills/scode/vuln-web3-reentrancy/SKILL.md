@@ -86,6 +86,7 @@ Append to `./assessment/vulnerabilities.md`:
 ### VULN-REENT-001: {Title}
 
 **Severity**: {Critical/High/Medium/Low}
+**Confidence**: {High/Medium/Low}
 **Category**: {Classic Reentrancy / Cross-Function / Cross-Contract / Read-Only / Unchecked Call / Delegatecall}
 **Location**: `{file}:{line}`
 **CWE**: CWE-{841|252}
@@ -122,4 +123,5 @@ Append to `./assessment/vulnerabilities.md`:
 - **Verify the reentrancy is exploitable** — a callback must exist AND state must be stale at that point.
 - **Check for ReentrancyGuard** — if applied correctly, the issue is mitigated.
 - **For unchecked calls, confirm the token is non-reverting** — standard OZ ERC-20 reverts on failure.
+- **Idempotent output** — if `vulnerabilities.md` already has a `# Vulnerability Findings — Reentrancy & Unchecked Calls` section, replace it entirely. See `sc3-vuln-scan` idempotency rule.
 - **Save to `./assessment/vulnerabilities.md`** and confirm.

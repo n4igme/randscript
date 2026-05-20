@@ -98,6 +98,7 @@ Append to `./assessment/vulnerabilities.md`:
 ### VULN-MEV-001: {Title}
 
 **Severity**: {Critical/High/Medium/Low}
+**Confidence**: {High/Medium/Low}
 **Category**: {Front-Running / Sandwich / Flash Loan / Oracle Manipulation / Stale Oracle / Multi-Block}
 **Location**: `{file}:{line}`
 **CWE**: CWE-{362|841|682}
@@ -141,4 +142,5 @@ Append to `./assessment/vulnerabilities.md`:
 - **Verify oracle manipulation is feasible** — how much capital is needed to move the price?
 - **Check for existing MEV protections** — private mempools, Flashbots, commit-reveal, TWAP.
 - **Distinguish user-configurable slippage from missing slippage** — user setting 100% slippage is their choice.
+- **Idempotent output** — if `vulnerabilities.md` already has a `# Vulnerability Findings — MEV & Oracle Manipulation` section, replace it entirely. See `sc3-vuln-scan` idempotency rule.
 - **Save to `./assessment/vulnerabilities.md`** and confirm.

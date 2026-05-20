@@ -74,6 +74,7 @@ Append to `./assessment/vulnerabilities.md`:
 ### VULN-SSRF-001: {Title}
 
 **Severity**: {Critical/High/Medium/Low}
+**Confidence**: {High/Medium/Low}
 **Category**: {Direct SSRF / Indirect SSRF / Partial SSRF}
 **Location**: `{file}:{line}`
 **CWE**: CWE-918
@@ -103,4 +104,5 @@ Append to `./assessment/vulnerabilities.md`:
 - **Check every outbound HTTP call** — even indirect ones (PDF generators, email senders).
 - **Verify URL validation is robust** — blocklists are often bypassable.
 - **Note cloud environment** — metadata endpoint access elevates severity to Critical.
-- **Append to `./assessment/vulnerabilities.md`** and confirm.
+- **Idempotent output** — if `vulnerabilities.md` already has a `# Vulnerability Findings — SSRF` section, replace it entirely. See `sc3-vuln-scan` idempotency rule.
+- **Save to `./assessment/vulnerabilities.md`** and confirm.

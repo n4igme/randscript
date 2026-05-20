@@ -68,6 +68,7 @@ Append to `./assessment/vulnerabilities.md`:
 ### VULN-AC-001: {Title}
 
 **Severity**: {Critical/High/Medium/Low}
+**Confidence**: {High/Medium/Low}
 **Category**: {IDOR / Missing Authorization / Horizontal Escalation / Vertical Escalation}
 **Location**: `{file}:{line}`
 **CWE**: CWE-{639|862|863|284}
@@ -101,4 +102,5 @@ Append to `./assessment/vulnerabilities.md`:
 - **Check every endpoint with an ID parameter** — IDOR is the #1 bug bounty finding.
 - **Compare route definitions to middleware** — find the gaps.
 - **Show what check is missing** — not just that it's missing, but what it should be.
+- **Idempotent output** — if `vulnerabilities.md` already has a `# Vulnerability Findings — Access Control` section, replace it entirely. See `sc3-vuln-scan` idempotency rule.
 - **Append to `./assessment/vulnerabilities.md`** and confirm.

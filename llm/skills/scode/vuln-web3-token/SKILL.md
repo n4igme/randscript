@@ -115,6 +115,7 @@ Append to `./assessment/vulnerabilities.md`:
 ### VULN-TOKEN-001: {Title}
 
 **Severity**: {Critical/High/Medium/Low}
+**Confidence**: {High/Medium/Low}
 **Category**: {Approval Race / Non-Standard Token / Infinite Mint / Accounting / Signature Replay / Malleability / Permit / ERC-777}
 **Location**: `{file}:{line}`
 **CWE**: CWE-{362|345|347|284}
@@ -151,4 +152,5 @@ Append to `./assessment/vulnerabilities.md`:
 - **For non-standard tokens, identify which specific token causes the issue** — not all tokens are fee-on-transfer.
 - **For signatures, show the exact replay scenario** — same chain, cross-chain, or cross-contract.
 - **Check OpenZeppelin usage** — OZ ECDSA library handles malleability and zero-address checks.
+- **Idempotent output** — if `vulnerabilities.md` already has a `# Vulnerability Findings — Token & Signature` section, replace it entirely. See `sc3-vuln-scan` idempotency rule.
 - **Save to `./assessment/vulnerabilities.md`** and confirm.

@@ -111,6 +111,7 @@ Append to `./assessment/vulnerabilities.md`:
 ### VULN-MEM-001: {Title}
 
 **Severity**: {Critical/High/Medium/Low}
+**Confidence**: {High/Medium/Low}
 **Category**: {Buffer Overflow / Use-After-Free / Format String / Integer Overflow / OOB Access / Unsafe FFI}
 **Location**: `{file}:{line}`
 **CWE**: CWE-{120|416|134|190|125|787}
@@ -145,4 +146,5 @@ Append to `./assessment/vulnerabilities.md`:
 - **Only report if user input can reach the vulnerable code path.**
 - **Check for mitigations** — ASLR, stack canaries, safe functions (`strncpy`, `snprintf`), Rust's borrow checker.
 - **If no native/unsafe code exists, skip this scanner** and state it's not applicable.
+- **Idempotent output** — if `vulnerabilities.md` already has a `# Vulnerability Findings — Memory Safety` section, replace it entirely. See `sc3-vuln-scan` idempotency rule.
 - **Save to `./assessment/vulnerabilities.md`** and confirm.

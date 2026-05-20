@@ -77,6 +77,7 @@ Append to `./assessment/vulnerabilities.md`:
 ### VULN-DE-001: {Title}
 
 **Severity**: {Critical/High/Medium/Low}
+**Confidence**: {High/Medium/Low}
 **Category**: {Hardcoded Secret / Verbose Error / PII in Logs / Missing Encryption / Over-exposed Response}
 **Location**: `{file}:{line}`
 **CWE**: CWE-{798|209|532|311|200}
@@ -103,4 +104,5 @@ Append to `./assessment/vulnerabilities.md`:
 - **Do NOT include actual secret values in the report** — redact them, show only the pattern.
 - **Distinguish dev vs prod** — a secret in a test file is lower severity than in production config.
 - **Check .gitignore** — are sensitive files properly excluded?
-- **Append to `./assessment/vulnerabilities.md`** and confirm.
+- **Idempotent output** — if `vulnerabilities.md` already has a `# Vulnerability Findings — Data Exposure` section, replace it entirely. See `sc3-vuln-scan` idempotency rule.
+- **Save to `./assessment/vulnerabilities.md`** and confirm.

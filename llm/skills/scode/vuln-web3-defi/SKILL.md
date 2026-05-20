@@ -113,6 +113,7 @@ Append to `./assessment/vulnerabilities.md`:
 ### VULN-DEFI-001: {Title}
 
 **Severity**: {Critical/High/Medium/Low}
+**Confidence**: {High/Medium/Low}
 **Category**: {AMM / Lending / Bridge / Governance / Yield / Staking}
 **Location**: `{file}:{line}`
 **CWE**: CWE-{841|682|362|284}
@@ -153,4 +154,5 @@ Append to `./assessment/vulnerabilities.md`:
 - **Check for existing DeFi protections** — timelocks, minimum deposit amounts, oracle TWAP, pause mechanisms.
 - **Consider multi-block attacks** — not everything happens in one transaction.
 - **Verify economic feasibility** — is the attack profitable after gas + flash loan fees?
+- **Idempotent output** — if `vulnerabilities.md` already has a `# Vulnerability Findings — DeFi Protocol` section, replace it entirely. See `sc3-vuln-scan` idempotency rule.
 - **Save to `./assessment/vulnerabilities.md`** and confirm.

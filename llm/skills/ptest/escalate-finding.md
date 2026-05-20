@@ -1,7 +1,7 @@
 ---
 name: escalate-finding
 description: Immediately escalate critical/P1 findings that require urgent client notification.
-version: 2.1.0
+version: 3.0.0
 metadata:
   category: escalation
   scope_types: [web, network, cloud, mobile, mixed]

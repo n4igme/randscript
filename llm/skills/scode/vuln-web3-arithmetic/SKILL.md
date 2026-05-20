@@ -88,6 +88,7 @@ Append to `./assessment/vulnerabilities.md`:
 ### VULN-ARITH-001: {Title}
 
 **Severity**: {Critical/High/Medium/Low}
+**Confidence**: {High/Medium/Low}
 **Category**: {Overflow / Underflow / Truncation / Precision Loss / Rounding}
 **Location**: `{file}:{line}`
 **CWE**: CWE-{190|191|681|682}
@@ -122,4 +123,5 @@ Append to `./assessment/vulnerabilities.md`:
 - **Check Solidity version first** — overflow in >= 0.8 only matters inside `unchecked` blocks.
 - **For precision loss, quantify the impact** — how much is lost per transaction? Is it exploitable at scale?
 - **Rounding direction matters** — rounding should favor the protocol, not the user.
+- **Idempotent output** — if `vulnerabilities.md` already has a `# Vulnerability Findings — Integer Overflow & Precision Loss` section, replace it entirely. See `sc3-vuln-scan` idempotency rule.
 - **Save to `./assessment/vulnerabilities.md`** and confirm.

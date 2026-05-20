@@ -87,6 +87,8 @@ traceroute target.com
 
 ## Scope Type Adjustments
 
+> **Note:** The authoritative scope/technique matrix is in `SKILL.md` under "Scope-Aware Checklist Generation". The guidance below is supplementary.
+
 - **web/API:** Focus on HTTP/HTTPS ports (80, 443, 8080, 8443, 3000, 5000, 8000). Light UDP scan.
 - **network:** Full TCP + UDP scan. All techniques apply.
 - **cloud:** Focus on common cloud service ports. Check for metadata endpoints.
@@ -113,7 +115,7 @@ Write `./ptest-output/recon-active/checklist.md`:
 | 4 | Network Topology Mapping | PENDING | |
 ```
 
-Mark each technique as `DONE` or `SKIPPED (reason)` after execution.
+Mark each technique as `DONE`, `SKIPPED (reason)`, or `FAILED (reason)` after execution.
 
 ## Exit Criteria
 - [ ] All in-scope public IPs port-scanned (nmap executed).

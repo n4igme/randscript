@@ -20,6 +20,17 @@ $ARGUMENTS
 
 ## Process
 
+### 0. Finding ID Renumbering
+
+Sub-scanners use per-category prefixes (`VULN-INJ-001`, `VULN-AC-001`, etc.) for local tracking. During validation, renumber all confirmed findings to a single global sequence: `VULN-001`, `VULN-002`, ... ordered by severity (Critical first).
+
+Maintain a mapping table in the output so findings can be traced back to their original scanner ID:
+
+| Final ID | Original ID | Scanner |
+|----------|-------------|---------|
+| VULN-001 | VULN-INJ-002 | vuln-injection |
+| VULN-002 | VULN-AC-001 | vuln-access-control |
+
 ### 1. For Each Finding, Re-read the Code
 
 Do NOT rely on the snippet from vulnerabilities.md alone. Go back to the actual source file and read surrounding context (±50 lines). Check:

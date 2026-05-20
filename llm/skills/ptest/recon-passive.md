@@ -199,9 +199,12 @@ Write `./ptest-output/recon-passive/checklist.md`:
 | 6 | Asset Validation (DNS + HTTP probe) | PENDING | |
 ```
 
-Mark each technique as `DONE` or `SKIPPED (reason)` after execution.
+Mark each technique as `DONE`, `SKIPPED (reason)`, or `FAILED (reason)` after execution.
 
 ## Exit Criteria
+
+> **Note:** The authoritative scope/technique matrix is in `SKILL.md` under "Scope-Aware Checklist Generation". The guidance below is supplementary.
+
 - [ ] Attack surface is mapped (domains, IPs, subdomains).
 - [ ] Enumerated subdomains validated for liveness (DNS + HTTP probe).
 - [ ] Only confirmed-accessible hosts reported as findings.

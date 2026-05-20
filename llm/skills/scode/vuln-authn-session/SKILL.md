@@ -89,6 +89,7 @@ Append to `./assessment/vulnerabilities.md`:
 ### VULN-AUTH-001: {Title}
 
 **Severity**: {Critical/High/Medium/Low}
+**Confidence**: {High/Medium/Low}
 **Category**: {Broken Auth / JWT Flaw / Session Fixation / OAuth Flaw / Credential Storage}
 **Location**: `{file}:{line}`
 **CWE**: CWE-{287|384|613|306|916|521}
@@ -123,4 +124,5 @@ Append to `./assessment/vulnerabilities.md`:
 - **Only report confirmed auth/session flaws** — verify the weakness is actually exploitable.
 - **Check for compensating controls** — WAF rate limiting, IP blocking, or other mitigations.
 - **Include the exact attack scenario** showing how an attacker exploits the flaw.
+- **Idempotent output** — if `vulnerabilities.md` already has a `# Vulnerability Findings — Authentication & Session Management` section, replace it entirely. See `sc3-vuln-scan` idempotency rule.
 - **Save to `./assessment/vulnerabilities.md`** and confirm.
