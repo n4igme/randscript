@@ -1,32 +1,44 @@
-# ptest — Penetration Testing Skill for Claude Code
+# ptest — Penetration Testing Skill for Hermes Agent
 
 Structured pentest framework with gated phases. Enforces methodical progression from reconnaissance through exploitation to reporting, with mandatory quality gates and human sign-off at each transition.
 
 ## Install
 
 ```bash
-mkdir -p ~/.claude/skills/ptest
-cp SKILL.md README.md recon-passive.md recon-active.md enumeration.md attack-surface.md vuln-assessment.md exploit.md post-exploit.md report.md escalate-finding.md ~/.claude/skills/ptest/
-```
+# Install from local directory
+hermes skills install ./hunting/ptest/SKILL.md --name ptest
 
-Or if cloning from this repo:
-
-```bash
-cp -r ai_llm/skills/ptest/* ~/.claude/skills/ptest/
+# Or tap this repo as a skill source
+hermes skills tap add <github-user>/<repo-name>
 ```
 
 ## Usage
 
+Load the skill in a Hermes session, then issue commands:
+
 ```
-/ptest start          # Initialize new engagement (scope, targets, authorization)
-/ptest status         # Show current gateway state
-/ptest next           # Advance to next phase (checks exit criteria)
-/ptest escalate       # Escalate a critical finding
-/ptest recon-passive  # Run passive recon techniques
-/ptest recon-active   # Run active enumeration
-/ptest exploit        # Run exploitation techniques
-/ptest post-exploit   # Run post-exploitation
-/ptest report         # Generate final report
+/skill ptest
+
+> start              # Initialize new engagement (scope, targets, authorization)
+> preflight          # Check tool availability
+> status             # Show current gateway state
+> next               # Advance to next phase (checks exit criteria)
+> escalate           # Escalate a critical finding
+> recon-passive      # Run passive recon techniques
+> recon-active       # Run active enumeration
+> enumerate          # Run application-layer enumeration
+> attack-surface     # Map attack surface
+> vuln-assess        # Run vulnerability assessment
+> exploit            # Run exploitation techniques
+> post-exploit       # Run post-exploitation
+> report             # Generate final report
+> cleanup            # Archive and sanitize
+```
+
+Or preload on launch:
+
+```bash
+hermes -s ptest
 ```
 
 ## Phases
@@ -50,6 +62,7 @@ All engagement data is written to `./ptest-output/` in the current project direc
 ./ptest-output/
   state.yaml
   scope.md
+  findings-log.md
   recon-passive/
   recon-active/
   enumeration/
@@ -63,6 +76,6 @@ All engagement data is written to `./ptest-output/` in the current project direc
 
 ## Requirements
 
-- Claude Code CLI
+- Hermes Agent
 - Standard pentest tools as needed (nmap, gobuster, curl, nuclei, etc.)
 - Written authorization for the target engagement
