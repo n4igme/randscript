@@ -78,23 +78,130 @@ print(json.dumps(data.get('props',{}).get('pageProps',{}), indent=2))
 
 ### 1. OSINT Gathering
 Search public sources for target information.
+
+#### 1a. Domain Registration & History
 ```bash
-# WHOIS lookup
+# WHOIS lookup (registrant, dates, nameservers)
 whois target.com
 
-# DNS records
+# Key things to note:
+# - Creation date vs company founding date (acquired domain?)
+# - Registrar (Namecheap, GoDaddy = less enterprise)
+# - Nameservers (cloudflare = CF WAF likely, awsdns = Route53)
+# - Expiry date (if soon, domain may lapse)
+```
+
+#### 1b. Shodan / Censys (Indexed Services)
+```bash
+# Shodan InternetDB (free, no API key needed)
+# Query each known IP for indexed ports/vulns/hostnames
+curl -s "https://internetdb.shodan.io/{IP}" | jq .
+
+# Batch all resolved IPs
+while IFS='|' read -r sub ip; do
+  echo "=== ${sub} (${ip}) ==="
+  curl -s "https://internetdb.shodan.io/${ip}" 2>/dev/null
+  echo ""
+done < ./ptest-output/recon-passive/resolving-subs.txt
+
+# What to extract:
+# - ports[] → confirms open ports without active scanning
+# - hostnames[] → reveals reverse DNS, other domains on same IP
+# - vulns[] → known CVEs indexed by Shodan
+# - cpes[] → software versions (e.g., cpe:/a:openvpn:openvpn_access_server)
+# - tags[] → cloud, starttls, etc.
+```
+
+#### 1c. Wayback Machine (Historical URLs)
+```bash
+# Fetch all archived URLs for the domain
+curl -s "https://web.archive.org/cdx/search/cdx?url=*.target.com&output=text&fl=original&collapse=urlkey&limit=200" > wayback-urls.txt
+
+# Filter for interesting paths
+grep -iE "\.(pdf|xlsx|csv|doc|conf|env|bak|sql|json|xml)" wayback-urls.txt
+grep -iE "(admin|login|dashboard|internal|api|swagger|config)" wayback-urls.txt
+grep -iE "(password|secret|token|key|credential)" wayback-urls.txt
+
+# Check .well-known paths (often indexed historically)
+curl -sk "https://www.target.com/.well-known/security.txt"
+curl -sk "https://www.target.com/.well-known/openid-configuration"
+curl -sk "https://www.target.com/robots.txt"
+curl -sk "https://www.target.com/sitemap.xml"
+```
+
+#### 1d. GitHub / Code Repository Search
+```bash
+# Search for leaked credentials (MANUAL — requires browser)
+# GitHub: https://github.com/search?q="target.com"+password+OR+secret+OR+token&type=code
+# GitHub: https://github.com/search?q="company-name"&type=code
+# GitLab: https://gitlab.com/search?search=target.com
+
+# Automated tools (if available):
+# trufflehog — scans repos for secrets
+# gitleaks — finds secrets in git history
+# gitrob — finds sensitive files in GitHub orgs
+
+# Search patterns:
+# "target.com" password OR secret OR token OR api_key
+# "company-name" OR "parent-company" (e.g., "dkatalis" for Bank Jago)
+# org:company-github-org (if known)
+```
+
+#### 1e. DNS Record Intelligence
+```bash
+# Full DNS record dump
 dig target.com ANY
 dig +short target.com MX
 dig +short target.com TXT
-host -t ns target.com
+dig +short target.com NS
+dig +short _dmarc.target.com TXT
 
-# Certificate transparency
-curl -s "https://crt.sh/?q=%25.target.com&output=json" | jq '.[].name_value' | sort -u
+# SPF analysis — extract third-party email senders
+dig +short target.com TXT | grep "v=spf1"
+# Each "include:" reveals a service (google, sendinblue, sendgrid, etc.)
 
-# Google dorks
+# DMARC analysis — check enforcement
+dig +short _dmarc.target.com TXT
+# p=none → email spoofing possible (FINDING!)
+# p=quarantine → partial protection
+# p=reject → properly enforced
+
+# DKIM selectors (common ones)
+for sel in google default mail s1 s2 k1 selector1 selector2; do
+  dig +short ${sel}._domainkey.target.com TXT 2>/dev/null | grep -q "v=DKIM1" && echo "[+] DKIM selector: ${sel}"
+done
+```
+
+#### 1f. Google Dorks
+```bash
+# File discovery
 # site:target.com filetype:pdf
-# site:target.com inurl:admin
+# site:target.com filetype:xlsx OR filetype:csv OR filetype:doc
+# site:target.com filetype:conf OR filetype:env OR filetype:log
+
+# Admin/login panels
+# site:target.com inurl:admin OR inurl:login OR inurl:dashboard
 # site:target.com intitle:"index of"
+
+# Information disclosure
+# site:target.com "internal" OR "confidential" OR "restricted"
+# site:target.com "password" OR "username" OR "credential"
+# "target.com" inurl:swagger OR inurl:api-docs
+
+# Third-party leaks
+# "target.com" site:pastebin.com OR site:paste.ee
+# "target.com" site:trello.com
+# "target.com" site:notion.so
+```
+
+#### 1g. Job Posting Intelligence
+```bash
+# Job postings reveal tech stack
+# LinkedIn: search company jobs for engineering roles
+# Look for: specific tool names (ArgoCD, Airflow, Terraform, Vault)
+# Look for: cloud provider (GCP, AWS, Azure)
+# Look for: languages/frameworks (Go, Java Spring Boot, Python)
+# This confirms infrastructure without touching the target
 ```
 
 ### 2. Subdomain Enumeration

@@ -104,6 +104,29 @@ Document assets that were discovered but are confirmed NOT exploitable or out-of
 | ... | | |
 ```
 
+### 5. Cross-Environment Correlation
+
+Map the same service across development, staging, and production environments to compare security posture. Differences between environments often reveal misconfigurations, forgotten hardening steps, or exploitable gaps.
+
+**What to look for:**
+- **Credential reuse** — same passwords, API keys, or service accounts across environments
+- **Weaker auth in staging** — disabled MFA, default credentials, or relaxed token expiry
+- **Same IP but different WAF rules** — production has WAF enforcement but staging on the same host does not
+- **Config drift** — security headers present in prod but missing in dev/stg, debug endpoints left enabled, verbose error messages exposed
+
+```markdown
+# Cross-Environment Correlation
+
+| Service | Dev | Staging | Production | Delta |
+|---------|-----|---------|------------|-------|
+| api.target.com | No WAF, debug enabled | WAF bypass via alt path | Full WAF, hardened | Staging alt path bypasses WAF |
+| auth.target.com | Default creds active | MFA disabled | MFA enforced | Dev/Stg credential weakness |
+| db.target.com | Public access, no TLS | Internal only, no TLS | Internal, TLS enforced | TLS missing in lower envs |
+| ... | | | | |
+```
+
+Use deltas to identify attack paths: a weakness confirmed in staging often indicates the same underlying code or config exists in production, just with an additional control layer that may be bypassable.
+
 ## Output
 
 Document in `./ptest-output/attack-surface/`:
@@ -131,3 +154,13 @@ Write `./ptest-output/attack-surface/checklist.md`:
 - [ ] Entry points mapped and categorized (unauth, auth, upload, input).
 - [ ] Dismissed assets documented with reasons.
 - [ ] Priority targets identified for Phase 5 threat modeling.
+
+## Lessons Learned Capture
+
+After cleanup, document the following to improve future engagements:
+
+- **New pitfalls** — unexpected blockers, scope creep, environmental issues encountered
+- **Tools that worked/failed** — which tools delivered results vs. which were unreliable or incompatible with the target
+- **Time allocation accuracy** — how actual time spent compared to estimates per phase; where overruns or underruns occurred
+- **Techniques to add/remove** — new attack vectors worth incorporating, and outdated techniques that no longer yield results
+- **False positive patterns** — recurring false positives from scanners or manual testing that should be filtered in future runs
