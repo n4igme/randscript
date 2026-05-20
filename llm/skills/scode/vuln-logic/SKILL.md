@@ -44,6 +44,8 @@ $ARGUMENTS
 
 **What to look for**: Multi-step APIs where step N doesn't verify step N-1 completed.
 
+**Important**: Before reporting a workflow bypass, verify the data lifecycle. If resource R is only created by endpoint A (which enforces the check), then endpoint B operating on R doesn't need to re-check — the precondition is structurally guaranteed. Only report as a vulnerability if an attacker can create R through an alternative path that skips the check. Otherwise, note it as a defense-in-depth recommendation.
+
 ### Numeric/Financial Manipulation
 - Integer overflow/underflow in calculations
 - Negative quantities accepted (refund abuse)

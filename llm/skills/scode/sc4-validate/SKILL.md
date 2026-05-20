@@ -39,6 +39,8 @@ Do NOT rely on the snippet from vulnerabilities.md alone. Go back to the actual 
 - Are there middleware, interceptors, or wrappers that apply sanitization before the code is hit?
 - Is there framework-level protection (e.g., ORM parameterization, auto-escaping templates)?
 - Does the code path require preconditions an attacker can't easily meet?
+- **Can the prerequisite state actually exist?** For workflow bypass findings, trace the data lifecycle: can the "vulnerable" state (e.g., an unpaid order with an invitation) actually be reached given how other endpoints create/modify that data? A missing check is NOT a vulnerability if the precondition is enforced elsewhere in the flow.
+- **Does the rendering framework auto-escape?** For XSS findings in React/Vue/Angular, verify the exact rendering method. JSX `{value}` auto-escapes — only `dangerouslySetInnerHTML`/`v-html`/`[innerHTML]` are true sinks.
 
 ### 2. Trace Full Data Flow
 

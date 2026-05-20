@@ -16,6 +16,66 @@ metadata:
 
 ## Techniques & Tools
 
+### 0. Internal Engagement: Request Asset Inventory (MANDATORY for internal pentests)
+
+When the operator is an internal pentester or has authorized internal access, **request these artifacts before brute-forcing**:
+
+| Artifact | Source | Why |
+|----------|--------|-----|
+| DNS zone file export | Cloudflare / Route53 / Azure DNS dashboard | Complete subdomain list — eliminates blind brute-force |
+| Asset inventory / CMDB | IT ops / infra team | Maps services to owners, environments, criticality |
+| Network diagrams | Architecture team | Reveals internal segmentation, trust boundaries |
+| CI/CD service list | DevOps / platform team | Reveals microservice names for pattern brute-force |
+| Cloud project list | Cloud admin (GCP/AWS/Azure console) | Maps project IDs to teams and environments |
+
+**Why this matters:** Passive recon tools (subfinder, crt.sh, amass) only find publicly-indexed subdomains. Internal services using wildcard SSL certs, Cloudflare universal SSL, or private DNS zones are invisible to external tools. A DNS zone file typically reveals 2-5x more subdomains than passive enumeration alone.
+
+**Procedure:**
+1. Ask the client/team: "Can you export the DNS zone file for {target domain}?"
+2. If Cloudflare: Dashboard → DNS → Export (CSV/BIND format)
+3. If Route53: `aws route53 list-resource-record-sets --hosted-zone-id {id}`
+4. If Azure DNS: `az network dns record-set list -g {rg} -z {zone}`
+5. Parse the zone file into `subdomains-from-zone.txt`
+6. Merge with passive recon results: `sort -u subdomains.txt subdomains-from-zone.txt > all-subdomains.txt`
+7. Note which subdomains are `cf-proxied:false` (direct-to-origin, no WAF) — these are priority targets
+
+**If zone file is unavailable:** Document the gap and proceed with passive + brute-force. But always ASK first — it saves hours.
+
+```bash
+# Parse Cloudflare zone export (BIND format) to subdomain list
+grep -E "^[a-zA-Z0-9]" zone-export.txt | awk '{print $1}' | sed 's/\.$//' | sort -u > subdomains-from-zone.txt
+
+# Parse Cloudflare zone export (CSV format)
+tail -n +2 zone-export.csv | cut -d',' -f1 | sort -u > subdomains-from-zone.txt
+
+# Identify non-proxied (direct IP) hosts — priority targets
+grep -i "proxied.*false\|proxy_status.*dns_only" zone-export.txt | awk '{print $1}' > direct-ip-hosts.txt
+```
+
+### 0b. Knowledge Base / Support Site Scraping
+
+Before brute-forcing, scrape the target's public knowledge base or support site for service names and internal terminology:
+
+```bash
+# Yellow.ai / Next.js knowledge bases leak __NEXT_DATA__
+curl -s "https://help.target.com" | grep -o '__NEXT_DATA__.*</script>' | python3 -c "
+import sys, json
+raw = sys.stdin.read().split('__NEXT_DATA__ = ',1)[1].rsplit('</script>',1)[0]
+data = json.loads(raw)
+print(json.dumps(data.get('props',{}).get('pageProps',{}), indent=2))
+"
+
+# Extract service/product names for wordlist generation
+# Look for: product names, partner names, feature names, integration names
+```
+
+**What to extract:**
+- Product/feature names → subdomain candidates (e.g., "Kantong" → `kantong.target.com`)
+- Partner names → integration subdomains (e.g., "GoPay" → `gopay.target.com`)
+- Service categories → environment patterns (e.g., "Loans" → `loan-*.target.com`)
+
+---
+
 ### 1. OSINT Gathering
 Search public sources for target information.
 ```bash
@@ -191,6 +251,8 @@ Write `./ptest-output/recon-passive/checklist.md`:
 
 | # | Technique | Status | Notes |
 |---|-----------|--------|-------|
+| 0 | Request Asset Inventory (internal engagements) | PENDING | |
+| 0b | Knowledge Base / Support Site Scraping | PENDING | |
 | 1 | OSINT Gathering | PENDING | |
 | 2 | Subdomain Enumeration | PENDING | |
 | 3 | Technology Fingerprinting | PENDING | |

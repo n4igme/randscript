@@ -139,6 +139,17 @@ Items from `validated-vulnerabilities.md` that could not be confirmed statically
 | ID | Title | What to Test | Why Static Analysis Is Insufficient |
 |----|-------|-------------|-------------------------------------|
 | {from validated-vulnerabilities.md "Needs Dynamic Testing" section} |
+
+### Positive Security Observations
+
+Document what the application does WELL. This builds credibility for the findings and helps stakeholders understand the overall posture:
+
+- {e.g., "Consistent authentication checks across all 27 admin endpoints"}
+- {e.g., "Proper use of parameterized queries via ORM — no SQL injection vectors"}
+- {e.g., "Secrets managed via environment variables, none hardcoded in source"}
+- {e.g., "RLS policies properly configured with appropriate access levels"}
+
+Include 5-8 positive observations covering: auth, authz, input validation, secret management, error handling, and any other areas where the code demonstrates good security practices.
 ```
 
 ## Rules
