@@ -32,13 +32,13 @@ Network-layer discovery (port scanning, service detection) belongs in Phase 2 (A
 Discover hidden paths, files, and directories on web targets.
 ```bash
 # gobuster — directory mode
-gobuster dir -u https://target.com -w /usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt -o ./ptest-output/enumeration/gobuster-dirs.txt -t 50
+gobuster dir -u https://target.com -w $SECLISTS_PATH/Discovery/Web-Content/raft-medium-directories.txt -o ./ptest-output/enumeration/gobuster-dirs.txt -t 50
 
 # gobuster — file mode (common extensions)
-gobuster dir -u https://target.com -w /usr/share/seclists/Discovery/Web-Content/raft-medium-files.txt -x php,html,js,json,xml,txt,bak,env,conf -o ./ptest-output/enumeration/gobuster-files.txt
+gobuster dir -u https://target.com -w $SECLISTS_PATH/Discovery/Web-Content/raft-medium-files.txt -x php,html,js,json,xml,txt,bak,env,conf -o ./ptest-output/enumeration/gobuster-files.txt
 
 # feroxbuster — recursive
-feroxbuster -u https://target.com -w /usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt -o ./ptest-output/enumeration/ferox.txt --depth 3
+feroxbuster -u https://target.com -w $SECLISTS_PATH/Discovery/Web-Content/raft-medium-directories.txt -o ./ptest-output/enumeration/ferox.txt --depth 3
 
 # Targeted wordlists for specific tech stacks
 # Pimcore: /admin, /bundles, /var, /bin
@@ -55,10 +55,10 @@ feroxbuster -u https://target.com -w /usr/share/seclists/Discovery/Web-Content/r
 Map API endpoints, methods, and response patterns.
 ```bash
 # ffuf — API endpoint fuzzing
-ffuf -u https://target.com/api/FUZZ -w /usr/share/seclists/Discovery/Web-Content/api/api-endpoints.txt -mc 200,201,301,302,401,403,405 -o ./ptest-output/enumeration/ffuf-api.json
+ffuf -u https://target.com/api/FUZZ -w $SECLISTS_PATH/Discovery/Web-Content/api/api-endpoints.txt -mc 200,201,301,302,401,403,405 -o ./ptest-output/enumeration/ffuf-api.json
 
 # ffuf — versioned API paths
-ffuf -u https://target.com/api/v1/FUZZ -w /usr/share/seclists/Discovery/Web-Content/api/api-endpoints.txt -mc all -fc 404
+ffuf -u https://target.com/api/v1/FUZZ -w $SECLISTS_PATH/Discovery/Web-Content/api/api-endpoints.txt -mc all -fc 404
 
 # Check common API documentation endpoints
 for path in /swagger /swagger-ui /api-docs /openapi.json /swagger.json /docs /redoc; do
@@ -76,17 +76,17 @@ Identify hidden parameters on discovered endpoints.
 arjun -u https://target.com/endpoint -o ./ptest-output/enumeration/arjun-params.json
 
 # Manual parameter fuzzing
-ffuf -u "https://target.com/page?FUZZ=test" -w /usr/share/seclists/Discovery/Web-Content/burp-parameter-names.txt -mc all -fc 404 -fs <baseline-size>
+ffuf -u "https://target.com/page?FUZZ=test" -w $SECLISTS_PATH/Discovery/Web-Content/burp-parameter-names.txt -mc all -fc 404 -fs <baseline-size>
 ```
 
 ### 4. Virtual Host Enumeration
 Discover additional virtual hosts on the same IP.
 ```bash
 # gobuster vhost mode
-gobuster vhost -u https://target.com -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt --append-domain
+gobuster vhost -u https://target.com -w $SECLISTS_PATH/Discovery/DNS/subdomains-top1million-5000.txt --append-domain
 
 # ffuf vhost fuzzing
-ffuf -u https://target.com -H "Host: FUZZ.target.com" -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -mc all -fc 404 -fs <baseline-size>
+ffuf -u https://target.com -H "Host: FUZZ.target.com" -w $SECLISTS_PATH/Discovery/DNS/subdomains-top1million-5000.txt -mc all -fc 404 -fs <baseline-size>
 ```
 
 ### 5. CMS-Specific Enumeration
@@ -144,6 +144,8 @@ curl -s https://target.com/.well-known/oauth-authorization-server | python3 -m j
 
 ## Scope Type Adjustments
 
+> **Note:** The authoritative scope/technique matrix is in `SKILL.md` under "Scope-Aware Checklist Generation". The guidance below is supplementary.
+
 - **web/API:** All techniques apply. Focus on techniques 1, 2, 3, 6, 7.
 - **network:** Skip web-specific techniques. Focus on service-specific enumeration (SMB shares, SNMP walks, NFS exports).
 - **cloud:** Focus on storage bucket enumeration, API gateway discovery, serverless function endpoints.
@@ -177,7 +179,7 @@ Write `./ptest-output/enumeration/checklist.md`:
 | 7 | Authentication Endpoint Mapping | PENDING | |
 ```
 
-Mark each technique as `DONE` or `SKIPPED (reason)` after execution.
+Mark each technique as `DONE`, `SKIPPED (reason)`, or `FAILED (reason)` after execution.
 
 ## Exit Criteria
 - [ ] All live web applications have directory/file enumeration completed.

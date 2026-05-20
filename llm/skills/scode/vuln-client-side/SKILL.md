@@ -83,6 +83,7 @@ Append to `./assessment/vulnerabilities.md`:
 ### VULN-CLIENT-001: {Title}
 
 **Severity**: {Critical/High/Medium/Low}
+**Confidence**: {High/Medium/Low}
 **Category**: {Open Redirect / Clickjacking / Prototype Pollution / DOM-Based / Storage Abuse}
 **Location**: `{file}:{line}`
 **CWE**: CWE-{601|1021|1321|79}
@@ -117,4 +118,5 @@ Append to `./assessment/vulnerabilities.md`:
 - **Only report exploitable client-side flaws** — missing headers alone are informational unless a sensitive action is frameable.
 - **For prototype pollution, identify a gadget** — pollution without a usable gadget is low severity.
 - **For open redirect, confirm the bypass** — show the exact URL that evades validation.
+- **Idempotent output** — if `vulnerabilities.md` already has a `# Vulnerability Findings — Client-Side` section, replace it entirely. See `sc3-vuln-scan` idempotency rule.
 - **Save to `./assessment/vulnerabilities.md`** and confirm.

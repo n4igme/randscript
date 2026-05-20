@@ -81,6 +81,7 @@ Append to `./assessment/vulnerabilities.md`:
 ### VULN-FILE-001: {Title}
 
 **Severity**: {Critical/High/Medium/Low}
+**Confidence**: {High/Medium/Low}
 **Category**: {Unrestricted Upload / Path Traversal / Arbitrary Write / LFI}
 **Location**: `{file}:{line}`
 **CWE**: CWE-{434|22|73|98}
@@ -115,4 +116,5 @@ Append to `./assessment/vulnerabilities.md`:
 - **Only report confirmed file/path flaws** — user input must actually reach file operations unsanitized.
 - **Check framework protections** — static file serving configs, upload middleware defaults.
 - **Include the exact payload** (traversal sequence, malicious filename) that exploits the flaw.
+- **Idempotent output** — if `vulnerabilities.md` already has a `# Vulnerability Findings — File Upload & Path Traversal` section, replace it entirely. See `sc3-vuln-scan` idempotency rule.
 - **Save to `./assessment/vulnerabilities.md`** and confirm.

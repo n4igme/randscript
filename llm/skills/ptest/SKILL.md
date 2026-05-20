@@ -23,6 +23,7 @@ Structured pentest engagement with mandatory quality gates preventing premature 
 ## Commands
 
 $ARGUMENTS
+<!-- ↑ Runtime token: the skill framework substitutes this with the user's actual command argument -->
 
 | Command | Action |
 |---------|--------|
@@ -83,11 +84,30 @@ If no command is given, show current status and suggest next action.
 
 ### Wordlists
 
+**Platform-aware path resolution:** Detect the SecLists path at preflight and store it for the engagement.
+
+```bash
+# Resolve SECLISTS_PATH based on platform
+if [ -d "/usr/share/seclists" ]; then
+  SECLISTS_PATH="/usr/share/seclists"
+elif [ -d "/opt/homebrew/share/seclists" ]; then
+  SECLISTS_PATH="/opt/homebrew/share/seclists"
+elif [ -d "/usr/local/share/seclists" ]; then
+  SECLISTS_PATH="/usr/local/share/seclists"
+elif [ -d "$HOME/SecLists" ]; then
+  SECLISTS_PATH="$HOME/SecLists"
+else
+  SECLISTS_PATH=""  # Not found — prompt user
+fi
+```
+
+Store the resolved path in `state.yaml` under `config.seclists_path`. All subsequent commands use `$SECLISTS_PATH` instead of hardcoded paths.
+
 The following wordlists are expected (from SecLists):
-- `/usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt`
-- `/usr/share/seclists/Discovery/Web-Content/raft-medium-files.txt`
-- `/usr/share/seclists/Discovery/Web-Content/api/api-endpoints.txt`
-- `/usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt`
+- `$SECLISTS_PATH/Discovery/Web-Content/raft-medium-directories.txt`
+- `$SECLISTS_PATH/Discovery/Web-Content/raft-medium-files.txt`
+- `$SECLISTS_PATH/Discovery/Web-Content/api/api-endpoints.txt`
+- `$SECLISTS_PATH/Discovery/DNS/subdomains-top1million-5000.txt`
 
 Install SecLists if missing:
 ```bash
@@ -125,9 +145,9 @@ Before any testing begins, collect and document:
    - `cloud` — AWS/GCP/Azure resources
    - `mobile` — iOS/Android applications
    - `mixed` — combination (default)
-3. **Rules of Engagement** — testing hours, restricted techniques, notification requirements
-4. **Authorization** — confirm written authorization exists (do NOT proceed without it)
-5. **Output Directory** — create `./ptest-output/` with subdirectories:
+4. **Rules of Engagement** — testing hours, restricted techniques, notification requirements
+5. **Authorization** — confirm written authorization exists (do NOT proceed without it)
+6. **Output Directory** — create `./ptest-output/` with subdirectories:
 
 ```
 ./ptest-output/
@@ -160,6 +180,9 @@ engagement:
   started: ""
   scope_type: ""
 
+config:
+  seclists_path: ""  # Resolved during preflight
+
 gateways:
   1_passive_recon: OPEN
   2_active_recon: LOCKED
@@ -174,6 +197,50 @@ findings_count: 0
 escalations_count: 0
 ```
 
+### Scope-Aware Checklist Generation
+
+When generating phase checklists during `start`, filter techniques by scope type. Techniques that don't apply to the engagement's scope type should be pre-marked as `N/A (scope: {type})` instead of `PENDING`.
+
+| Phase | Technique | web | network | cloud | mobile | mixed |
+|-------|-----------|-----|---------|-------|--------|-------|
+| 1 | OSINT Gathering | Y | Y | Y | Y | Y |
+| 1 | Subdomain Enumeration | Y | Y | Y | N | Y |
+| 1 | Technology Fingerprinting | Y | N | Y | Y | Y |
+| 1 | Email & Username Discovery | Y | Y | Y | N | Y |
+| 1 | Network Mapping | N | Y | Y | N | Y |
+| 1 | Asset Validation | Y | Y | Y | N | Y |
+| 2 | Port Scanning (MANDATORY) | Y | Y | Y | Y | Y |
+| 2 | Service Detection & Banner Grabbing | Y | Y | Y | Y | Y |
+| 2 | OS Fingerprinting | N | Y | N | N | Y |
+| 2 | Network Topology Mapping | N | Y | Y | N | Y |
+| 3 | Directory & File Brute-Force (MANDATORY) | Y | N | N | N | Y |
+| 3 | API Endpoint Discovery (MANDATORY) | Y | N | Y | Y | Y |
+| 3 | Parameter Discovery | Y | N | N | Y | Y |
+| 3 | Virtual Host Enumeration | Y | N | N | N | Y |
+| 3 | CMS-Specific Enumeration | Y | N | N | N | Y |
+| 3 | JavaScript Analysis | Y | N | N | Y | Y |
+| 3 | Authentication Endpoint Mapping | Y | N | Y | Y | Y |
+| 5 | Threat Modeling | Y | Y | Y | Y | Y |
+| 5 | Nuclei Scan (MANDATORY) | Y | N | Y | N | Y |
+| 5 | Nikto Scan | Y | N | N | N | Y |
+| 5 | SSL/TLS Assessment | Y | Y | Y | N | Y |
+| 5 | CVE Mapping | Y | Y | Y | Y | Y |
+| 5 | Manual Verification | Y | Y | Y | Y | Y |
+| 5 | Prioritized Vector List | Y | Y | Y | Y | Y |
+| 6 | Known CVE Exploitation | Y | Y | Y | Y | Y |
+| 6 | Web Application Attacks | Y | N | Y | N | Y |
+| 6 | Authentication Bypass | Y | Y | Y | Y | Y |
+| 6 | Injection Attacks | Y | N | Y | Y | Y |
+| 6 | Logic Flaws | Y | N | Y | Y | Y |
+| 6 | Client-Side Attacks | Y | N | N | Y | Y |
+| 7 | Privilege Escalation | Y | Y | Y | Y | Y |
+| 7 | Lateral Movement | N | Y | Y | N | Y |
+| 7 | Persistence (Document Only) | N | Y | Y | N | Y |
+| 7 | Data Access | Y | Y | Y | Y | Y |
+| 7 | Credential Harvesting | Y | Y | Y | Y | Y |
+
+When scope type is `mixed`, all techniques are `PENDING`. For other scope types, mark `N` entries as `N/A (scope: {type})`.
+
 ---
 
 ## Resume (`resume`)
@@ -184,6 +251,16 @@ When resuming an interrupted engagement:
 2. Read the active phase's `checklist.md` to see which techniques are done vs. pending.
 3. Read `./ptest-output/findings-log.md` for context on what's been found.
 4. Report status to user and suggest next technique to execute.
+
+### Recovery (if state.yaml is missing or corrupted)
+
+If `state.yaml` cannot be read:
+1. Scan `./ptest-output/*/checklist.md` files to determine which phases have been started.
+2. Find the last phase with a checklist containing `DONE` or `FAILED` entries.
+3. Count findings in `./ptest-output/findings-log.md` to reconstruct `findings_count`.
+4. Count files in `./ptest-output/escalations/` to reconstruct `escalations_count`.
+5. Rebuild `state.yaml` — mark completed phases as `PASSED`, current phase as `OPEN`, remaining as `LOCKED`.
+6. Inform user of reconstructed state and ask for confirmation before proceeding.
 
 ---
 
@@ -199,6 +276,26 @@ When resuming an interrupted engagement:
 | 6 | Exploitation | `exploit.md` | Prioritized vulnerabilities exploited with PoC |
 | 7 | Post-Exploitation | `post-exploit.md` | Privilege escalation & lateral movement attempted |
 | 8 | Reporting | `report.md` | Final report delivered |
+
+---
+
+## Effort Allocation
+
+For time-boxed engagements, use these guidelines to avoid over-investing in early phases:
+
+| Phase | % of Total Time | Rationale |
+|-------|----------------|-----------|
+| 1–2 Recon (Passive + Active) | 15% | Discovery, not exploitation |
+| 3 Enumeration | 15% | Deep enough to find entry points |
+| 4 Attack Surface | 5% | Planning — consolidation only |
+| 5 Vuln Assessment | 20% | Scanning + manual verification |
+| 6 Exploitation | 25% | Highest-value work |
+| 7 Post-Exploitation | 10% | Demonstrate impact |
+| 8 Reporting | 10% | Write-up (findings documented throughout) |
+
+Adjust based on scope size. Large scope (50+ hosts) → more recon time. Small scope (single app) → more exploitation time.
+
+**Move-on heuristic:** If a technique yields no new results after 15–20 minutes of active work, mark it `DONE` (no findings) or `FAILED (diminishing returns)` and proceed to the next technique.
 
 ---
 
@@ -224,6 +321,16 @@ If a mandatory tool is unavailable, document the gap and use the best available 
 ## Finding Template
 
 Every finding documented during the engagement MUST follow this format:
+
+### Finding ID Assignment
+
+IDs are auto-incremented from `state.yaml`:
+1. Read current `findings_count` from `./ptest-output/state.yaml`.
+2. Increment by 1.
+3. Use the new value as the finding ID (e.g., `FINDING-1`, `FINDING-2`, ...).
+4. Write the updated `findings_count` back to `state.yaml` immediately.
+
+This ensures unique, sequential IDs even across phases and sessions.
 
 ```markdown
 ## [FINDING-{ID}] {Title}
@@ -269,7 +376,10 @@ Individual findings can be formatted for Jira export using `/parse-finding`.
 3. **Pick Technique** — select next pending technique.
 4. **Execute** — run the technique using the tools specified in the phase skill file.
 5. **Document** — record findings using the Finding Template above.
-6. **Update Checklist** — mark technique as done in `checklist.md`.
+6. **Update Checklist** — mark technique status in `checklist.md`:
+   - `DONE` — technique executed successfully (findings or no findings)
+   - `SKIPPED (reason)` — technique not applicable or tool unavailable
+   - `FAILED (reason)` — technique attempted but did not succeed (e.g., WAF blocked, tool crashed, target unresponsive)
 7. **Update Findings Log** — append to `./ptest-output/findings-log.md`.
 8. **Repeat** until phase exit criteria are met.
 
@@ -288,9 +398,15 @@ Individual findings can be formatted for Jira export using `/parse-finding`.
 
 Triggered by `escalate` command OR automatically when a Critical/P1 finding is discovered.
 
-1. Document finding fully using the Finding Template.
+**ID relationship:** An escalation is also a finding. It gets both:
+- A **finding ID** from `findings_count` (e.g., `FINDING-5`) — used in findings-log.md and the final report.
+- An **escalation ID** from `escalations_count` (e.g., `escalation-1`) — used for the escalation file name and urgent notification.
+
+The escalation file references the finding ID for traceability.
+
+1. Document finding fully using the Finding Template (assigns a finding ID).
 2. Classify severity (CVSS 3.1).
-3. Write to `./ptest-output/escalations/escalation-{ID}.md`.
+3. Write to `./ptest-output/escalations/escalation-{escalations_count}.md`, referencing `FINDING-{ID}`.
 4. Alert user for immediate client communication.
 5. Current gateway pauses until escalation is acknowledged.
 6. Increment `escalations_count` in `state.yaml`.
@@ -304,7 +420,7 @@ See `escalate-finding.md` for full procedure.
 Post-engagement housekeeping:
 
 1. **Archive** — compress `./ptest-output/` to `./ptest-output-{engagement-name}-{date}.tar.gz`.
-2. **Sanitize** — remove any credentials, tokens, or sensitive data from output files.
+2. **Sanitize** — remove credentials *you used* during testing (your API keys, auth tokens, test account passwords). Do NOT remove credentials *you found* as findings — those are evidence and must remain in the report.
 3. **Verify** — confirm report is complete and all findings are documented.
 4. **Summary** — print engagement stats (findings by severity, phases completed, duration).
 

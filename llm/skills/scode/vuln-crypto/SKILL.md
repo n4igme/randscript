@@ -84,6 +84,7 @@ Append to `./assessment/vulnerabilities.md`:
 ### VULN-CRYPTO-001: {Title}
 
 **Severity**: {Critical/High/Medium/Low}
+**Confidence**: {High/Medium/Low}
 **Category**: {Weak Algorithm / Key Management / TLS Issue / Weak RNG / Encryption Misuse}
 **Location**: `{file}:{line}`
 **CWE**: CWE-{327|321|326|330|328}
@@ -115,4 +116,5 @@ Append to `./assessment/vulnerabilities.md`:
 - **Only report crypto weaknesses with real impact** — MD5 for cache keys is not a vuln; MD5 for passwords is.
 - **Context matters** — assess whether the crypto protects sensitive data or security-critical operations.
 - **Include what the correct algorithm/approach should be.**
+- **Idempotent output** — if `vulnerabilities.md` already has a `# Vulnerability Findings — Cryptographic Failures` section, replace it entirely. See `sc3-vuln-scan` idempotency rule.
 - **Save to `./assessment/vulnerabilities.md`** and confirm.

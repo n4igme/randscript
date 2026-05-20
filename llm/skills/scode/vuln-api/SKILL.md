@@ -93,6 +93,7 @@ Append to `./assessment/vulnerabilities.md`:
 ### VULN-API-001: {Title}
 
 **Severity**: {Critical/High/Medium/Low}
+**Confidence**: {High/Medium/Low}
 **Category**: {Mass Assignment / Data Exposure / GraphQL / Broken Function Auth / Rate Limiting / Versioning}
 **Location**: `{file}:{line}`
 **CWE**: CWE-{915|200|306|770|1059}
@@ -129,4 +130,5 @@ Append to `./assessment/vulnerabilities.md`:
 - **Only report confirmed API flaws** — verify the unfiltered field is actually writable/readable.
 - **For mass assignment, identify the dangerous field** — show which field (role, admin, price) can be set.
 - **For GraphQL, test actual query depth** — don't just flag missing limits without showing exploitability.
+- **Idempotent output** — if `vulnerabilities.md` already has a `# Vulnerability Findings — API-Specific` section, replace it entirely. See `sc3-vuln-scan` idempotency rule.
 - **Save to `./assessment/vulnerabilities.md`** and confirm.

@@ -100,6 +100,7 @@ Append to `./assessment/vulnerabilities.md`:
 ### VULN-ACCESS-001: {Title}
 
 **Severity**: {Critical/High/Medium/Low}
+**Confidence**: {High/Medium/Low}
 **Category**: {Missing Modifier / tx.origin / Unprotected Init / Storage Collision / Upgrade Auth / Selector Clash / Role Mgmt}
 **Location**: `{file}:{line}`
 **CWE**: CWE-{284|285|269}
@@ -136,4 +137,5 @@ Append to `./assessment/vulnerabilities.md`:
 - **Check all public/external functions** — every state-changing function needs explicit access control or a reason to be permissionless.
 - **For proxies, verify storage layout compatibility** between versions.
 - **For initializers, check both proxy AND implementation** — implementation must also be initialized or disabled.
+- **Idempotent output** — if `vulnerabilities.md` already has a `# Vulnerability Findings — Access Control & Proxy` section, replace it entirely. See `sc3-vuln-scan` idempotency rule.
 - **Save to `./assessment/vulnerabilities.md`** and confirm.

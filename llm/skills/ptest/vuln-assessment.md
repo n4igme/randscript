@@ -166,6 +166,8 @@ This list becomes the input for Phase 6 (Exploitation).
 
 ## Scope Type Adjustments
 
+> **Note:** The authoritative scope/technique matrix is in `SKILL.md` under "Scope-Aware Checklist Generation". The guidance below is supplementary.
+
 - **web/API:** Focus on OWASP Top 10, API-specific vulns (BOLA, mass assignment, rate limiting).
 - **network:** Focus on CVE mapping for service versions, default credentials, misconfigurations.
 - **cloud:** Focus on IAM misconfigurations, storage permissions, metadata exposure, SSRF to cloud endpoints.
@@ -198,7 +200,7 @@ Write `./ptest-output/vuln-assessment/checklist.md`:
 | 7 | Prioritized Vector List | PENDING | |
 ```
 
-Mark each technique as `DONE` or `SKIPPED (reason)` after execution.
+Mark each technique as `DONE`, `SKIPPED (reason)`, or `FAILED (reason)` after execution.
 
 ## Exit Criteria
 - [ ] Attack trees documented for all high-priority assets.

@@ -72,6 +72,7 @@ Append to `./assessment/vulnerabilities.md`:
 ### VULN-DS-001: {Title}
 
 **Severity**: {Critical/High/Medium/Low}
+**Confidence**: {High/Medium/Low}
 **Category**: {Insecure Deserialization / XXE}
 **Location**: `{file}:{line}`
 **CWE**: CWE-{502|611}
@@ -101,4 +102,5 @@ Append to `./assessment/vulnerabilities.md`:
 - **Deserialization of untrusted data is almost always Critical** — it often leads to RCE.
 - **Check XML parser defaults** — many are unsafe by default.
 - **Don't forget file uploads** — SVG and Office formats are XML attack vectors.
-- **Append to `./assessment/vulnerabilities.md`** and confirm.
+- **Idempotent output** — if `vulnerabilities.md` already has a `# Vulnerability Findings — Deserialization - **Append to `./assessment/vulnerabilities.md`** and confirm. XXE` section, replace it entirely. See `sc3-vuln-scan` idempotency rule.
+- **Save to `./assessment/vulnerabilities.md`** and confirm.

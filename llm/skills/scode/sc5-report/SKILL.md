@@ -42,6 +42,7 @@ Organize findings by severity, then by category. Add:
 - CWE references
 - Business impact context
 - Remediation priority and effort estimates
+- Items from `validated-vulnerabilities.md` "Needs Dynamic Testing" section into the report's Scope & Limitations
 
 ## Output
 
@@ -130,7 +131,14 @@ Save to `./assessment/bug-bounty-report.md`:
 
 - Static analysis only — no runtime testing performed
 - {Any directories/components excluded}
-- {Any areas that need dynamic testing to confirm}
+
+### Requires Dynamic Testing
+
+Items from `validated-vulnerabilities.md` that could not be confirmed statically:
+
+| ID | Title | What to Test | Why Static Analysis Is Insufficient |
+|----|-------|-------------|-------------------------------------|
+| {from validated-vulnerabilities.md "Needs Dynamic Testing" section} |
 ```
 
 ## Rules

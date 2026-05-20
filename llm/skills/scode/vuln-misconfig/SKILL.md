@@ -79,6 +79,7 @@ Append to `./assessment/vulnerabilities.md`:
 ### VULN-MC-001: {Title}
 
 **Severity**: {Critical/High/Medium/Low}
+**Confidence**: {High/Medium/Low}
 **Category**: {CORS / Missing Headers / Debug Mode / Default Creds / Exposed Interface}
 **Location**: `{file}:{line}`
 **CWE**: CWE-{942|693|489|1188|16}
@@ -108,4 +109,5 @@ Append to `./assessment/vulnerabilities.md`:
 - **Distinguish dev vs prod configs** — debug mode in dev-only config is informational, not a finding.
 - **CORS with credentials is the key** — wildcard without credentials is usually acceptable.
 - **Check if headers are set at infrastructure level** — they may not be in app code.
-- **Append to `./assessment/vulnerabilities.md`** and confirm.
+- **Idempotent output** — if `vulnerabilities.md` already has a `# Vulnerability Findings — Misconfiguration` section, replace it entirely. See `sc3-vuln-scan` idempotency rule.
+- **Save to `./assessment/vulnerabilities.md`** and confirm.

@@ -106,6 +106,7 @@ Append to `./assessment/vulnerabilities.md`:
 ### VULN-NFT-001: {Title}
 
 **Severity**: {Critical/High/Medium/Low}
+**Confidence**: {High/Medium/Low}
 **Category**: {Metadata / Randomness / Royalty Bypass / Minting / Enumeration / Lazy Mint}
 **Location**: `{file}:{line}`
 **CWE**: CWE-{330|284|841|682}
@@ -142,4 +143,5 @@ Append to `./assessment/vulnerabilities.md`:
 - **Only report exploitable NFT flaws** — mutable metadata is only a vuln if owner can rug without timelock/governance.
 - **For randomness, prove predictability** — show how the attacker derives the outcome before committing.
 - **For royalty bypass, consider the marketplace context** — some are inherently unenforceable.
+- **Idempotent output** — if `vulnerabilities.md` already has a `# Vulnerability Findings — NFT` section, replace it entirely. See `sc3-vuln-scan` idempotency rule.
 - **Save to `./assessment/vulnerabilities.md`** and confirm.

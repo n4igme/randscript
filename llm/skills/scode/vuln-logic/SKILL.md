@@ -84,6 +84,7 @@ Append to `./assessment/vulnerabilities.md`:
 ### VULN-BL-001: {Title}
 
 **Severity**: {Critical/High/Medium/Low}
+**Confidence**: {High/Medium/Low}
 **Category**: {Race Condition / Missing Rate Limit / Workflow Bypass / Numeric Manipulation / Mass Assignment}
 **Location**: `{file}:{line}`
 **CWE**: CWE-{362|770|841|190|915}
@@ -113,4 +114,5 @@ Append to `./assessment/vulnerabilities.md`:
 - **Focus on financial/state-changing operations** — these have the highest bounty payouts.
 - **Race conditions need atomic operations** — just adding a check isn't enough.
 - **Rate limiting must be server-side** — client-side throttling is not a control.
-- **Append to `./assessment/vulnerabilities.md`** and confirm.
+- **Idempotent output** — if `vulnerabilities.md` already has a `# Vulnerability Findings — Business Logic` section, replace it entirely. See `sc3-vuln-scan` idempotency rule.
+- **Save to `./assessment/vulnerabilities.md`** and confirm.

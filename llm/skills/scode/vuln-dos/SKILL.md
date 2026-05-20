@@ -105,6 +105,7 @@ Append to `./assessment/vulnerabilities.md`:
 ### VULN-DOS-001: {Title}
 
 **Severity**: {Critical/High/Medium/Low}
+**Confidence**: {High/Medium/Low}
 **Category**: {ReDoS / Algorithmic Complexity / Resource Exhaustion / Compression Bomb / XML Bomb / Event Loop Blocking / Pool Starvation}
 **Location**: `{file}:{line}`
 **CWE**: CWE-{1333|400|405|776|834}
@@ -142,4 +143,5 @@ Append to `./assessment/vulnerabilities.md`:
 - **Only report DoS with significant amplification** — a slow endpoint is not a vuln unless attacker effort is disproportionately small.
 - **Test regex patterns** — use backtracking analysis to confirm ReDoS, don't just flag complex regex.
 - **Consider existing protections** — reverse proxy timeouts, WAF rate limits, container restart policies.
+- **Idempotent output** — if `vulnerabilities.md` already has a `# Vulnerability Findings — Denial of Service` section, replace it entirely. See `sc3-vuln-scan` idempotency rule.
 - **Save to `./assessment/vulnerabilities.md`** and confirm.

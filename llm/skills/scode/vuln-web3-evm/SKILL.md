@@ -120,6 +120,7 @@ Append to `./assessment/vulnerabilities.md`:
 ### VULN-EVM-001: {Title}
 
 **Severity**: {Critical/High/Medium/Low}
+**Confidence**: {High/Medium/Low}
 **Category**: {Storage Slot / Returnbomb / Dirty Bits / Phantom Function / Memory Safety / EVM Compat / ABI Encoding / Gas Griefing}
 **Location**: `{file}:{line}`
 **CWE**: CWE-{787|119|682|670}
@@ -157,4 +158,5 @@ Append to `./assessment/vulnerabilities.md`:
 - **Check Solidity version** — many issues are version-specific (e.g., dirty bits fixed in newer compilers).
 - **For storage collisions, show the exact slot overlap** with calculation.
 - **For returnbomb, calculate the gas cost** to the victim.
+- **Idempotent output** — if `vulnerabilities.md` already has a `# Vulnerability Findings — Low-Level EVM` section, replace it entirely. See `sc3-vuln-scan` idempotency rule.
 - **Save to `./assessment/vulnerabilities.md`** and confirm.

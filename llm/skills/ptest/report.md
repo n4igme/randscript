@@ -29,7 +29,7 @@ metadata:
    - Impact
    - Remediation recommendation
    - CVSS score
-7. **Attack Narrative:** Story of the engagement from recon to final impact.
+7. **Attack Narrative:** Story of the engagement from recon to final impact. Include attempted vectors that failed or were blocked (from `./ptest-output/exploit/vectors-attempted.md`) to show testing thoroughness.
 8. **Remediation Roadmap:** Prioritized fix list.
 9. **Appendices:**
    - A: Full asset inventory

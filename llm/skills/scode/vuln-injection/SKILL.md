@@ -81,6 +81,7 @@ Save to `./assessment/vulnerabilities.md` (create if doesn't exist, append if it
 ### VULN-INJ-001: {Title}
 
 **Severity**: {Critical/High/Medium/Low}
+**Confidence**: {High/Medium/Low}
 **Category**: {SQL Injection / Command Injection / SSTI / XSS / NoSQL Injection}
 **Location**: `{file}:{line}`
 **CWE**: CWE-{89|78|1336|79|943}
@@ -117,4 +118,5 @@ Save to `./assessment/vulnerabilities.md` (create if doesn't exist, append if it
 - **Only report confirmed injection paths** — sink must be reachable from user-controlled source.
 - **Check framework protections** — ORMs, auto-escaping templates, CSP may neutralize the issue.
 - **Include the exact payload** that would trigger the injection.
+- **Idempotent output** — if `vulnerabilities.md` already has a `# Vulnerability Findings — Injection` section, replace it entirely. See `sc3-vuln-scan` idempotency rule.
 - **Save to `./assessment/vulnerabilities.md`** and confirm.
