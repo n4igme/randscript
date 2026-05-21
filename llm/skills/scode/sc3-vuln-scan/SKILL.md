@@ -96,6 +96,32 @@ If no results → mark ALL Web3 scanners as `SKIPPED (no smart contract code)` i
 
 Each sub-skill appends its findings to `./assessment/vulnerabilities.md`.
 
+## Positive Security Observations
+
+While scanning, track what the application does WELL. Each scanner should note strong security patterns encountered:
+
+```markdown
+## Positive Observations
+- {scanner}: {what's done well}
+```
+
+Append to `./assessment/vulnerabilities.md` at the end, under a `# Positive Security Observations` section:
+
+| Category | What to Note |
+|----------|-------------|
+| Input validation | Consistent use of schema validation (Zod, Joi, class-validator) |
+| SQL safety | All queries via ORM with parameterization, no raw SQL |
+| Auth coverage | Every endpoint has auth middleware, no gaps found |
+| Secret management | All secrets via env vars / secret manager, none hardcoded |
+| Error handling | Generic error messages to users, detailed logs server-side only |
+| Crypto | Strong algorithms (bcrypt/argon2 for passwords, AES-256-GCM for data) |
+| Dependencies | All pinned to exact versions, no wildcard ranges |
+| IaC | Least-privilege IAM, encryption at rest enabled, no public buckets |
+
+These feed directly into sc5-report's "Positive Security Observations" section. Collecting them during scanning (when you're reading the code) is more accurate than trying to recall them at report time.
+
+---
+
 ## Cross-Scanner Deduplication
 
 Before writing findings, each scanner should check if `vulnerabilities.md` already contains a finding for the same vulnerable code location (file:line). If a prior scanner already reported the same sink/location:

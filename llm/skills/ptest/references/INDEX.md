@@ -9,17 +9,23 @@ Quick lookup: what you found → which reference to load.
 | You Found | Load This Reference |
 |-----------|-------------------|
 | Spring Boot / actuator endpoint | `bulk-actuator-scanning.md`, `heapdump-secret-extraction.md`, `framework-specific-attacks.md` §7 |
-| Keycloak / OAuth / OIDC | `keycloak-assessment.md`, `keycloak-gateway-exploitation.md` |
-| Dynatrace instance | `operational-pitfalls.md` (Dynatrace section) |
+| Keycloak / OAuth / OIDC | `keycloak-assessment.md`, `keycloak-gateway-exploitation.md`, `jwt-attack-techniques.md` |
+| Dynatrace instance | `dynatrace-cluster-probing.md`, `operational-pitfalls.md` (Dynatrace section) |
 | Lucy / phishing platform | `lucy-security-assessment.md` |
 | Camunda BPM | `camunda-bpm-assessment.md` |
 | GraphQL endpoint | `graphql-websocket-testing.md` §1, `framework-specific-attacks.md` §6 |
 | WebSocket endpoint | `graphql-websocket-testing.md` §2, `advanced-web-attacks.md` §1 |
 | Serialized data (base64 blob, Java/PHP/.NET) | `insecure-deserialization.md` |
-| SAML / SSO login page | `saml-sso-assessment.md` |
+| XML input / SOAP / SAML / Content-Type: xml | `xxe-injection.md` |
+| SAML / SSO login page | `saml-sso-assessment.md`, `xxe-injection.md` §11 |
 | Cloudflare WAF / 403 | `cloudflare-bypass-techniques.md` |
 | Cloudflare API Shield error | `cloudflare-bypass-techniques.md` §2 |
 | Cloudflare Worker | `cloudflare-bypass-techniques.md` §3 |
+| HTTP Request Smuggling indicators (CL/TE mismatch, H2 downgrade) | `http-request-smuggling.md` |
+| Web cache (cf-cache-status, Age, X-Cache headers) | `web-cache-poisoning.md` |
+| Host header reflection / password reset | `host-header-attacks.md` |
+| File upload functionality | `file-upload-attacks.md` |
+| Node.js / Express / Next.js backend | `prototype-pollution.md` |
 | GCP IAP redirect | `cloud-infrastructure-enumeration.md` §1 |
 | AWS CNAME (S3, Transfer, CloudFront) | `cloud-infrastructure-enumeration.md` §2 |
 | CI/CD tool (ArgoCD, Atlantis, Airflow, n8n, Jenkins) | `cicd-pipeline-exploitation.md`, `cicd-devops-assessment.md` |
@@ -42,6 +48,8 @@ Quick lookup: what you found → which reference to load.
 | Partner API gateway (shared IP, 403) | `cloudflare-bypass-techniques.md` §4 |
 | Microservice architecture | `microservice-architecture-mapping.md`, `kubernetes-container-attacks.md` |
 | Credential found (heapdump, JS, CTI) | `credential-chaining.md`, `credential-inventory-structure.md` |
+| CSRF / state-changing actions without token | `csrf-attacks.md` |
+| JWT / token-based auth | `jwt-attack-techniques.md`, `keycloak-gateway-exploitation.md` |
 | Snyk token found | `snyk-token-enumeration.md` |
 | Path traversal / ingress bypass | `path-traversal-actuator-bypass.md` |
 | SSRF opportunity | `ssrf-outbound-forcing.md`, `web-vuln-bypass-tables.md` (SSRF) |
@@ -56,8 +64,8 @@ Quick lookup: what you found → which reference to load.
 | 2 — Active Recon | `pattern-subdomain-bruteforce.md`, `nmap-cloud-targets.md`, `operational-pitfalls.md` |
 | 3 — Enumeration | `bulk-actuator-scanning.md`, `javascript-secret-scanning.md`, `framework-specific-attacks.md` |
 | 4 — Attack Surface | `depth-vs-breadth-decisions.md`, `cloud-infrastructure-enumeration.md` |
-| 5 — Vuln Assessment | `web-vuln-bypass-tables.md`, `false-positive-detection.md` |
-| 6 — Exploitation | `signal-hunting-table.md`, `attack-chain-framework.md`, `credential-chaining.md`, `re-validation-loops.md`, `advanced-web-attacks.md`, `insecure-deserialization.md`, `parameter-pollution.md`, `graphql-websocket-testing.md`, `kubernetes-container-attacks.md`, `cicd-pipeline-exploitation.md` |
+| 5 — Vuln Assessment | `web-vuln-bypass-tables.md`, `false-positive-detection.md`, `web-cache-poisoning.md`, `host-header-attacks.md`, `http-request-smuggling.md` |
+| 6 — Exploitation | `phase6-exploitation-framework.md`, `jwt-attack-techniques.md`, `signal-hunting-table.md`, `attack-chain-framework.md`, `credential-chaining.md`, `re-validation-loops.md`, `advanced-web-attacks.md`, `insecure-deserialization.md`, `parameter-pollution.md`, `graphql-websocket-testing.md`, `kubernetes-container-attacks.md`, `cicd-pipeline-exploitation.md`, `prototype-pollution.md`, `file-upload-attacks.md`, `http-request-smuggling.md`, `host-header-attacks.md` |
 | 7 — Post-Exploitation | `phase7-post-exploitation-framework.md`, `data-classification-framework.md` |
 | 8 — Reporting | `phase8-reporting-process.md`, `time-box-enforcement.md` |
 
@@ -75,14 +83,13 @@ Quick lookup: what you found → which reference to load.
 | Open Redirect | `web-vuln-bypass-tables.md` (11 techniques) |
 | Deserialization | `insecure-deserialization.md` |
 | Parameter Pollution | `parameter-pollution.md` |
-| Race Condition | `advanced-web-attacks.md` §4 |
+| Race Condition | `graphql-websocket-testing.md` §Race, `advanced-web-attacks.md` §4 |
 | Cache Poisoning | `advanced-web-attacks.md` §2 |
 | HTTP Smuggling | `advanced-web-attacks.md` §3 |
 | WebSocket | `graphql-websocket-testing.md` §2, `advanced-web-attacks.md` §1 |
 | GraphQL | `graphql-websocket-testing.md` §1, `framework-specific-attacks.md` §6 |
 | Container Escape | `kubernetes-container-attacks.md` |
 | CI/CD Compromise | `cicd-pipeline-exploitation.md` |
-| Race Condition | `graphql-websocket-testing.md` §Race, `advanced-web-attacks.md` §4 |
 | SSTI | `web-vuln-bypass-tables.md` (6 engines) |
 | JWT | `web-vuln-bypass-tables.md` (none/confusion) |
 | CORS | `web-vuln-bypass-tables.md` |

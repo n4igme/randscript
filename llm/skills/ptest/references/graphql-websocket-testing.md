@@ -346,6 +346,14 @@ websocat "wss://$TARGET/ws" \
 # Some implementations check auth in HTTP upgrade but not in WS frames
 websocat "wss://$TARGET/ws" -H "Authorization: Bearer invalid_token"
 # If upgrade succeeds → auth not properly validated
+
+# 6. Handshake manipulation for IP ban bypass
+# If you get blocked during testing, manipulate handshake headers:
+websocat "wss://$TARGET/ws" -H "X-Forwarded-For: 192.168.1.1"
+websocat "wss://$TARGET/ws" -H "X-Forwarded-For: 127.0.0.1"
+# Also try reconnecting with different Sec-WebSocket-Key
+# Some apps use handshake session context for all subsequent messages
+# → tamper with handshake cookies/headers to change user context
 ```
 
 ### Cross-Site WebSocket Hijacking (CSWSH)

