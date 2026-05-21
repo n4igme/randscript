@@ -142,6 +142,102 @@ curl -s https://target.com/.well-known/openid-configuration | python3 -m json.to
 curl -s https://target.com/.well-known/oauth-authorization-server | python3 -m json.tool
 ```
 
+### 8. Framework Detection & Targeted Enumeration
+
+Identify the web framework, then load the appropriate attack playbook.
+
+```bash
+# Detect framework from response headers/body
+# Next.js: __NEXT_DATA__ in source, /_next/ paths
+# Laravel: laravel_session cookie, /telescope, /horizon
+# Django: csrftoken cookie, /admin/
+# WordPress: /wp-content/, /wp-json/
+# Rails: _session_id cookie, X-Request-Id header
+# Spring Boot: /actuator, x-envoy-* headers
+# GraphQL: /graphql, /graphiql, /playground
+
+# Quick framework fingerprint
+curl -sk "https://target.com" -D - -o /tmp/fw-detect.html 2>/dev/null
+grep -qi "__NEXT_DATA__" /tmp/fw-detect.html && echo "[+] Next.js detected"
+grep -qi "laravel_session" /tmp/fw-detect.html && echo "[+] Laravel detected"
+grep -qi "csrftoken" /tmp/fw-detect.html && echo "[+] Django detected"
+grep -qi "wp-content" /tmp/fw-detect.html && echo "[+] WordPress detected"
+```
+
+**When framework is identified:** Load `references/framework-specific-attacks.md` for targeted enumeration paths specific to that framework.
+
+### 9. GraphQL Endpoint Discovery & Introspection
+
+```bash
+# Find GraphQL endpoints
+for path in /graphql /graphiql /playground /api/graphql /v1/graphql /query /gql; do
+  code=$(curl -sk -X POST "https://target.com${path}" -H "Content-Type: application/json" \
+    -d '{"query":"{__typename}"}' -o /dev/null -w "%{http_code}")
+  [ "$code" != "404" ] && [ "$code" != "000" ] && echo "[+] GraphQL at ${path} -> ${code}"
+done
+
+# Full introspection (if enabled)
+curl -sk "https://target.com/graphql" -X POST -H "Content-Type: application/json" \
+  -d '{"query":"{ __schema { types { name fields { name type { name } } } } }"}' | python3 -m json.tool | head -50
+```
+
+**Deep dive:** See `references/framework-specific-attacks.md` §6 and `references/web-vuln-bypass-tables.md` (GraphQL section).
+
+### 10. WebSocket Endpoint Discovery
+
+```bash
+# Search for WebSocket URLs in page source and JS files
+curl -sk "https://target.com" | grep -ioE "wss?://[^\"' ]+"
+
+# Check common WebSocket paths
+for path in /ws /websocket /socket /socket.io /hub /signalr /cable /live; do
+  code=$(curl -sk -H "Upgrade: websocket" -H "Connection: Upgrade" \
+    -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+    "https://target.com${path}" -o /dev/null -w "%{http_code}")
+  [ "$code" = "101" ] && echo "[+] WebSocket upgrade at ${path}"
+  [ "$code" = "400" ] && echo "[?] Possible WS at ${path} (400 = bad handshake)"
+done
+```
+
+**Deep dive:** See `references/advanced-web-attacks.md` §1 for WebSocket security testing.
+
+### 11. Deserialization Sink Identification
+
+Look for serialized data in cookies, headers, and request bodies.
+
+```bash
+# Check cookies for serialized data
+curl -skI "https://target.com" | grep -i "set-cookie" | grep -iE "base64|eyJ|rO0AB|AAEAAAD|O:[0-9]"
+
+# Java serialization magic bytes (base64 of AC ED 00 05 = rO0AB)
+# PHP serialization (O:4:"User":...)
+# .NET BinaryFormatter (AAEAAAD...)
+# Python pickle (base64 blob in cookie/session)
+
+# Check ViewState (.NET)
+curl -sk "https://target.com" | grep -oE '__VIEWSTATE[^"]*"[^"]*"' | head -3
+```
+
+**Deep dive:** See `references/insecure-deserialization.md` for full exploitation methodology.
+
+### 12. Bulk Actuator/Admin Scan (MANDATORY)
+
+```bash
+# Run against ALL live hosts, not just priority targets
+# See references/bulk-actuator-scanning.md for the full script
+bash scripts/bulk-actuator-scan.sh ./ptest-output/recon-passive/resolving-subs.txt
+
+# Quick manual check
+while read sub; do
+  for path in /actuator /actuator/health /actuator/env /swagger-ui.html /api-docs /admin /console; do
+    code=$(curl -sk --max-time 3 -o /dev/null -w "%{http_code}" "https://${sub}${path}")
+    [ "$code" != "000" ] && [ "$code" != "404" ] && echo "${sub}${path} -> ${code}"
+  done
+done < live-subs.txt
+```
+
+**Deep dive:** See `references/bulk-actuator-scanning.md` and `references/framework-specific-attacks.md` §7.
+
 ## Scope Type Adjustments
 
 > **Note:** The authoritative scope/technique matrix is in `SKILL.md` under "Scope-Aware Checklist Generation". The guidance below is supplementary.
@@ -177,6 +273,11 @@ Write `./ptest-output/enumeration/checklist.md`:
 | 5 | CMS-Specific Enumeration | PENDING | |
 | 6 | JavaScript Analysis | PENDING | |
 | 7 | Authentication Endpoint Mapping | PENDING | |
+| 8 | Framework Detection & Targeted Enumeration | PENDING | |
+| 9 | GraphQL Endpoint Discovery | PENDING | |
+| 10 | WebSocket Endpoint Discovery | PENDING | |
+| 11 | Deserialization Sink Identification | PENDING | |
+| 12 | Bulk Actuator/Admin Scan (MANDATORY) | PENDING | |
 ```
 
 Mark each technique as `DONE`, `SKIPPED (reason)`, or `FAILED (reason)` after execution.
