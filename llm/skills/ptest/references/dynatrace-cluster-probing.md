@@ -113,11 +113,50 @@ Compare Dynatrace protection vs other internal tools:
 
 **Key finding pattern:** When data platform tools (airflow, grafana, argocd) are IAP-protected but monitoring (Dynatrace) is NOT, this is a defense-in-depth gap. A compromised Google Workspace account bypasses the only auth layer on Dynatrace, while IAP-protected tools would still block unauthorized access.
 
+### 7. Cluster Management API (Dynatrace Managed specific)
+
+```bash
+# Cluster-level API (no environment ID needed)
+curl -sk "https://target/api/cluster/v2/environments"
+# 401 "Missing authorization parameter" → API exists, needs cluster token
+# 404 → not exposed or not Dynatrace Managed
+
+# With token format test
+curl -sk -H "Authorization: Api-Token test" "https://target/api/cluster/v2/environments"
+# 401 "Token Authentication failed" → confirms token format accepted, validates tokens
+# This is DIFFERENT from "Missing authorization parameter" — proves the auth pipeline works
+
+# Other cluster endpoints to probe
+/api/cluster/v2/environments    # List all environments (401 = exists)
+/api/cluster/v2/nodes           # Cluster nodes
+/api/cluster/v2/users           # User management
+/api/cluster/v1/installer       # Agent installer management
+```
+
+**Key insight:** The cluster API uses a DIFFERENT auth token than per-environment APIs. A cluster API token grants god-mode access to ALL environments on the cluster. Sources for cluster tokens:
+- CI/CD pipelines (Terraform, Ansible provisioning Dynatrace)
+- Heapdumps of services that auto-register with Dynatrace
+- Environment variables in container orchestrators
+- `.dynatrace/` config files in developer machines
+
+### 8. Health Endpoints (Unauthenticated)
+
+```bash
+# These typically work without auth on Dynatrace Managed
+curl -sk "https://target/rest/health"           # → "RUNNING"
+curl -sk "https://target/e/{ENV_ID}/rest/health" # → "RUNNING" (confirms env ID valid)
+```
+
+Use `/e/{ENV_ID}/rest/health` to validate discovered environment IDs without needing a token.
+
 ## Real-World Example (Bank Jago)
 
-- `monitoring.jago.com` (34.49.98.168) — Dynatrace Managed, NO IAP
+- `monitoring.jago.com` — Dynatrace Managed, NO IAP, Google-managed cert (WR3)
 - All `*-data.jago.com` hosts — IAP-protected (GCP project 1022863786872)
 - SAML IdP: Google Workspace (idpid=C02tekxn2)
 - CMC exists at `/cmc/` (redirects to login)
-- Environment ID unknown — `AP9AYQB1TNV5` (from other instance) doesn't resolve here
-- Finding: Medium — internet-facing without IAP, defense-in-depth gap vs data platform tools
+- Environment ID: `AP9AYQB1TNV5` (confirmed via `/e/AP9AYQB1TNV5/rest/health` → "RUNNING")
+- Cluster API: `/api/cluster/v2/environments` returns 401 "Missing authorization parameter" (exposed!)
+- With token: "Token Authentication failed" (validates token format, confirms auth pipeline)
+- Response headers: `dynatrace-response-source: Cluster`, `dynatrace-response-id: R5RNQ4NWKIQ9`
+- Finding: HIGH — cluster management API internet-facing, only token auth protects full cluster control

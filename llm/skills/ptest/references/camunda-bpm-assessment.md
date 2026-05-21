@@ -110,12 +110,44 @@ Camunda in a financial institution typically manages:
 
 Exposure of process definitions reveals the exact business rules, approval thresholds, and decision points — similar impact to the credit scoring rules exposure (enables fraud by understanding the system).
 
+## Keycloak SSO Integration (camunda-bpm-extension-keycloak)
+
+When Camunda uses Keycloak for auth (common in GKE/microservice deployments):
+
+1. **Separate Keycloak realm** — Camunda often gets its own realm (e.g., `bpm`) distinct from the main app realm
+2. **Login requires XSRF token** — Spring Security CSRF protection means you must:
+   - GET the webapp page first to receive `XSRF-TOKEN` cookie
+   - Include `X-XSRF-TOKEN` header with the cookie value on POST
+3. **Webapp static resources bypass auth** — cockpit, admin, tasklist HTML/JS/CSS served without auth even when API requires it
+4. **Plugin JS reveals full API structure** — `/camunda/api/cockpit/plugin/*/static/app/plugin.js` (often 200-400KB) contains the complete REST client with all endpoint paths
+5. **Prometheus metrics leak realm info** — `http_client_requests` metrics show which Keycloak realm/URL the BPM service connects to
+
+**Testing with XSRF:**
+```bash
+# Get XSRF token
+curl -sk -c /tmp/cam-cookies.txt "https://target/bpm/camunda/app/cockpit/default/"
+XSRF=$(grep "XSRF-TOKEN" /tmp/cam-cookies.txt | awk '{print $NF}')
+
+# Login attempt with XSRF
+curl -sk -b /tmp/cam-cookies.txt \
+  -H "X-XSRF-TOKEN: $XSRF" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -X POST "https://target/bpm/camunda/api/admin/auth/user/default/login/cockpit" \
+  -d "username=demo&password=demo"
+```
+
+**Path variations** — Camunda may be mounted at different base paths:
+- `/camunda/` (default)
+- `/bpm/camunda/` (behind gateway with service prefix)
+- `/engine-rest/` (REST API only, no webapp)
+
 ## Common Misconfigurations
 
 1. **Engine list without auth** — `/camunda/api/engine/engine` often bypasses auth filters because it's not under the `/engine/default/` path pattern
 2. **Demo user left enabled** — `demo:demo` credentials work in non-production environments
 3. **REST API auth separate from webapp auth** — webapp may require login but REST API may not
 4. **Actuator exposes Camunda internals** — health endpoint shows job executor details, lock owners, process engine names
+5. **Static resources + plugin JS without auth** — even with Keycloak SSO, the webapp HTML and plugin JavaScript are served unauthenticated, revealing version, API structure, and custom business logic
 
 ## Reporting
 

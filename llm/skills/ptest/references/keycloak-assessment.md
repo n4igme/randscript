@@ -155,6 +155,57 @@ done
 # 403 = blocked (hardened)
 ```
 
+### 9. CORS Origin Reflection on Sensitive Endpoints (3 min)
+
+```bash
+# Test if Keycloak reflects arbitrary origins with credentials
+# This is CRITICAL if /userinfo reflects — enables cross-origin identity theft
+for endpoint in \
+  "/realms/${REALM}/protocol/openid-connect/userinfo" \
+  "/realms/${REALM}/.well-known/openid-configuration" \
+  "/realms/${REALM}/protocol/openid-connect/token" \
+  "/realms/${REALM}/"; do
+  echo "=== ${endpoint} ==="
+  for origin in "https://evil.com" "null" "https://localhost"; do
+    acao=$(curl -sk -H "Origin: $origin" -D- "${KC}${endpoint}" 2>&1 | grep -i "access-control-allow-origin")
+    acac=$(curl -sk -H "Origin: $origin" -D- "${KC}${endpoint}" 2>&1 | grep -i "access-control-allow-credentials")
+    if [ -n "$acao" ]; then
+      echo "  Origin: $origin → $acao | $acac"
+    fi
+  done
+done
+# ACAO reflecting arbitrary origin + ACAC: true = CRITICAL
+# Especially on /userinfo — any page can steal logged-in user identity
+# The "null" origin is exploitable via sandboxed iframes
+```
+
+**Severity guidance:**
+- `/userinfo` reflects origin + credentials → **Critical** (identity theft, session hijacking)
+- `.well-known/openid-configuration` reflects → Medium (info disclosure, no auth data)
+- `/token` reflects → Critical (if combined with valid credentials, enables cross-origin token theft)
+- Realm root reflects → Medium (metadata only)
+
+**Note:** `Access-Control-Allow-Origin: *` with `Access-Control-Allow-Credentials: true` is a browser-level contradiction (browsers ignore credentials with wildcard). But `ACAO: <reflected_origin>` with `ACAC: true` IS exploitable. The distinction matters for severity.
+
+**Root cause:** Often caused by Istio/Envoy CorsPolicy with `allowOrigins: [{regex: ".*"}]` or Keycloak realm-level Web Origins set to `*`. Fix requires restricting to specific trusted origins at both mesh and application level.
+
+### 10. Hidden Realm Discovery via Prometheus Metrics (2 min)
+
+If any service in the same cluster exposes `/actuator/prometheus` (even on mock/SIT), mine it for Keycloak realm names:
+
+```bash
+# Search Prometheus metrics for Keycloak realm references
+curl -sk "https://mock-service.target.com/actuator/prometheus" | \
+  grep -oP 'uri="/keycloak/realms/[^/]+'  | sort -u
+# Also check http_client_requests labels for internal Keycloak URLs
+curl -sk "https://mock-service.target.com/actuator/prometheus" | \
+  grep "keycloak" | grep -v "^#"
+```
+
+In the BFI engagement, this technique discovered a `bpm` realm that was invisible to direct enumeration (only `master` and `bravo` were found via brute-force). The `bpm` realm had password grant, device_code, and CIBA enabled — a significant additional attack surface.
+
+**Also check:** `client_name` labels reveal which internal hostname the service uses to reach Keycloak (e.g., `microservices.sit.bravo.bfi.co.id`), confirming the gateway path.
+
 ## False Positive Detection
 
 ### SPA Catch-All (Most Common False Positive)

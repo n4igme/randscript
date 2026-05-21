@@ -83,7 +83,11 @@ Save to `./assessment/bug-bounty-report.md`:
 
 ### [CRITICAL-001] {Title}
 
-**Severity**: Critical | **CVSS**: {score} | **CWE**: CWE-{id}
+**Severity**: Critical | **CVSS**: {score} ({vector_string}) | **CWE**: CWE-{id}
+
+<!-- CVSS 3.1 Vector Format: CVSS:3.1/AV:{N|A|L|P}/AC:{L|H}/PR:{N|L|H}/UI:{N|R}/S:{U|C}/C:{N|L|H}/I:{N|L|H}/A:{N|L|H}
+     Example: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H = 9.8 Critical
+     Always include the vector string so reviewers can verify the score. -->
 **Location**: `{file}:{line}`
 
 **Description**:

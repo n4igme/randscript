@@ -2,6 +2,24 @@
 
 Lessons from scanning GCP-hosted infrastructure during penetration testing.
 
+## GCP Global Load Balancer — All Ports "Open" False Positive
+
+GCP GLB IPs (34.x.x.x range, `*.bc.googleusercontent.com` PTR) will respond as "open" on ALL probed ports. This is TCP accept-all behavior at the load balancer layer — it does NOT mean the backend services are actually listening.
+
+**How to identify:**
+- Multiple GCP IPs all show identical 19-port open results (SSH, HTTP, HTTPS, etcd, MySQL, PostgreSQL, Redis, MongoDB, Elasticsearch, Kibana, K8s API, kubelet, etc.)
+- PTR records end in `.bc.googleusercontent.com`
+- The hosts are IAP-protected services (302 → Google OAuth on port 443)
+
+**What to do:**
+- Mark as false positive in scan results
+- Only port 443 actually routes to the backend service
+- The backend is protected by GCP IAP (Identity-Aware Proxy)
+- Document the IAP OAuth client IDs leaked in redirect URLs (Low/Info finding)
+
+**Example from Bank Jago engagement (2026-05-21):**
+IPs 34.110.163.221, 34.111.246.6, 34.111.250.173, 34.117.118.17, 34.117.58.157, 34.49.208.3 all showed 19 ports "open" but were IAP-protected data platform services (Airflow, ArgoCD, JupyterHub, Kubeflow, Grafana, GrowthBook).
+
 ## Key Observations
 
 1. **Only 80/443 exposed** — cloud providers with proper firewall rules (GCP VPC firewall, AWS Security Groups) typically only expose web ports. Don't waste time on full 65535 scans against cloud LBs.

@@ -52,6 +52,29 @@ For each finding, trace the complete path:
 
 If any step breaks the chain, the finding is a false positive.
 
+#### Multi-Hop Taint Tracking
+
+For complex data flows spanning multiple files/layers:
+
+| Pattern | How to Trace | Example |
+|---------|-------------|---------|
+| Direct pass-through | A calls B with user input as argument | `controller.js:req.body.name` → `service.js:createUser(name)` → `db.js:query(name)` |
+| Store-and-retrieve | Input stored in DB/cache, read later | `POST /profile` stores name → `GET /admin/users` reads and renders it (stored XSS) |
+| Event-driven | Input published to queue, consumed elsewhere | `api.js` publishes to SQS → `worker.js` consumes and passes to `exec()` |
+| Transform chain | Input transformed through multiple functions | `req.body.url` → `decodeURI()` → `new URL()` → `fetch()` (SSRF) |
+| Config/env injection | Input reaches config that's read by another service | Upload `.env` → restart picks up malicious DB_HOST |
+| Serialization boundary | Input serialized, deserialized in different context | JSON body → stored as blob → deserialized with `pickle.loads()` |
+
+**Tracing procedure for multi-hop:**
+1. Start at the sink (dangerous function)
+2. Identify the variable reaching the sink
+3. Search for all assignments to that variable (grep/find references)
+4. For each assignment, check if it originates from user input or another function
+5. Repeat until you reach an external source OR a sanitization point
+6. Document each hop with `file:line` references
+
+**When to stop:** If the chain crosses >5 hops without sanitization, it's likely real. If you find sanitization at ANY hop, verify it's sufficient for the specific sink type (e.g., HTML encoding doesn't prevent SQL injection).
+
 ### 3. Verify Exploitability
 
 For each confirmed finding, answer:

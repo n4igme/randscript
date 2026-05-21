@@ -15,9 +15,56 @@ $ARGUMENTS
 
 - If a path is provided, scan that directory
 - If no argument, scan the current working directory
-- Skip: node_modules, vendor, dist, build, .git, generated files
+- Skip: node_modules, vendor, dist, build, .git, __pycache__, .next, generated files
+
+## Scope Definition
+
+For large codebases (500K+ LOC), define scope before scanning:
+
+1. **Ask the user** which directories/components are in scope (if not obvious)
+2. **Record scope** at the top of `./assessment/recon.md`:
+   ```markdown
+   ## Scope
+   - **In scope**: src/api/, src/auth/, src/services/, contracts/
+   - **Out of scope**: src/ui/ (frontend only, no server logic), docs/, scripts/
+   - **Skip patterns**: node_modules, vendor, dist, build, .git, __pycache__, .next
+   ```
+3. **Focus effort** — only map entry points and data flows within scoped directories
+4. **Note boundary crossings** — if scoped code calls out-of-scope code, note the interface but don't deep-dive the out-of-scope side
+
+If no scope is defined (small codebase), scan everything. The scope definition prevents wasting hours on irrelevant code in enterprise repos.
 
 ## Process
+
+### 0. Automated Pre-Scan (run before manual review)
+
+Run these tools first to catch low-hanging fruit and inform manual analysis:
+
+```bash
+# Secrets in git history
+gitleaks detect --source . --report-path assessment/gitleaks.json 2>/dev/null
+# Or: trufflehog filesystem . --json > assessment/trufflehog.json
+
+# Dependency vulnerabilities (run whichever applies)
+npm audit --json > assessment/npm-audit.json 2>/dev/null
+pip-audit --format json > assessment/pip-audit.json 2>/dev/null
+cargo audit --json > assessment/cargo-audit.json 2>/dev/null
+bundle audit check --format json > assessment/bundle-audit.json 2>/dev/null
+
+# Semgrep quick scan (broad pattern matching)
+semgrep --config auto --json -o assessment/semgrep.json . 2>/dev/null
+
+# IaC scanning (if Terraform/K8s/Docker present)
+checkov -d . --quiet --compact --output json > assessment/checkov.json 2>/dev/null
+```
+
+Feed results into the recon report:
+- Secrets found → note in "Sensitive Assets" section
+- Dependency CVEs → note in "Technology Stack" with affected packages
+- Semgrep hits → use as starting points for entry point mapping
+- IaC issues → note in "Attack Surface Notes"
+
+These tools are **supplementary** — they don't replace manual code reading. Many findings will be false positives. The value is speed: they highlight areas to focus manual review on.
 
 ### 1. Technology Stack
 
