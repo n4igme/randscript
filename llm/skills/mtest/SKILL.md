@@ -1,6 +1,6 @@
 ---
 name: mtest
-version: 1.0.0
+version: 1.1.0
 description: "Structured mobile application penetration testing framework with gated phases for Android and iOS"
 tags: [mobile, pentest, android, ios, frida, security]
 trigger: "mobile pentest, mobile app test, APK test, IPA test, android security, ios security"
@@ -105,11 +105,29 @@ notes: ""
 3. Report status and suggest next action
 4. If `state.yaml` missing — scan output directories to reconstruct state
 
+### N/A Phases
+
+If a phase is genuinely not applicable (e.g., no API backend for Phase 6, no pinning/root detection for Phase 3), document the justification in the phase summary file and mark the gateway as `N/A` in state.yaml. Do NOT skip silently — always write a summary explaining why the phase doesn't apply. This counts as satisfying the gate.
+
+### Offline/No-Network App Fast-Path
+
+When the app has **no internet permission** and no HTTP URLs in source (purely local/offline app):
+- Phase 3 (Dynamic Setup): Mark proxy/SSL pinning as N/A. Root/jailbreak bypass may still apply.
+- Phase 4 (Traffic Analysis): Mark as N/A entirely — no network traffic to intercept.
+- Phase 6 (API Testing): Mark as N/A entirely — no server-side API exists.
+- Phase 5 (Runtime Testing): Still required — focus on broadcast injection, intent manipulation, data storage extraction, and Frida-based bypass validation.
+
+Detect this early in Phase 2 by checking: (1) no `android.permission.INTERNET` in manifest, (2) no HTTP/HTTPS URLs in decompiled source, (3) no network security config. If all three: flag as offline app and pre-mark N/A phases at end of Phase 2.
+
+### Exploit Validation
+
+Critical and High findings discovered during static analysis (Phase 2) MUST be validated dynamically before advancing to Phase 7 (Reporting). Write exploitation evidence (logcat, proof files, screenshots) to the findings directory. If dynamic validation is not possible (no device, no account), document the limitation explicitly.
+
 ### Gateway Transition (`next`)
 
 1. Verify phase gate criteria met (see each phase's Gate section)
 2. Ask user confirmation: "Phase X complete. N findings. Advance to Phase Y?"
-3. Update `state.yaml`: mark current gateway PASSED, unlock next, record timestamps
+3. Update `state.yaml`: mark current gateway PASSED (or N/A), unlock next, record timestamps
 
 ### Cleanup (`cleanup`)
 
@@ -205,24 +223,44 @@ notes: ""
    - WebSocket endpoints
    - Third-party service integrations
 
-5. Binary protections check:
+5. Unsafe file operations (path traversal vectors):
+   - `Uri.getLastPathSegment()` used as filename without sanitization
+   - `new File(base, userInput)` with no canonical path check
+   - `System.load()` / `System.loadLibrary()` from writable paths (getFilesDir, getCacheDir)
+   - Deep link handlers that download and save files from attacker-controlled URIs
+
+6. Crypto analysis (when encryption/decryption is found):
+   - Identify algorithm, mode, padding (e.g., AES/ECB/PKCS5Padding)
+   - Check key derivation: hardcoded? small keyspace? no stretching?
+   - Check for hardcoded ciphertext that can be attacked offline
+   - If key is derived from user input (PIN, password): estimate brute-force time
+   - Write a cracking script immediately if keyspace < 10M (runs in seconds)
+
+7. Exported component analysis:
+   - Identify all exported Activities, BroadcastReceivers, Services, ContentProviders
+   - Check for permission protection (custom permissions, signature level)
+   - Map intent-filters and actions — these are the external attack surface
+   - BroadcastReceivers with no permission = any app can trigger them
+   - Dynamic receivers registered without RECEIVER_NOT_EXPORTED flag (Android 14+ requirement)
+
+8. Binary protections check:
    - Android: ProGuard/R8 obfuscation, native libs
    - iOS: PIE, stack canary, ARC, code signing
 
-6. Automated scanning:
+7. Automated scanning:
    ```bash
    # MobSF (comprehensive)
    docker run -it --rm -p 8000:8000 opensecurity/mobile-security-framework-mobsf
    # Upload APK/IPA at http://localhost:8000
    ```
 
-**Reference:** `static-analysis.md`
+**Reference:** `static-analysis.md`, `native-re-mcp.md`, `android-path-traversal-rce.md`, `crypto-key-cracking.md`
 
 ---
 
 ## Phase 3: Dynamic Setup
 
-### Gate: proxy intercepting traffic, bypass scripts working, app launches normally
+### Gate: proxy intercepting traffic OR documented as unnecessary; bypass scripts working OR documented as not needed; app launches normally
 
 **Steps:**
 
@@ -255,7 +293,7 @@ notes: ""
 3. SSL pinning bypass:
    ```bash
    # Frida (comprehensive)
-   frida -U -f <package> -l ssl_pinning_bypass.js --no-pause
+   frida -U -f <package> -l ssl_pinning_bypass.js
 
    # Objection (quick)
    objection -g <package> explore
@@ -269,14 +307,14 @@ notes: ""
 4. Root/jailbreak detection bypass:
    ```bash
    # Frida (comprehensive)
-   frida -U -f <package> -l root_bypass.js --no-pause
+   frida -U -f <package> -l root_bypass.js
 
    # Objection (quick)
    objection -g <package> explore
    android root disable   # or: ios jailbreak disable
 
    # Combined launch
-   frida -U -f <package> -l root_bypass.js -l ssl_pinning_bypass.js --no-pause
+   frida -U -f <package> -l root_bypass.js -l ssl_pinning_bypass.js
    ```
 
 5. Verify: app launches, traffic visible in proxy, no detection popups
@@ -287,7 +325,7 @@ notes: ""
 
 ## Phase 4: Traffic Analysis
 
-### Gate: API endpoints mapped, auth flow documented, at least one full user journey captured
+### Gate: API endpoints mapped, auth flow documented, at least one full user journey captured (OR documented N/A with justification if app has no network communication)
 
 **Steps:**
 
@@ -324,7 +362,7 @@ notes: ""
 
 ## Phase 5: Runtime Testing
 
-### Gate: at least 3 test categories completed from the checklist below
+### Gate: at least 3 test categories completed from the checklist below; Critical/High findings from Phase 2 must be dynamically validated
 
 **Test Categories:**
 
@@ -383,13 +421,13 @@ notes: ""
    - Patch conditional jumps
    - Re-sign and test modified behavior
 
-**Reference:** `runtime-testing.md`, `frida-scripts.md`
+**Reference:** `runtime-testing.md`, `frida-scripts.md`, `deep-link-path-traversal.md`
 
 ---
 
 ## Phase 6: API Testing (Server-side)
 
-### Gate: at least BOLA, auth bypass, and injection tests completed
+### Gate: at least BOLA, auth bypass, and injection tests completed (OR documented N/A with justification if no server-side API exists)
 
 **Steps:**
 
@@ -449,7 +487,17 @@ notes: ""
    - Scope and methodology
    - Findings table (sorted by severity)
    - Detailed findings
+   - Attack chain diagram (how findings combine)
+   - Remediation roadmap (prioritized)
    - Appendix: tool versions, device info, test dates
+
+3. Generate exploitation-walkthrough.md (CTF/lab contexts, or when client requests):
+   - Step-by-step reproduction from APK to full exploitation
+   - Include all commands, scripts, and code needed to reproduce
+   - Structure: identify target → reverse logic → build exploit → execute → verify
+   - Include cracking scripts (Python) for any brute-forced secrets
+   - Include PoC code (malicious app, Frida script, or adb commands)
+   - Target audience: someone who has never seen the app before
 
 ---
 
@@ -505,3 +553,8 @@ notes: ""
 - When app uses certificate transparency or multiple pinning layers, combine approaches (Frida + patched config + invisible proxy)
 - **Client-side only** findings (no server validation) are typically Medium unless they expose sensitive data
 - Cross-reference extracted API endpoints with ptest skill for comprehensive server-side testing
+- **Locked device workaround:** When the device screen is locked and UI automation fails, validate findings via non-UI paths: `adb shell am broadcast` (broadcast receivers), `adb shell am start` (exported activities), `run-as` (data extraction on debuggable apps), and `adb shell content query` (content providers). These don't require an unlocked screen.
+- **Offline/no-network apps:** When the app has no internet permission and no HTTP URLs in source, mark Phases 3 (Dynamic Setup), 4 (Traffic Analysis), and 6 (API Testing) as N/A immediately after Phase 2. Focus Phase 5 on broadcast exploitation, SharedPreferences validation, and data storage inspection.
+- **Exploit hosting pitfall:** Python's `http.server` decodes `%2F` in URL paths and resolves `../`, causing 404 for path traversal payloads. Use a custom server that serves the payload for any request path (see `android-path-traversal-rce.md`)
+- **App restart issues:** Use `adb shell am start -S -W` to force-stop then start. Pre-grant permissions with `pm grant` and `appops set` to avoid dialogs blocking the flow
+- **Static analysis pattern for native lib hijack:** Look for `System.load()` with paths under `getFilesDir()`/`getCacheDir()` combined with unsanitized `getLastPathSegment()` in file download handlers
