@@ -7,9 +7,7 @@ A personal research lab — utility scripts and tools for AI/LLM development, se
 | Component | Description | Tech |
 |-----------|-------------|------|
 | [rag-agent/](rag-agent/) | Local RAG system with offline LLM, document/audio ingestion, semantic search | Python, Ollama, PGVector, Docling, Whisper, FastAPI |
-| [llm/skills/scode/](llm/skills/scode/) | Bug bounty workflow — 5 phases, 22 vulnerability scanners (web + web3) | Structured prompts |
-| [llm/skills/ptest/](llm/skills/ptest/) | Pentest framework with gateway-gated phase progression | Structured prompts |
-| [llm/skills/parse-finding/](llm/skills/parse-finding/) | Security finding → Jira-ready report converter | Structured prompts |
+| [llm/skills/](llm/skills/) | AI security skills — code review, pentest, mobile, finding reports | Structured prompts |
 | [scanner/](scanner/) | XSS scanner — parses OpenAPI specs, tests 9 payloads, generates reports | Python, requests, PyYAML |
 | [winapi/](winapi/) | Windows API research — anti-cheat PoCs, reverse engineering tools | Python, C++, C# |
 | [secops/](secops/) | Email forensics — .eml analyzer with SPF/DKIM/DMARC validation | HTML, JavaScript |

