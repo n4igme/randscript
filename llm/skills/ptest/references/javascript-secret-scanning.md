@@ -201,6 +201,37 @@ Password:"/forgot-password"  # URL path, not a password
 | LinkFinder | `pip3 install linkfinder` | Finds endpoints in JS (not secrets) |
 | SecretFinder | `pip3 install secretfinder` | Purpose-built for JS secret scanning |
 | mantra | `go install github.com/MrEmpy/mantra@latest` | Fast JS secret hunter |
+| gf | `go install github.com/tomnomnom/gf@latest` | Pattern matcher for archived URLs (extract params matching known vuln patterns) |
+
+## Archived URL Pattern Extraction (gf)
+
+After collecting archived URLs (GAU, Waybackurls), use `gf` to quickly extract URLs matching known vulnerability patterns. This is a 2-minute quick-win that surfaces high-value parameters from historical data.
+
+```bash
+# Install gf + patterns
+go install github.com/tomnomnom/gf@latest
+git clone https://github.com/1ndianl33t/Gf-Patterns ~/.gf
+
+# Collect archived URLs
+gau --subs target.com | anew archived_urls.txt
+waybackurls target.com | anew archived_urls.txt
+
+# Extract by vulnerability class
+cat archived_urls.txt | gf xss | tee xss_params.txt
+cat archived_urls.txt | gf sqli | tee sqli_params.txt
+cat archived_urls.txt | gf lfi | tee lfi_params.txt
+cat archived_urls.txt | gf redirect | tee redirect_params.txt
+cat archived_urls.txt | gf ssrf | tee ssrf_params.txt
+cat archived_urls.txt | gf idor | tee idor_params.txt
+cat archived_urls.txt | gf aws-keys | tee aws_keys.txt
+
+# Combine all interesting params
+cat *_params.txt | sort -u > interesting_params.txt
+```
+
+**When to use:** Phase 3 enumeration, after URL crawling/archiving is complete. Feed results into Phase 5/6 as prioritized test targets.
+
+**Limitation:** `gf` patterns are regex-based and produce false positives. Treat output as a prioritization aid, not confirmed vulnerabilities. Every match still needs manual verification.
 
 ## Reporting
 

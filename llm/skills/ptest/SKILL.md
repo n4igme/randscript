@@ -81,6 +81,7 @@ If no command is given, show current status and suggest next action.
 | `masscan` | 2 | `brew install masscan` | `apt install masscan` |
 | `feroxbuster` | 3 | `brew install feroxbuster` | `apt install feroxbuster` |
 | `arjun` | 3 | `pip3 install arjun` | `pip3 install arjun` |
+| `kiterunner` | 3 | `go install github.com/assetnote/kiterunner/cmd/kr@latest` | `go install github.com/assetnote/kiterunner/cmd/kr@latest` |
 | `linkfinder` | 3 | `pip3 install linkfinder` | `pip3 install linkfinder` |
 | `wpscan` | 3 | `brew install wpscan` | `gem install wpscan` |
 | `nikto` | 5 | `brew install nikto` | `apt install nikto` |
@@ -318,10 +319,35 @@ If `state.yaml` cannot be read:
 
 | Gateway | Phase | Skill File | Exit Criteria |
 |---------|-------|-----------|---------------|
-| 1 | Passive Reconnaissance | `recon-passive.md` | Attack surface mapped, subdomains validated, technologies identified. OSINT completeness verified per `references/osint-completeness-checklist.md` |
+| 1 | Passive Reconnaissance | `recon-passive.md` | Attack surface mapped, subdomains validated, technologies identified. OSINT completeness verified per `references/osint-completeness-checklist.md`. **Env-prefix quick-win check completed** (see below). |
 | 2 | Active Reconnaissance | `recon-active.md` | Subdomain list expanded via active DNS techniques (including env-prefix mutation on ALL discovered subdomains), all hosts port-scanned, services detected, network topology mapped |
 | 3 | Enumeration | `enumeration.md` | Applications enumerated, APIs mapped, parameters discovered, Prometheus metrics mined for hidden services |
 | 4 | Attack Surface Mapping | `attack-surface.md` | Asset inventory confirmed with user, scope finalized, entry points mapped |
+
+### Phase 4: Dismissal Rules
+
+### Env-Prefix Quick-Win Check (END of Phase 1, MANDATORY)
+
+Before transitioning to Phase 2, scan ALL discovered subdomains for environment indicators and immediately generate prod equivalents. This is a 5-minute check that catches forgotten production assets.
+
+**Process:**
+1. Grep your merged subdomain list for env patterns: `grep -iE '\.(dev|staging|stg|sit|uat|mock|sandbox|test|qa|preprod|nonprod|demo|lab)\.' subdomains-merged.txt`
+2. For EACH match, generate the bare-domain equivalent (strip the env segment)
+3. Resolve the bare-domain equivalents with `dig +short`
+4. If any resolve — add to master list, flag as **HIGH PRIORITY** targets (forgotten prod assets)
+
+**Example (BFI, May 2026):**
+```
+Found in passive recon:  e-pmo2.dev.bfi.co.id → 172.22.32.94
+Quick-win derivation:    e-pmo2.bfi.co.id     → 34.111.225.150 ← LIVE PROD!
+Result:                  Forgotten PHP app with SQLi → 21 databases compromised
+```
+
+**Why at end of Phase 1 (not Phase 2):** Phase 2 does full permutation brute-force which takes time. This quick-win check takes seconds and catches the most common blind spot — a dev subdomain in CT logs whose production equivalent has no certificate (uses wildcard) and was never publicly indexed. Don't wait for Phase 2 to find these.
+
+**Exit gate addition:** Document in Phase 1 output: "Env-prefix quick-win: X subdomains with env indicators found, Y bare-domain equivalents tested, Z new live hosts discovered."
+
+---
 
 ### Phase 4: Dismissal Rules
 
