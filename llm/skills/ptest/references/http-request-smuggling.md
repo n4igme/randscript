@@ -14,6 +14,62 @@ HTTP Request Smuggling exploits disagreements between front-end and back-end ser
 - Response splitting or desync indicators in timing differences
 - Mixed infrastructure (e.g., Cloudflare → nginx, GCP GLB → Envoy)
 
+## Target-Suitability Matrix (2026 Reality Check)
+
+Before investing time in smuggling attempts, fingerprint the front-end proxy. Most modern deployments are hardened. Use this matrix to decide if smuggling is worth pursuing:
+
+| Front-end | CL.TE | TE.CL | H2.CL | H2.TE | Notes |
+|---|---|---|---|---|---|
+| Nginx >= 1.21 | NO | NO | partial | partial | RFC-strict; rejects CL+TE with 400 |
+| Caddy 2.x | NO | NO | — | — | Hardened by default |
+| Envoy >= 1.20 | NO | NO | partial | partial | Hardened in most paths |
+| HAProxy <= 2.4 | YES | YES | — | — | Vulnerable, see CVE-2021-40346 |
+| AWS ALB + specific upstream | partial | partial | YES | YES | Several disclosed reports 2022-2024 |
+| Cloudflare -> S3/Lambda chains | — | — | YES | YES | H2-downgrade attacks remain viable |
+| Older F5 BIG-IP (TMM < 16) | YES | — | — | — | Vendor advisories |
+| Citrix ADC/NetScaler (older firmware) | YES | YES | — | — | Disclosed 2020-2022 |
+| Squid 3.x | YES | — | — | — | Older deployments |
+| Apache Traffic Server (older) | YES | YES | YES | YES | PortSwigger research |
+| Custom Python/Go proxies | YES | YES | — | — | Frequently miss RFC enforcement |
+
+### Quick Fingerprint Check
+
+```bash
+# Identify front-end proxy from response headers
+curl -sk -D- "https://target.com/" | grep -iE "(server:|via:|x-served-by:|x-cache)"
+
+# Check HTTP/2 support (H2 smuggling requires H2 front-end)
+curl -sk --http2 -D- "https://target.com/" 2>&1 | head -5
+
+# Test CL+TE rejection (if 400 = hardened front-end)
+curl -sk -X POST "https://target.com/" \
+  -H "Content-Length: 6" \
+  -H "Transfer-Encoding: chunked" \
+  -d $'0\r\n\r\nX' -w "\n%{http_code}"
+# 400 = front-end rejects ambiguous requests (hardened)
+# 200/other = may be processable (investigate further)
+```
+
+### Decision Tree
+
+```
+Identify front-end proxy
+├── Nginx >= 1.21, Caddy, Envoy >= 1.20
+│   └── SKIP classic CL.TE/TE.CL. Only try H2.CL if HTTP/2 is enabled.
+├── HAProxy, older F5/Citrix, Squid, ATS, custom proxies
+│   └── PROCEED with full smuggling methodology
+├── AWS ALB, Cloudflare
+│   └── Focus on H2.CL and H2.TE vectors only
+└── Unknown/unidentifiable
+    └── Run quick CL+TE rejection test above, then decide
+```
+
+### Time Budget
+
+- If front-end is hardened (Nginx/Caddy/Envoy): spend MAX 10 minutes on H2 vectors, then move on
+- If front-end is potentially vulnerable: allocate up to 45 minutes for full methodology
+- If front-end is confirmed vulnerable (CL+TE not rejected): this is high-priority, allocate full time
+
 ## 3. Techniques
 
 ### CL.TE (Front-end uses Content-Length, back-end uses Transfer-Encoding)

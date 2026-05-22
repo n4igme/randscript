@@ -176,4 +176,170 @@ fi
 | DNS resolves, no HTTP | ❌ No | Skip |
 | Internal IP in DNS | ⚠️ Low | Report as info disclosure |
 | Version with known CVE | ⚠️ Unverified | Must demonstrate exploitability |
-| Header leaks internal info | ⚠️ Low-Medium | Report with context |
+|| Header leaks internal info | ⚠️ Low-Medium | Report with context |
+
+---
+
+## Statistical Validation Rules
+
+Before logging ANY finding that relies on behavioral differences (timing, response size, status code), apply these validation rules to prevent false positives.
+
+### Rule 1: Body-Diff Rule
+
+**A status code change alone is NOT proof of a bypass or vulnerability.**
+
+You MUST compare response BODIES, not just status codes:
+
+```bash
+# WRONG: "I got 200 instead of 403, therefore bypass!"
+curl -sk -o /dev/null -w "%{http_code}" "https://target/admin" -H "X-Forwarded-For: 127.0.0.1"
+# 200 ← this alone proves nothing
+
+# RIGHT: Compare response bodies
+BASELINE=$(curl -sk "https://target/admin" | md5)
+TEST=$(curl -sk "https://target/admin" -H "X-Forwarded-For: 127.0.0.1" | md5)
+if [ "$BASELINE" != "$TEST" ]; then
+  # Different body — investigate further
+  diff <(curl -sk "https://target/admin") <(curl -sk "https://target/admin" -H "X-Forwarded-For: 127.0.0.1")
+fi
+```
+
+**Common false positives caught by this rule:**
+- SPA catch-all returns 200 for everything (same React app body)
+- WAF returns 200 with block page (not the actual admin page)
+- Load balancer returns 200 with maintenance page
+- 302 redirect to login (not a bypass, just a redirect)
+
+**Validation requirement:** The response body must contain DIFFERENT content that demonstrates actual access to the protected resource (admin panel HTML, user data, API response with records).
+
+### Rule 2: Statistical-Sample Rule (Timing-Based Claims)
+
+**For ANY timing-based finding (blind SQLi, blind SSRF, race condition), you need statistical evidence.**
+
+Minimum requirements:
+- **n ≥ 10 trials** (interleaved: 5 baseline + 5 test, alternating)
+- **Non-overlapping confidence intervals** between baseline and test
+- **Consistent reproduction** (at least 4/5 test trials show the effect)
+
+```bash
+# WRONG: "sleep(5) made it take 5 seconds, therefore SQLi!"
+curl -sk -w "%{time_total}" "https://target/api?id=1' AND SLEEP(5)--"
+# 5.2s ← single trial proves nothing (could be network latency, server load)
+
+# RIGHT: Statistical validation
+echo "=== Baseline (no injection) ==="
+for i in $(seq 1 5); do
+  curl -sk -o /dev/null -w "%{time_total}\n" "https://target/api?id=1"
+  sleep 1
+done
+
+echo "=== Test (with injection) ==="
+for i in $(seq 1 5); do
+  curl -sk -o /dev/null -w "%{time_total}\n" "https://target/api?id=1'+AND+SLEEP(5)--"
+  sleep 1
+done
+
+# Baseline: 0.15s, 0.18s, 0.14s, 0.16s, 0.15s (mean: 0.156s)
+# Test:     5.14s, 5.18s, 5.15s, 5.16s, 5.14s (mean: 5.154s)
+# Gap: 4.998s ± 0.02s — non-overlapping → CONFIRMED
+```
+
+**Rejection criteria:**
+- If ANY baseline trial overlaps with test range → NOT confirmed
+- If test results vary by more than 2x the injection delay → likely network noise
+- If only 2/5 test trials show the effect → NOT confirmed (intermittent)
+
+### Rule 3: Marker Discipline
+
+**Use unique, random markers for injection testing — never generic words.**
+
+```bash
+# WRONG: Testing XSS reflection
+curl "https://target/search?q=test"
+# Response contains "test" ← proves nothing, "test" appears naturally
+
+# RIGHT: Use a unique marker
+MARKER="xss$(openssl rand -hex 4)probe"  # e.g., "xss8a3f1b2cprobe"
+curl "https://target/search?q=$MARKER"
+# Response contains "xss8a3f1b2cprobe" ← confirms reflection (this string can't appear naturally)
+```
+
+**Marker rules:**
+- Must be random/unique per test (not reused across targets)
+- Must not be a word that could appear naturally in the response
+- Must be verifiable in the response body (grep for exact match)
+- For blind testing: use Collaborator/interactsh with unique subdomain per test
+
+### Rule 4: Shell-Loop Ban
+
+**If you need more than 5 iterations of a test, use Python (not bash loops).**
+
+Bash loops with curl are:
+- Sequential (slow)
+- Hard to collect/analyze results
+- Prone to timing artifacts from shell overhead
+- Difficult to implement proper interleaving
+
+```python
+# For statistical validation, use Python with proper timing
+import requests
+import time
+import statistics
+
+baseline_times = []
+test_times = []
+
+for i in range(10):  # Interleaved trials
+    # Baseline
+    start = time.time()
+    requests.get("https://target/api?id=1", verify=False)
+    baseline_times.append(time.time() - start)
+    
+    time.sleep(0.5)
+    
+    # Test
+    start = time.time()
+    requests.get("https://target/api?id=1'+AND+SLEEP(5)--", verify=False)
+    test_times.append(time.time() - start)
+    
+    time.sleep(0.5)
+
+print(f"Baseline: mean={statistics.mean(baseline_times):.3f}s, stdev={statistics.stdev(baseline_times):.3f}s")
+print(f"Test:     mean={statistics.mean(test_times):.3f}s, stdev={statistics.stdev(test_times):.3f}s")
+print(f"Gap:      {statistics.mean(test_times) - statistics.mean(baseline_times):.3f}s")
+
+# Confirm non-overlapping
+baseline_max = max(baseline_times)
+test_min = min(test_times)
+if test_min > baseline_max:
+    print("CONFIRMED: Non-overlapping ranges")
+else:
+    print("NOT CONFIRMED: Ranges overlap")
+```
+
+### Rule 5: Reproduction Before Reporting
+
+**Every finding must be reproducible at least 3 times before logging.**
+
+One-time observations are NOT findings:
+- Network glitch caused a timeout (looks like blind injection)
+- Server restart caused a 500 (looks like crash-based detection)
+- CDN cache served stale content (looks like access bypass)
+- Rate limiter kicked in (looks like different behavior)
+
+**Procedure:**
+1. Observe the behavior once
+2. Wait 30 seconds
+3. Reproduce with identical request
+4. Wait 30 seconds
+5. Reproduce again
+6. If 3/3 consistent → log as finding
+7. If 2/3 or less → investigate further or discard
+
+### Integration with ptest Phases
+
+| Phase | Apply These Rules |
+|---|---|
+| Phase 5 (Vuln Assessment) | Body-Diff on all scanner results, Statistical-Sample on timing findings |
+| Phase 6 (Exploitation) | All rules — especially Marker Discipline for injection testing |
+| Phase 7 (Post-Exploitation) | Reproduction rule for access validation |

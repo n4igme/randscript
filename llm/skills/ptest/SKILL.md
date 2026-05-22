@@ -240,6 +240,7 @@ When generating phase checklists during `start`, filter techniques by scope type
 | Phase | Technique | web | network | cloud | mobile | mixed |
 |-------|-----------|-----|---------|-------|--------|-------|
 | 1 | OSINT Gathering | Y | Y | Y | Y | Y |
+| 1 | JS Bundle Analysis & Staging Domain Discovery | Y | N | Y | Y | Y |
 | 1 | Subdomain Enumeration | Y | Y | Y | N | Y |
 | 1 | Internal Asset Inventory Request | Y | Y | Y | N | Y |
 | 1 | Knowledge Base / Support Site Scraping | Y | Y | Y | N | Y |
@@ -317,8 +318,8 @@ If `state.yaml` cannot be read:
 
 | Gateway | Phase | Skill File | Exit Criteria |
 |---------|-------|-----------|---------------|
-| 1 | Passive Reconnaissance | `recon-passive.md` | Attack surface mapped, subdomains validated, technologies identified |
-| 2 | Active Reconnaissance | `recon-active.md` | Subdomain list expanded via active DNS techniques, all hosts port-scanned, services detected, network topology mapped |
+| 1 | Passive Reconnaissance | `recon-passive.md` | Attack surface mapped, subdomains validated, technologies identified. OSINT completeness verified per `references/osint-completeness-checklist.md` |
+| 2 | Active Reconnaissance | `recon-active.md` | Subdomain list expanded via active DNS techniques (including env-prefix mutation on ALL discovered subdomains), all hosts port-scanned, services detected, network topology mapped |
 | 3 | Enumeration | `enumeration.md` | Applications enumerated, APIs mapped, parameters discovered, Prometheus metrics mined for hidden services |
 | 4 | Attack Surface Mapping | `attack-surface.md` | Asset inventory confirmed with user, scope finalized, entry points mapped |
 
@@ -1187,6 +1188,24 @@ https://{auth-domain}/realms/{realm}/protocol/openid-connect/auth?client_id={pub
 - redirect_uri accepts subdomain variations only (e.g., *.legitimate.com) = **Medium (5.4)** (requires subdomain takeover)
 - PKCE enforced but redirect_uri open = **Medium (4.7)** (code unusable without verifier, but still an open redirect)
 
+### OTP/2FA Endpoint Testing (MANDATORY when OTP endpoints exist)
+
+**Full reference:** See `references/otp-endpoint-testing.md` for:
+- Rate limit bypass via purpose/type rotation (OTP flooding)
+- User enumeration via forgot_password response differentiation
+- Email header injection in OTP email fields
+- Phone number parameter discovery
+- Timing-based user enumeration
+
+**Key insight:** OTP endpoints are almost always unauthenticated (they're the pre-auth step). They're quick wins (5-10 minutes) that produce Medium-severity findings even without an account. Test these BEFORE declaring "unauthenticated testing exhausted."
+
+**Minimum checklist:**
+- [ ] Enumerate OTP-related endpoints (send_otp, resend_otp, verify_otp, forgot_password)
+- [ ] Test rate limiting per-endpoint
+- [ ] Test rate limit bypass via purpose/type rotation
+- [ ] Test user enumeration via forgot_password (response differentiation)
+- [ ] Test OTP to arbitrary recipients (spam potential)
+
 ### WAF/Ingress Bypass Techniques (Conditional)
 
 When WAF blocks sensitive paths (actuator, swagger, admin), try these in order:
@@ -1331,10 +1350,13 @@ If auth is app-level (not mesh-level), document that:
 
 ## Guardrails
 
+- **Account Creation Blockers (Bug Bounty)** — some targets require identity verification (KYC, PAN card, national ID) or region-specific phone numbers for account creation. Browser automation is often blocked by Cloudflare/reCAPTCHA. When unauthenticated testing is exhausted and account creation is blocked: (1) document the limitation clearly, (2) offer the user options (manual signup, Google OAuth, API-based registration if available), (3) if user creates account manually, request the auth token from DevTools (Authorization header or cookie). Never attempt to bypass KYC or create fraudulent accounts.
 - **Hardened Target Fast-Exit** — if the first 3 vectors on a target all fail cleanly (proper error handling, no info leak, auth enforced, no default creds), mark it as "hardened" in the checklist and move on. Maximum 15-20 minutes per hardened target. Document what was tested and why it's considered hardened.
 - **Environment Tagging** — every finding MUST be tagged with the environment: `prod`, `nonprod`, `experiment`, or `all`. Findings on nonprod/experiment instances should note "may not apply to production" unless the same configuration is confirmed on prod. This prevents over-reporting experiment-only issues as production risks.
 - **False Positive Verification** — before logging a finding, verify it's not a false positive. Check for SPA catch-alls (same bytes for any path), CORS crashes masking endpoints (all 500s with same error), and 302-to-login (auth required, not bypassed). See `references/false-positive-detection.md`.
-- **Strict Sequence** — never skip a phase. No exploitation before enumeration and vuln assessment are complete.
+- **Strict Sequence** — never skip a phase. No exploitation before enumeration and vuln assessment are complete. Even for bug bounties where "fast-tracking to exploitation" seems tempting, the framework exists to prevent blind spots. Never suggest skipping phases to the operator.
+- **Self-Audit Before Advancing** — before requesting gateway sign-off, proactively review what was missed in the current phase. List gaps honestly (e.g., "we didn't decompile the APK", "we didn't scrape the API docs"). Offer to fill gaps before moving forward. The operator expects thoroughness over speed. Never suggest skipping phases even for bug bounties or "efficiency" — the framework exists to prevent blind spots. Each phase builds on the previous one; shortcuts create gaps that cost more time later.
+- **Phase 1 OSINT Completeness** — before declaring Phase 1 complete, verify ALL of these were attempted: (1) WHOIS/DNS/TXT, (2) subdomain enum (multi-source), (3) Wayback Machine, (4) GitHub/GitLab code search, (5) Google dorking, (6) Shodan/Censys on discovered IPs, (7) JS bundle analysis from accessible apps, (8) Mobile app identification (package names, APK endpoints), (9) Docker Hub/container registry check, (10) breach/paste site check (if tools available). Missing any of these is a gap that should be filled before advancing. Never SUGGEST skipping phases either — even for bug bounties where "time to bounty" feels urgent. The user has explicitly stated: "never skip the phase. because it's a fundamental thing." Each phase builds on the previous; shortcuts produce blind spots.
 - **Scope Enforcement** — never test targets outside defined scope. Re-read `scope.md` before each technique.
 - **Evidence Required** — every finding must have reproducible proof.
 - **Verified Findings Only** — a finding must be backed by direct evidence of exploitability or exposure. DNS resolution or CT log presence alone does NOT constitute a finding. Every finding must include proof that the issue is currently exploitable or observable (e.g., HTTP response showing an unauthenticated panel, not just a DNS record pointing to it). Unverified potential issues belong in a "Potential Issues" list for the next phase to validate — not in the findings log.

@@ -105,6 +105,35 @@ sk-[a-zA-Z0-9]{20,}                             # OpenAI / Stripe Secret Key
 ghp_[a-zA-Z0-9]{36}                             # GitHub Personal Access Token
 glpat-[a-zA-Z0-9_-]{20,}                        # GitLab Personal Access Token
 
+# AI/ML API Keys
+sk-ant-(?:api03|admin01)-[A-Za-z0-9_\-]{93,}    # Anthropic API Key
+sk-proj-[A-Za-z0-9_\-]{40,}T3BlbkFJ[A-Za-z0-9_\-]{40,}  # OpenAI Project Key
+sess-[A-Za-z0-9]{40}                             # OpenAI User Session
+hf_[A-Za-z0-9]{30,}                              # HuggingFace Token
+
+# Infrastructure & Cloud
+dop_v1_[a-f0-9]{64}                              # DigitalOcean Token
+SG\.[A-Za-z0-9_\-]{22}\.[A-Za-z0-9_\-]{43}      # SendGrid API Key
+SK[0-9a-fA-F]{32}                                # Twilio API Key
+AC[a-f0-9]{32}                                   # Twilio Account SID
+
+# Package Registries
+npm_[A-Za-z0-9]{36}                              # npm Token
+pypi-AgENdGV[A-Za-z0-9_\-]+                      # PyPI Token
+dckr_pat_[A-Za-z0-9_\-]{27,}                     # Docker Hub PAT
+
+# SaaS & Observability
+ATATT3xFfGF0[A-Za-z0-9_\-]{180,}                 # Atlassian API Token
+lin_api_[A-Za-z0-9]{40}                          # Linear API Key
+https://hooks\.slack\.com/services/T[A-Z0-9]+/B[A-Z0-9]+/[A-Za-z0-9]+  # Slack Webhook URL
+
+# Bot Tokens
+[MN][A-Za-z\d]{23}\.[\w\-]{6}\.[\w\-]{27}       # Discord Bot Token
+\d{8,10}:[A-Za-z0-9_\-]{35}                      # Telegram Bot Token
+
+# Cloudflare
+(?i)cf[_\-]?api[_\-]?key['": ]+([a-f0-9]{37})   # Cloudflare Global API Key
+
 # Tokens
 eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*  # JWT Token
 xox[baprs]-[0-9a-zA-Z-]{10,}                    # Slack Token

@@ -586,6 +586,62 @@ EOF
 # - Did any request get a different response code?
 ```
 
+### Alias Batching: When It Works vs When It Doesn't
+
+GraphQL alias batching (sending N copies of the same mutation with different aliases in a single request) is often cited as a race condition technique. However, it only works under specific server conditions:
+
+| Server Architecture | Alias Batching Wins Race? | Why |
+|---|---|---|
+| Multi-threaded (Java/Spring, .NET) with DataLoader | YES | DataLoader batches and executes aliases in parallel threads |
+| Multi-threaded without DataLoader | MAYBE | Server may still serialize mutations within a single request |
+| Single-threaded (Node.js default) | NO | Event loop processes aliases sequentially within the request |
+| Node.js with worker threads / cluster | MAYBE | Depends on whether aliases are dispatched to workers |
+| Python (Django/Flask) with sync views | NO | GIL + synchronous processing = sequential execution |
+| Python with async views (FastAPI) | MAYBE | Async may interleave but typically awaits each mutation |
+| Go with goroutines per resolver | YES | Each alias resolver may spawn a goroutine |
+
+**Key insight:** Alias batching is NOT equivalent to sending N separate HTTP requests simultaneously. Within a single GraphQL request, the server decides how to execute multiple aliases. Many servers serialize them.
+
+**When to use alias batching:**
+- Target uses Java/Spring GraphQL or Go with concurrent resolvers
+- You've confirmed via timing that aliases execute in parallel (total time ≈ single mutation time, not N × single mutation time)
+- The target uses DataLoader (check for `@defer`, `@stream` support as indicators)
+
+**When to use HTTP/2 single-packet instead:**
+- Target uses Node.js or Python (aliases likely sequential)
+- You need guaranteed parallelism
+- Alias batching timing shows sequential execution (total time ≈ N × single)
+
+**Verification technique:**
+```graphql
+# Timing test: if this takes ~1x single mutation time, aliases are parallel
+# If it takes ~5x, they're sequential
+mutation RaceTest {
+  a1: redeemCoupon(code: "TEST") { success }
+  a2: redeemCoupon(code: "TEST") { success }
+  a3: redeemCoupon(code: "TEST") { success }
+  a4: redeemCoupon(code: "TEST") { success }
+  a5: redeemCoupon(code: "TEST") { success }
+}
+```
+
+```bash
+# Compare timing
+time curl -sk -X POST "$GRAPHQL_ENDPOINT" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"query":"mutation { a1: redeemCoupon(code: \"TEST\") { success } }"}'
+
+# vs
+time curl -sk -X POST "$GRAPHQL_ENDPOINT" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"query":"mutation { a1: redeemCoupon(code: \"TEST\") { success } a2: redeemCoupon(code: \"TEST\") { success } a3: redeemCoupon(code: \"TEST\") { success } a4: redeemCoupon(code: \"TEST\") { success } a5: redeemCoupon(code: \"TEST\") { success } }"}'
+
+# If 5-alias request takes same time as 1-alias → parallel (use alias batching)
+# If 5-alias request takes 5x longer → sequential (use HTTP/2 single-packet instead)
+```
+
 ---
 
 ## Severity Guide
