@@ -7,7 +7,8 @@ Quick lookup: what you found → which reference to load.
 ## By Discovery (what you encountered)
 
 | You Found | Load This Reference |
-|-----------|-------------------|
+|-----------|---|
+| Valid credentials / JWT token / authenticated access | `authenticated-testing-playbook.md` |
 | Spring Boot / actuator endpoint | `bulk-actuator-scanning.md`, `heapdump-secret-extraction.md`, `framework-specific-attacks.md` §7 |
 | Keycloak / OAuth / OIDC | `keycloak-assessment.md`, `keycloak-gateway-exploitation.md`, `jwt-attack-techniques.md`, `oauth-sso-attack-chains.md` |
 | Dynatrace instance | `dynatrace-cluster-probing.md`, `operational-pitfalls.md` (Dynatrace section) |
@@ -58,6 +59,7 @@ Quick lookup: what you found → which reference to load.
 | Access control / privilege escalation | `web-vuln-bypass-tables.md` (12 techniques), `phase6-exploitation-framework.md` §6.6 |
 | Login / authentication / brute-force | `web-vuln-bypass-tables.md` (14 auth techniques), `jwt-attack-techniques.md`, `keycloak-assessment.md` |
 | SSRF opportunity | `ssrf-outbound-forcing.md`, `web-vuln-bypass-tables.md` (SSRF) |
+| API-heavy target / microservices / Swagger/OpenAPI | `api-first-methodology.md`, `authenticated-testing-playbook.md` |
 | SSO/MFA login page with legacy endpoints | `legacy-protocol-bypass.md` |
 | Multiple gateways / ingress / config drift | `gateway-misconfiguration-patterns.md` |
 | OAuth / social login / "Login with..." | `web-vuln-bypass-tables.md` (10 OAuth attacks), `keycloak-assessment.md`, `csrf-attacks.md`, `oauth-sso-attack-chains.md` |
@@ -71,7 +73,7 @@ Quick lookup: what you found → which reference to load.
 |-------|-------------------|
 | 1 — Passive Recon | `dns-record-intelligence.md`, `js-bundle-recon.md`, `operational-pitfalls.md` |
 | 2 — Active Recon | `pattern-subdomain-bruteforce.md`, `nmap-cloud-targets.md`, `operational-pitfalls.md` |
-| 3 — Enumeration | `bulk-actuator-scanning.md`, `javascript-secret-scanning.md`, `framework-specific-attacks.md` |
+| 3 — Enumeration | `bulk-actuator-scanning.md`, `javascript-secret-scanning.md`, `framework-specific-attacks.md`, `api-first-methodology.md` |
 | 4 — Attack Surface | `depth-vs-breadth-decisions.md`, `cloud-infrastructure-enumeration.md` |
 | 5 — Vuln Assessment | `web-vuln-bypass-tables.md`, `false-positive-detection.md`, `web-cache-poisoning.md`, `host-header-attacks.md`, `http-request-smuggling.md` |
 | 6 — Exploitation | `phase6-exploitation-framework.md`, `jwt-attack-techniques.md`, `signal-hunting-table.md`, `attack-chain-framework.md`, `credential-chaining.md`, `re-validation-loops.md`, `advanced-web-attacks.md`, `insecure-deserialization.md`, `parameter-pollution.md`, `graphql-websocket-testing.md`, `kubernetes-container-attacks.md`, `cicd-pipeline-exploitation.md`, `prototype-pollution.md`, `file-upload-attacks.md`, `http-request-smuggling.md`, `host-header-attacks.md`, `oauth-sso-attack-chains.md`, `gateway-misconfiguration-patterns.md` |
@@ -120,7 +122,9 @@ Quick lookup: what you found → which reference to load.
 
 ```
 advanced-web-attacks.md              — WebSocket, cache poisoning, HTTP smuggling, race conditions
+api-first-methodology.md             — API-first testing: OpenAPI specs, versioning, gRPC, BOLA, mass assignment
 attack-chain-framework.md            — Compound attack path documentation
+authenticated-testing-playbook.md    — Post-auth testing: RBAC, IDOR, session mgmt, Keycloak, Spring Boot
 bulk-actuator-scanning.md            — Bulk /actuator check across all hosts
 camunda-bpm-assessment.md            — Camunda BPM web UI and API testing
 cicd-devops-assessment.md            — ArgoCD, Atlantis, Airflow, n8n, Jenkins, Vault, Grafana

