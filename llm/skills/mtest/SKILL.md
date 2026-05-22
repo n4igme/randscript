@@ -202,6 +202,11 @@ Critical and High findings discovered during static analysis (Phase 2) MUST be v
    jadx -d jadx_out/ target.apk
    apktool d target.apk -o apktool_out/
 
+   # Check for Unity IL2CPP (changes entire analysis approach)
+   unzip -l target.apk | grep -q "libil2cpp.so" && echo "UNITY IL2CPP DETECTED"
+   # If Unity: jadx is useless for game logic. Use global-metadata.dat strings instead.
+   # See references/static-analysis.md → "Unity IL2CPP App Analysis" section.
+
    # iOS
    unzip target.ipa -d ipa_out/
    class-dump ipa_out/Payload/*.app/* > headers.h
@@ -229,7 +234,27 @@ Critical and High findings discovered during static analysis (Phase 2) MUST be v
    - `System.load()` / `System.loadLibrary()` from writable paths (getFilesDir, getCacheDir)
    - Deep link handlers that download and save files from attacker-controlled URIs
 
-6. Crypto analysis (when encryption/decryption is found):
+6. Native library analysis (when .so files present):
+   - List imports: `readelf -d lib/arm64-v8a/lib*.so` or `strings` + grep
+   - **Dangerous imports:** `system`, `exec`, `popen`, `dlopen`, `Runtime.exec`
+   - Check for embedded command strings: `strings lib.so | grep -iE "sh|bin|cmd|log|exec"`
+   - Check for format string usage without bounds: `sprintf`, `printf` with user input
+   - Identify JNI exports: `strings lib.so | grep Java_`
+   - If `system()` + user input → likely command injection or buffer overflow
+   - If fixed-size buffers + `memcpy`/`strcpy` without length check → overflow candidate
+   - Test with long inputs (100, 200, 500 chars) and monitor `system()` via Frida
+
+7. WebView + JavaScript bridge analysis (when WebView with JS enabled found):
+   - Check for `addJavascriptInterface()` — exposes Java/native methods to JS
+   - Map ALL `@JavascriptInterface` methods — these are the attack surface from any loaded page
+   - Check if WebView loads attacker-controlled URLs (deep links, intent extras, no domain restriction)
+   - Check for dangerous operations in bridge methods: file I/O, native calls, `system()`, `Runtime.exec()`, `ProcessBuilder`
+   - Check URL validation in `shouldOverrideUrlLoading()` (or lack thereof)
+   - Check WebView settings: `setAllowFileAccess`, `setAllowContentAccess`, `setMixedContentMode`, `usesCleartextTraffic`
+   - If bridge exposes native methods with buffer operations → combine with native overflow analysis
+   - If app accepts any http/https URL via deep link + has JS bridge → **remote RCE candidate**
+
+8. Crypto analysis (when encryption/decryption is found):
    - Identify algorithm, mode, padding (e.g., AES/ECB/PKCS5Padding)
    - Check key derivation: hardcoded? small keyspace? no stretching?
    - Check for hardcoded ciphertext that can be attacked offline
@@ -254,7 +279,7 @@ Critical and High findings discovered during static analysis (Phase 2) MUST be v
    # Upload APK/IPA at http://localhost:8000
    ```
 
-**Reference:** `static-analysis.md`, `native-re-mcp.md`, `android-path-traversal-rce.md`, `crypto-key-cracking.md`
+**Reference:** `static-analysis.md`, `native-re-mcp.md`, `android-path-traversal-rce.md`, `crypto-key-cracking.md`, `native-buffer-overflow.md`
 
 ---
 
@@ -394,6 +419,7 @@ Critical and High findings discovered during static analysis (Phase 2) MUST be v
    # iOS (via Frida)
    # Test: open redirect, XSS via WebView, auth bypass
    ```
+   - **Parameter name fuzzing:** When a deep link handler fails to extract a value despite correct URI format, the parameter name may differ from what hardcoded URLs suggest. Enumerate candidate names from: (1) field names in decompiled source/metadata (e.g., `updateHost` → try `host=`), (2) method names (`checkHost` → `host=`), (3) common variants (`url=`, `server=`, `target=`, `endpoint=`, `addr=`). Test each systematically before concluding extraction is broken.
 
 3. **WebView Attacks:**
    - JavaScript enabled + addJavascriptInterface = RCE potential
@@ -555,6 +581,17 @@ Critical and High findings discovered during static analysis (Phase 2) MUST be v
 - Cross-reference extracted API endpoints with ptest skill for comprehensive server-side testing
 - **Locked device workaround:** When the device screen is locked and UI automation fails, validate findings via non-UI paths: `adb shell am broadcast` (broadcast receivers), `adb shell am start` (exported activities), `run-as` (data extraction on debuggable apps), and `adb shell content query` (content providers). These don't require an unlocked screen.
 - **Offline/no-network apps:** When the app has no internet permission and no HTTP URLs in source, mark Phases 3 (Dynamic Setup), 4 (Traffic Analysis), and 6 (API Testing) as N/A immediately after Phase 2. Focus Phase 5 on broadcast exploitation, SharedPreferences validation, and data storage inspection.
+- **Client-side-only exploit chains (WebView RCE, broadcast injection):** When the exploit is entirely client-side (no server API involved), mark Phases 3/4/6 as N/A. Phase 5 validates the exploit dynamically.
+- **Frida 16.x compatibility:** `--no-pause` flag removed (app auto-resumes on spawn). Use `frida -U -f <package> -l script.js`. For deep link exploitation, do NOT use `device.spawn(url=...)` — it doesn't work for Android intents. Instead: spawn app normally → install hooks → resume → trigger deep link via separate `adb shell am start -a android.intent.action.VIEW -d "scheme://..."` command. This two-step pattern is required for hooking deep link handlers.
 - **Exploit hosting pitfall:** Python's `http.server` decodes `%2F` in URL paths and resolves `../`, causing 404 for path traversal payloads. Use a custom server that serves the payload for any request path (see `android-path-traversal-rce.md`)
 - **App restart issues:** Use `adb shell am start -S -W` to force-stop then start. Pre-grant permissions with `pm grant` and `appops set` to avoid dialogs blocking the flow
+- **Frida spawn on rooted devices:** `frida -U -f <package>` requires frida-server running on device (`adb shell "su -c '/data/local/tmp/frida-server -D'"`). Without it, you get "need Gadget to attach on jailed Android" even on rooted devices. Always verify with `frida-ps -U` before spawning.
+- **`extractNativeLibs="false"` and Frida:** When this flag is set, .so files live inside the APK (not extracted). You cannot `System.loadLibrary()` arbitrary libs from Frida scripts — only the app's own loading path works. Hook the native function after the app loads the library itself.
 - **Static analysis pattern for native lib hijack:** Look for `System.load()` with paths under `getFilesDir()`/`getCacheDir()` combined with unsanitized `getLastPathSegment()` in file download handlers
+- **Frida on rooted devices:** Start frida-server with `adb shell "su -c '/data/local/tmp/frida-server -D'"`. Frida 16.x removed `--no-pause` (apps auto-resume on spawn). Use Python frida bindings for complex hooks (spawn + attach + inject + trigger deep link in sequence).
+- **WebView + @JavascriptInterface = high-value target:** When an app has JS enabled + addJavascriptInterface, map ALL exposed methods. If any method calls Runtime.exec(), ProcessBuilder, or shell commands — that's an RCE chain. XSS in the WebView (via deep links, intent data, or stored content) becomes the trigger.
+- **Deep link escape bypass patterns:** When the app escapes single quotes but NOT backslashes, inject `\\'` — after escape it becomes `\\\\'` which in JS is literal backslash + string terminator. Always check: does the escape cover `\`, `"`, `'`, backtick, `$`, and newlines?
+- **Unity IL2CPP deep link parameter discovery:** Hardcoded URLs in `global-metadata.dat` may use DIFFERENT query parameter names than the deep link handler expects. Don't assume the parameter name from hardcoded strings — test systematically. Use `strings global-metadata.dat | grep -E "^(check|get|set|validate|parse)[A-Z]"` to find method names that hint at the actual parameter (e.g., `checkHost` → parameter is `host=`, not `patch=` from the hardcoded URL). When host extraction always returns empty despite correct URI format, the parameter name is likely wrong.
+- **Unity IL2CPP reverse engineering:** For Unity 2020.x IL2CPP apps, all C# class/method/field/string-literal names are in `global-metadata.dat`. Key patterns: (1) grep for `[ClassName]` log prefixes to find the relevant class, (2) grep for method names like `Handle*`, `check*`, `validate*`, `get*` to understand the flow, (3) look for field names like `domainRegex`, `updateHost` that reveal validation logic, (4) coroutine names like `<MethodName>d__N` reveal async operations. The actual game logic is NOT in `classes.dex` — it's in `libil2cpp.so` + metadata.
+- **Mono/Unity custom scheme URI parsing quirk:** In Unity 2020.x (Mono runtime), `System.Uri` does NOT reliably parse query parameters from custom scheme URIs (e.g., `customscheme://host?key=value`). The `Uri.Query` property may return empty. Apps work around this with manual string parsing or by using Android's Java-side `Uri.getQueryParameter()` via JNI. When testing deep links, if the app receives the full URI string (confirmed via logcat) but fails to extract parameters, try different parameter names — the extraction method may be parameter-name-specific.
+- **extractNativeLibs="false":** Native libs stay inside the APK (not extracted to filesystem). `System.loadLibrary()` works but you can't `dlopen` from a custom path. For Frida hooking, the lib loads from the APK's zip — use `Process.findModuleByName()` after the app loads it.
