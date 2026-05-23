@@ -964,6 +964,17 @@ When redoing a pentest or reassessing previously reported findings:
 - [ ] If accepted: confirm public client + no PKCE
 - [ ] Document full attack chain with PoC URL
 
+### Web Testing Checklist Cross-Reference (Phase 5/6)
+
+**Full reference:** See `references/web-testing-checklist.md` for:
+- User management testing (registration, auth, session, password reset) — 50+ test cases
+- Application logic flaws (price tampering, workflow bypass, CAPTCHA bypass)
+- Input handling injection points (priority order by location)
+- Security headers audit checklist
+- Infrastructure quick checks (.git, .env, backup files, zone transfer)
+
+**When to use:** After automated scanning in Phase 5, cross-check this list to ensure no common test case was missed. During Phase 6 techniques 6.2 (Auth Bypass), 6.5 (Business Logic), and 6.6 (Access Control), use the relevant sections as a systematic guide.
+
 ### OTP/2FA Endpoint Testing (MANDATORY when OTP endpoints exist)
 
 **Full reference:** See `references/otp-endpoint-testing.md` for:

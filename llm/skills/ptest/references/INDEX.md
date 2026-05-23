@@ -46,6 +46,17 @@ Quick lookup: what you found → which reference to load.
 | DMARC p=none / SPF ~all | `dns-record-intelligence.md` §1-2 |
 | Dangling CNAME / subdomain takeover | `subdomain-takeover.md` |
 | Race condition opportunity | `advanced-web-attacks.md` §4 |
+| User management testing (registration, auth, session, reset) | `web-testing-checklist.md` §1 |
+| Application logic / business logic flaws | `web-testing-checklist.md` §2 |
+| Security headers audit | `web-testing-checklist.md` §4 |
+| CAPTCHA bypass | `web-testing-checklist.md` §2 (CAPTCHA) |
+| WebAuthn / Passkeys / FIDO2 authentication | `webauthn-passkeys-testing.md` |
+| Browser extension in scope | `browser-extension-security.md` |
+| Internal network access / AD environment | `internal-ad-attacks.md` |
+| Kerberos / Active Directory | `internal-ad-attacks.md` (Kerberoast, ASREPRoast, Golden/Silver ticket, delegation) |
+| NTLM relay / Responder | `internal-ad-attacks.md` (LLMNR/NBT-NS poisoning, relay) |
+| Windows privilege escalation | `internal-ad-attacks.md` (token impersonation, CVEs) |
+| Cloud credentials found (AWS/GCP/Azure keys, tokens) | `cloud-privilege-escalation.md`, `credential-chaining.md` |
 | SPA / React / Angular / Vue frontend | `web-vuln-bypass-tables.md` (DOM XSS sources/sinks, postMessage, DOM clobbering) |
 | Cache / CDN in front | `advanced-web-attacks.md` §2-3 |
 | Partner API gateway (shared IP, 403) | `cloudflare-bypass-techniques.md` §4 |
@@ -75,8 +86,8 @@ Quick lookup: what you found → which reference to load.
 | 2 — Active Recon | `pattern-subdomain-bruteforce.md`, `nmap-cloud-targets.md`, `operational-pitfalls.md` |
 | 3 — Enumeration | `bulk-actuator-scanning.md`, `javascript-secret-scanning.md`, `framework-specific-attacks.md`, `api-first-methodology.md` |
 | 4 — Attack Surface | `depth-vs-breadth-decisions.md`, `cloud-infrastructure-enumeration.md` |
-| 5 — Vuln Assessment | `web-vuln-bypass-tables.md`, `false-positive-detection.md`, `web-cache-poisoning.md`, `host-header-attacks.md`, `http-request-smuggling.md` |
-| 6 — Exploitation | `phase6-exploitation-framework.md`, `jwt-attack-techniques.md`, `signal-hunting-table.md`, `attack-chain-framework.md`, `credential-chaining.md`, `re-validation-loops.md`, `advanced-web-attacks.md`, `insecure-deserialization.md`, `parameter-pollution.md`, `graphql-websocket-testing.md`, `kubernetes-container-attacks.md`, `cicd-pipeline-exploitation.md`, `prototype-pollution.md`, `file-upload-attacks.md`, `http-request-smuggling.md`, `host-header-attacks.md`, `oauth-sso-attack-chains.md`, `gateway-misconfiguration-patterns.md` |
+| 5 — Vuln Assessment | `web-vuln-bypass-tables.md`, `web-testing-checklist.md`, `false-positive-detection.md`, `web-cache-poisoning.md`, `host-header-attacks.md`, `http-request-smuggling.md` |
+| 6 — Exploitation | `phase6-exploitation-framework.md`, `web-testing-checklist.md`, `jwt-attack-techniques.md`, `signal-hunting-table.md`, `attack-chain-framework.md`, `credential-chaining.md`, `re-validation-loops.md`, `advanced-web-attacks.md`, `insecure-deserialization.md`, `parameter-pollution.md`, `graphql-websocket-testing.md`, `kubernetes-container-attacks.md`, `cicd-pipeline-exploitation.md`, `prototype-pollution.md`, `file-upload-attacks.md`, `http-request-smuggling.md`, `host-header-attacks.md`, `oauth-sso-attack-chains.md`, `gateway-misconfiguration-patterns.md` |
 | 7 — Post-Exploitation | `phase7-post-exploitation-framework.md`, `data-classification-framework.md` |
 | 8 — Reporting | `phase8-reporting-process.md`, `time-box-enforcement.md` |
 
@@ -124,11 +135,13 @@ Quick lookup: what you found → which reference to load.
 advanced-web-attacks.md              — WebSocket, cache poisoning, HTTP smuggling, race conditions
 api-first-methodology.md             — API-first testing: OpenAPI specs, versioning, gRPC, BOLA, mass assignment
 attack-chain-framework.md            — Compound attack path documentation
-authenticated-testing-playbook.md    — Post-auth testing: RBAC, IDOR, session mgmt, Keycloak, Spring Boot
+bug-bounty-osint-checklist.md         — Bug bounty OSINT techniques
+browser-extension-security.md        — Chrome/Firefox extension static+dynamic analysis, message passing, CORS proxy, privesc chains
 bulk-actuator-scanning.md            — Bulk /actuator check across all hosts
 camunda-bpm-assessment.md            — Camunda BPM web UI and API testing
 cicd-devops-assessment.md            — ArgoCD, Atlantis, Airflow, n8n, Jenkins, Vault, Grafana
 cloud-infrastructure-enumeration.md  — GCP/AWS/Azure project mapping, bucket enum
+cloud-privilege-escalation.md        — AWS/GCP/Azure post-compromise privesc, IAM abuse, S3/Lambda/EC2 exploitation
 cloudflare-api-shield.md             — CF API Shield vs Access distinction
 cloudflare-bypass-techniques.md      — Origin IP discovery, CF product identification
 credential-chaining.md               — Discovery → Validation → Escalation → Pivot
@@ -142,6 +155,7 @@ gateway-misconfiguration-patterns.md — Parallel gateway drift, CDN bypass, con
 ghidra-extension-building.md         — Build Ghidra extensions from source for version mismatches
 heapdump-secret-extraction.md        — Java HPROF analysis with Eclipse MAT
 insecure-deserialization.md          — Java/PHP/.NET/Python deserialization exploitation
+internal-ad-attacks.md               — AD enumeration, Kerberos attacks, credential dumping, lateral movement, Windows privesc
 javascript-secret-scanning.md        — Bulk JS secret scanning patterns
 js-bundle-recon.md                   — Phase 1 JS bundle analysis for recon (URLs, configs, architecture)
 keycloak-assessment.md               — Keycloak realm/client enumeration
@@ -174,5 +188,7 @@ ssrf-outbound-forcing.md             — Server-side callback forcing
 subdomain-takeover.md                — Dangling CNAME detection
 time-box-enforcement.md              — Budget tracking and over-budget decisions
 web-bypass-techniques.md             — WAF/auth bypass techniques
+web-testing-checklist.md             — User management, app logic, input handling, security headers, infra checks
+webauthn-passkeys-testing.md         — FIDO2/WebAuthn/Passkey registration, auth, fallback, counter, origin testing
 web-vuln-bypass-tables.md            — SSRF, path traversal, access control, authentication, OAuth, business logic, NoSQL injection, DOM XSS, XSS, IDOR, file upload, SSTI, MFA, ATO, race condition, mass assignment bypass payloads (1941 lines)
 ```
