@@ -286,7 +286,37 @@ Critical and High findings discovered during static analysis (Phase 2) MUST be v
    - BroadcastReceivers with no permission = any app can trigger them
    - Dynamic receivers registered without RECEIVER_NOT_EXPORTED flag (Android 14+ requirement)
 
-8. Binary protections check:
+8. Deserialization / unsafe parsing:
+   - **SnakeYAML `yaml.load()`** — instantiates arbitrary classes via `!!` tag. Look for any class on classpath with a dangerous single-arg constructor (Runtime.exec, ProcessBuilder, file write). Safe alternative: `new Yaml(new SafeConstructor())` or `yaml.loadAs(input, Map.class)`
+   - **ObjectInputStream** — Java native deserialization, gadget chains
+   - **Gson/Jackson with polymorphic types** — type confusion attacks
+   - **XMLDecoder** — arbitrary object instantiation
+   - Pattern: find the "sink" class first (e.g., a class whose constructor calls `Runtime.exec()`), then find the deserialization entry point that can reach it
+
+8. Deserialization analysis (when YAML/JSON/XML/Serializable processing found):
+   - SnakeYAML `yaml.load()` without SafeConstructor → arbitrary object instantiation (see `yaml-deserialization-rce.md`)
+   - Java `ObjectInputStream.readObject()` → classic Java deserialization
+   - `XMLDecoder` → XML-based object instantiation
+   - Check for gadget classes on classpath: constructors calling `Runtime.exec()`, `ProcessBuilder`, file I/O, reflection
+   - Check input source: user-controlled (intents, file pickers, network) = exploitable
+
+8. Deserialization analysis (when YAML/JSON/XML parsing found):
+   - SnakeYAML `yaml.load()` without `SafeConstructor` → arbitrary class instantiation via `!!` tag
+   - Jackson `ObjectMapper` with `enableDefaultTyping()` or `@JsonTypeInfo(use=CLASS)` → polymorphic RCE
+   - Java `ObjectInputStream.readObject()` → gadget chain exploitation
+   - `XMLDecoder.readObject()` → direct method invocation
+   - Check for gadget classes: any constructor calling `Runtime.exec()`, `ProcessBuilder`, file I/O
+   - If found: write exploit payload immediately (see `deserialization-attacks.md`)
+
+9. Exported ContentProvider analysis:
+   - Identify all providers with `android:exported="true"` and no `android:permission`
+   - Check `query()` for SQL injection (raw string concatenation in selection)
+   - Check `openFile()` for path traversal (unsanitized `getLastPathSegment()`)
+   - Check for weak authentication (PIN/password in selection parameter with small keyspace)
+   - Test access: `adb shell content query --uri content://<authority>`
+   - See `content-provider-attacks.md` for exploitation patterns
+
+10. Binary protections check:
    - Android: ProGuard/R8 obfuscation, native libs
    - iOS: PIE, stack canary, ARC, code signing
 
@@ -297,7 +327,7 @@ Critical and High findings discovered during static analysis (Phase 2) MUST be v
    # Upload APK/IPA at http://localhost:8000
    ```
 
-**Reference:** `static-analysis.md`, `native-re-mcp.md`, `android-path-traversal-rce.md`, `crypto-key-cracking.md`, `native-buffer-overflow.md`
+**Reference:** `static-analysis.md`, `native-re-mcp.md`, `android-path-traversal-rce.md`, `crypto-key-cracking.md`, `native-buffer-overflow.md`, `deserialization-attacks.md`, `content-provider-attacks.md`, `yaml-deserialization-rce.md`, `yaml-deserialization-rce.md`, `yaml-deserialization-rce.md`
 
 ---
 
@@ -602,6 +632,7 @@ Critical and High findings discovered during static analysis (Phase 2) MUST be v
 - **Client-side-only exploit chains (WebView RCE, broadcast injection):** When the exploit is entirely client-side (no server API involved), mark Phases 3/4/6 as N/A. Phase 5 validates the exploit dynamically.
 - **Frida 16.x compatibility:** `--no-pause` flag removed (app auto-resumes on spawn). Use `frida -U -f <package> -l script.js`. For deep link exploitation, do NOT use `device.spawn(url=...)` — it doesn't work for Android intents. Instead: spawn app normally → install hooks → resume → trigger deep link via separate `adb shell am start -a android.intent.action.VIEW -d "scheme://..."` command. This two-step pattern is required for hooking deep link handlers.
 - **Exploit hosting pitfall:** Python's `http.server` decodes `%2F` in URL paths and resolves `../`, causing 404 for path traversal payloads. Use a custom server that serves the payload for any request path (see `android-path-traversal-rce.md`)
+- **Device-to-host connectivity:** When the device can't reach the host IP (different subnet, firewall, VPN), use `adb reverse tcp:PORT tcp:PORT` to forward device localhost to host. Then use `http://127.0.0.1:PORT/` in exploit URIs. Always verify with `adb shell curl http://127.0.0.1:PORT/file` before triggering the exploit.
 - **App restart issues:** Use `adb shell am start -S -W` to force-stop then start. Pre-grant permissions with `pm grant` and `appops set` to avoid dialogs blocking the flow
 - **Frida spawn on rooted devices:** `frida -U -f <package>` requires frida-server running on device (`adb shell "su -c '/data/local/tmp/frida-server -D'"`). Without it, you get "need Gadget to attach on jailed Android" even on rooted devices. Always verify with `frida-ps -U` before spawning.
 - **`extractNativeLibs="false"` and Frida:** When this flag is set, .so files live inside the APK (not extracted). You cannot `System.loadLibrary()` arbitrary libs from Frida scripts — only the app's own loading path works. Hook the native function after the app loads the library itself.
@@ -619,3 +650,7 @@ Critical and High findings discovered during static analysis (Phase 2) MUST be v
 - **Native "sanitizer" as enabler pattern:** When a native function strips extras/data from an intent but then ADDS a validation flag (e.g., `putExtra("VALID", true)`), the sanitizer IS the exploit enabler. The app assumes only sanitized intents reach the protected activity, but the sanitizer itself grants access. Reverse the native function to confirm: look for `removeExtra` loop followed by `putExtra` with a boolean `true` (mov w4, 1 in arm64).
 - **XOR-obfuscated strings in native libs:** Common pattern in MHL challenges. Decode with: `''.join(chr(b ^ key) for b in byte_array)`. Try keys 0x00-0x7F. Look for readable scheme strings (intent:, http://, https://) to identify the key quickly.
 - **r2 for quick native function analysis:** When Ghidra isn't running, use `r2 -q -c 'aa;s sym.Java_pkg_Class_method;pdf' lib.so` to disassemble JNI functions. Look for JNI call offsets (0xf8=GetObjectClass, 0x108=GetMethodID, 0x538=NewStringUTF, 0x2f0=GetFieldID, 0x2f8=GetObjectField, 0x558=GetArrayLength, 0x568=GetObjectArrayElement) to understand what Java methods the native code calls.
+- **SnakeYAML deserialization RCE:** When an app uses `yaml.load()` (not `yaml.loadAs()` or `SafeConstructor`), it allows arbitrary object instantiation via `!!fully.qualified.ClassName [args]` tags. Look for gadget classes with dangerous constructors (Runtime.exec, ProcessBuilder, file I/O). Common in config editor/viewer apps. The safe alternative is `new Yaml(new SafeConstructor(new LoaderOptions()))`.
+- **Runtime.exec(String) splitting pitfall:** `Runtime.exec(String)` uses `StringTokenizer` to split on whitespace — shell features (pipes, redirects, semicolons) are NOT interpreted. `exec("sh -c id")` works (3 tokens: sh, -c, id) but `exec("sh -c id > /tmp/out")` fails (sh only executes "id", "> /tmp/out" becomes $0/$1). Workaround: push a script to an executable path first, then exec the script path. Or use `exec(String[])` if you control the call site.
+- **Exported ContentProvider brute-force:** When a ContentProvider is exported without permission protection and uses a small keyspace for access control (e.g., 4-digit PIN), extract crypto parameters from assets/resources and brute-force offline. Pattern: `content query --uri content://authority --where "pin=XXXX"`. For offline cracking: extract encryptedData/salt/iv/iterations from APK assets, then PBKDF2+AES decrypt in Python loop. 4-digit PIN = 10K attempts = <1 second.
+- **adb reverse for exploit delivery:** When the device can't reach the host IP directly (different network/firewall), use `adb reverse tcp:PORT tcp:PORT` to forward device→host. Then use `http://127.0.0.1:PORT/` in the exploit URL. This is more reliable than finding the correct network interface IP.
