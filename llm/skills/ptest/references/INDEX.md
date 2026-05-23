@@ -133,7 +133,8 @@ Quick lookup: what you found → which reference to load.
 
 ```
 advanced-web-attacks.md              — WebSocket, cache poisoning, HTTP smuggling, race conditions
-api-first-methodology.md             — API-first testing: OpenAPI specs, versioning, gRPC, BOLA, mass assignment
+api-first-methodology.md             — API-centric testing approach
+api-fuzzing-methodology.md           — Parameter discovery, type/boundary fuzzing, auth manipulation, mass assignment, rate limit bypass, Content-Type switching, SpEL injection, GraphQL fuzzing
 attack-chain-framework.md            — Compound attack path documentation
 bug-bounty-osint-checklist.md         — Bug bounty OSINT techniques
 browser-extension-security.md        — Chrome/Firefox extension static+dynamic analysis, message passing, CORS proxy, privesc chains
@@ -144,8 +145,10 @@ cloud-infrastructure-enumeration.md  — GCP/AWS/Azure project mapping, bucket e
 cloud-privilege-escalation.md        — AWS/GCP/Azure post-compromise privesc, IAM abuse, S3/Lambda/EC2 exploitation
 cloudflare-api-shield.md             — CF API Shield vs Access distinction
 cloudflare-bypass-techniques.md      — Origin IP discovery, CF product identification
+command-injection-filter-bypasses.md — 20+ filter bypass techniques: no-space, no-slash, keyword evasion, hex/octal, brace expansion, argument injection, WorstFit, blind exfil, polyglots
 credential-chaining.md               — Discovery → Validation → Escalation → Pivot
 credential-inventory-structure.md    — Centralized credential tracking
+dark-web-breach-osint.md             — Breach databases, dark web search, threat intel feeds, credential leak methodology
 data-classification-framework.md     — Data sensitivity classification
 depth-vs-breadth-decisions.md        — When to stop vs dig deeper
 dns-record-intelligence.md           — SPF/DMARC/MX/TXT analysis

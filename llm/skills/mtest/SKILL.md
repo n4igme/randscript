@@ -234,6 +234,22 @@ Critical and High findings discovered during static analysis (Phase 2) MUST be v
    - `System.load()` / `System.loadLibrary()` from writable paths (getFilesDir, getCacheDir)
    - Deep link handlers that download and save files from attacker-controlled URIs
 
+5b. Intent URI parsing (intent scheme hijacking):
+   - Search for `Intent.parseUri(` — if the app parses user-controlled strings as intent URIs, this is a **high-value target**
+   - Check what flags are passed: `Intent.parseUri(url, Intent.URI_INTENT_SCHEME)` (flag=1) allows full intent specification
+   - Check if result is launched via `startActivity()` — enables launching non-exported activities
+   - Check for sanitization: does the app strip component/package/extras before launching? Is the sanitization bypassable?
+   - Common pattern: app allows `intent:` scheme in URL fields → attacker crafts `intent:#Intent;component=pkg/.InternalActivity;end`
+   - **Key question:** Where does the URL string come from? If from user input, database, backup file, or deep link parameter — it's attacker-controlled
+
+5c. Backup/restore as input validation bypass:
+   - Check if app implements its own backup (not just `allowBackup` in manifest)
+   - Look for: JSON/XML export to external storage, plaintext file writes to `getExternalFilesDir()`
+   - **Critical check:** Does the restore path apply the SAME validation as the UI input path?
+   - Common pattern: UI validates input (URL scheme, format, length) but restore/import reads raw data without checks
+   - If backup is plaintext on external storage → any app (or adb) can modify it → inject payloads that bypass UI validation
+   - Look for: `Gson.fromJson()`, `JSONObject()`, `ObjectInputStream` reading from external files without sanitization
+
 6. Native library analysis (when .so files present):
    - List imports: `readelf -d lib/arm64-v8a/lib*.so` or `strings` + grep
    - **Dangerous imports:** `system`, `exec`, `popen`, `dlopen`, `Runtime.exec`
@@ -243,6 +259,8 @@ Critical and High findings discovered during static analysis (Phase 2) MUST be v
    - If `system()` + user input → likely command injection or buffer overflow
    - If fixed-size buffers + `memcpy`/`strcpy` without length check → overflow candidate
    - Test with long inputs (100, 200, 500 chars) and monitor `system()` via Frida
+   - **Native "enabler" pattern:** Check what native functions ADD to objects, not just what they remove. A "sanitizer" that strips dangerous extras but then adds a validation flag (e.g., `putExtra("IS_VALID", true)`) makes the native function the enabler, not the blocker. Reverse the full function — don't stop at the first `removeExtra` call.
+   - **Intent manipulation in native code:** Look for JNI calls to `putExtra`, `removeExtra`, `setData`, `setComponent`, `setPackage`, `getBooleanExtra`. Map the full sequence: what's removed vs what's added. The final state of the intent after native processing is what matters.
 
 7. WebView + JavaScript bridge analysis (when WebView with JS enabled found):
    - Check for `addJavascriptInterface()` — exposes Java/native methods to JS
@@ -595,3 +613,9 @@ Critical and High findings discovered during static analysis (Phase 2) MUST be v
 - **Unity IL2CPP reverse engineering:** For Unity 2020.x IL2CPP apps, all C# class/method/field/string-literal names are in `global-metadata.dat`. Key patterns: (1) grep for `[ClassName]` log prefixes to find the relevant class, (2) grep for method names like `Handle*`, `check*`, `validate*`, `get*` to understand the flow, (3) look for field names like `domainRegex`, `updateHost` that reveal validation logic, (4) coroutine names like `<MethodName>d__N` reveal async operations. The actual game logic is NOT in `classes.dex` — it's in `libil2cpp.so` + metadata.
 - **Mono/Unity custom scheme URI parsing quirk:** In Unity 2020.x (Mono runtime), `System.Uri` does NOT reliably parse query parameters from custom scheme URIs (e.g., `customscheme://host?key=value`). The `Uri.Query` property may return empty. Apps work around this with manual string parsing or by using Android's Java-side `Uri.getQueryParameter()` via JNI. When testing deep links, if the app receives the full URI string (confirmed via logcat) but fails to extract parameters, try different parameter names — the extraction method may be parameter-name-specific.
 - **extractNativeLibs="false":** Native libs stay inside the APK (not extracted to filesystem). `System.loadLibrary()` works but you can't `dlopen` from a custom path. For Frida hooking, the lib loads from the APK's zip — use `Process.findModuleByName()` after the app loads it.
+- **Intent URI parsing (`Intent.parseUri`) is a high-value target:** When an app parses user-controlled strings as intent URIs (look for `Intent.parseUri(url, 1)` or `Intent.URI_INTENT_SCHEME`), it can launch ANY activity (including non-exported ones) with arbitrary extras. The attack surface is wherever the URL string originates: UI input, database, backup files, deep link parameters, QR codes. Even if the app "sanitizes" the intent before launching, check what the sanitizer ADDS (not just removes). TideLock challenge (2026-05): native `sanitizeIntent()` stripped all extras but then added `FLAG_REQUEST_VALID=true` — making it the enabler.
+- **Backup/restore bypasses input validation:** Apps that implement their own backup (JSON/XML to external storage) often skip the validation applied on the UI path. If `isValidUrl()` blocks `intent:` schemes on the add-entry UI, but `restoreEntries()` reads raw JSON without checking — inject via modified backup file. Always check: does the restore/import path apply the same validation as the UI input path?
+- **Intent URI injection via backup/restore:** When an app validates URLs on input (UI add) but NOT on restore/import, inject `intent:#Intent;component=pkg/.InternalActivity;end` into the backup file. If the app has any code path that calls `Intent.parseUri(url, 1)` + `startActivity()`, you can launch non-exported activities. Check: (1) backup format (plaintext JSON? XML?), (2) restore validation (usually missing), (3) code paths that handle `intent:` scheme. Common in password managers, note apps, bookmark managers.
+- **Native "sanitizer" as enabler pattern:** When a native function strips extras/data from an intent but then ADDS a validation flag (e.g., `putExtra("VALID", true)`), the sanitizer IS the exploit enabler. The app assumes only sanitized intents reach the protected activity, but the sanitizer itself grants access. Reverse the native function to confirm: look for `removeExtra` loop followed by `putExtra` with a boolean `true` (mov w4, 1 in arm64).
+- **XOR-obfuscated strings in native libs:** Common pattern in MHL challenges. Decode with: `''.join(chr(b ^ key) for b in byte_array)`. Try keys 0x00-0x7F. Look for readable scheme strings (intent:, http://, https://) to identify the key quickly.
+- **r2 for quick native function analysis:** When Ghidra isn't running, use `r2 -q -c 'aa;s sym.Java_pkg_Class_method;pdf' lib.so` to disassemble JNI functions. Look for JNI call offsets (0xf8=GetObjectClass, 0x108=GetMethodID, 0x538=NewStringUTF, 0x2f0=GetFieldID, 0x2f8=GetObjectField, 0x558=GetArrayLength, 0x568=GetObjectArrayElement) to understand what Java methods the native code calls.

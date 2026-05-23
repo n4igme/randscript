@@ -1489,6 +1489,8 @@ Basic takeover                         → Low/Medium
 
 ## OS Command Injection — Separators & Blind Techniques
 
+> **Full filter bypass catalog:** See `command-injection-filter-bypasses.md` for 20+ techniques (no-space, no-slash, keyword evasion, hex/octal encoding, brace expansion, argument injection, WorstFit, polyglots).
+
 ### Command Separators
 
 | Separator | Linux | Windows | Behavior |
