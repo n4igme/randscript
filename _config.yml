@@ -16,3 +16,5 @@ exclude:
 
 include:
   - rag-agent/index.html
+  - gojek-poc.html
+  - gojek-poc-bridge.html
