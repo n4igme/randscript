@@ -158,6 +158,11 @@ Critical and High findings discovered during static analysis (Phase 2) MUST be v
    adb shell pm path <package>
    adb pull <path> target.apk
 
+   # If split APK (base + split_config.*.apk), merge before analysis:
+   java -jar APKEditor-1.4.7.jar m -i <dir_with_splits> -o merged.apk -f
+   # This produces a single APK with all DEX files, native libs, and resources combined.
+   # Always analyze the merged APK — split analysis misses cross-module references.
+
    # Android — from APKMirror/APKPure (black-box)
    # Download manually or use apkeep
    pip install apkeep
@@ -228,7 +233,16 @@ Critical and High findings discovered during static analysis (Phase 2) MUST be v
    - WebSocket endpoints
    - Third-party service integrations
 
-5. Unsafe file operations (path traversal vectors):
+5. Deep link → WebView hijack analysis (when deep links route to WebViews):
+   - Find all `@DeepLink` annotations that contain "web" or "url" in the route
+   - Check if the handler passes `bundle.getString("url")` to a WebView without validation
+   - Check if the WebView has `addJavascriptInterface` — if yes, map ALL `@JavascriptInterface` methods
+   - Check if multiple deep link routes delegate to the same vulnerable handler
+   - Check for HTTPS app link → internal deep link conversion (e.g., `https://app.link/path` → `appscheme://path`)
+   - If unvalidated URL + JS bridge found: **Critical** — document all entry points and bridge methods
+   - See `deeplink-webview-hijack.md` for full exploitation patterns
+
+6. Unsafe file operations (path traversal vectors):
    - `Uri.getLastPathSegment()` used as filename without sanitization
    - `new File(base, userInput)` with no canonical path check
    - `System.load()` / `System.loadLibrary()` from writable paths (getFilesDir, getCacheDir)
@@ -327,7 +341,7 @@ Critical and High findings discovered during static analysis (Phase 2) MUST be v
    # Upload APK/IPA at http://localhost:8000
    ```
 
-**Reference:** `static-analysis.md`, `native-re-mcp.md`, `android-path-traversal-rce.md`, `crypto-key-cracking.md`, `native-buffer-overflow.md`, `deserialization-attacks.md`, `content-provider-attacks.md`, `yaml-deserialization-rce.md`, `yaml-deserialization-rce.md`, `yaml-deserialization-rce.md`
+**Reference:** `static-analysis.md`, `native-re-mcp.md`, `android-path-traversal-rce.md`, `crypto-key-cracking.md`, `native-buffer-overflow.md`, `deserialization-attacks.md`, `content-provider-attacks.md`, `yaml-deserialization-rce.md`, `deeplink-webview-hijack.md`
 
 ---
 
@@ -392,7 +406,7 @@ Critical and High findings discovered during static analysis (Phase 2) MUST be v
 
 5. Verify: app launches, traffic visible in proxy, no detection popups
 
-**Reference:** `dynamic-setup.md`, `frida-scripts.md`
+**Reference:** `dynamic-setup.md`, `frida-scripts.md`, `dexguard-appfence-bypass.md`
 
 ---
 
@@ -654,3 +668,17 @@ Critical and High findings discovered during static analysis (Phase 2) MUST be v
 - **Runtime.exec(String) splitting pitfall:** `Runtime.exec(String)` uses `StringTokenizer` to split on whitespace — shell features (pipes, redirects, semicolons) are NOT interpreted. `exec("sh -c id")` works (3 tokens: sh, -c, id) but `exec("sh -c id > /tmp/out")` fails (sh only executes "id", "> /tmp/out" becomes $0/$1). Workaround: push a script to an executable path first, then exec the script path. Or use `exec(String[])` if you control the call site.
 - **Exported ContentProvider brute-force:** When a ContentProvider is exported without permission protection and uses a small keyspace for access control (e.g., 4-digit PIN), extract crypto parameters from assets/resources and brute-force offline. Pattern: `content query --uri content://authority --where "pin=XXXX"`. For offline cracking: extract encryptedData/salt/iv/iterations from APK assets, then PBKDF2+AES decrypt in Python loop. 4-digit PIN = 10K attempts = <1 second.
 - **adb reverse for exploit delivery:** When the device can't reach the host IP directly (different network/firewall), use `adb reverse tcp:PORT tcp:PORT` to forward device→host. Then use `http://127.0.0.1:PORT/` in the exploit URL. This is more reliable than finding the correct network interface IP.
+- **DexGuard/AppFence bypass:** Enterprise apps using `libaf-android.so` (AppFence by Guardsquare) have a multi-layer kill chain: (1) inline `SVC #0` (exit_group, bypasses ALL libc hooks), (2) `syscall(94,0)` via libc wrapper, (3) `kill(getpid(), SIGKILL)` via dlsym'd function pointer, (4) `_exit(0)` + `abort()` fallbacks. Detection scans `/proc/self/maps` for non-whitelisted libraries. Kill runs on a separate thread spawned via `pthread_create` with a configurable delay (`usleep(N*1000000)`). The library has integrity checks that detect on-disk patching (triggers SIGBUS). **Working bypass (v24 pattern):** (1) hook `fopen`/`fgets` to filter Frida lines from `/proc/self/maps`, (2) hook `pthread_create` to neutralize kill thread, (3) patch inline SVC to NOP after library loads, (4) hook libc `syscall`/`kill`/`_exit`/`abort` as safety nets. The maps filter is the PRIMARY defense — if detection doesn't see Frida, the kill thread is never spawned. See `dexguard-appfence-bypass.md`.
+- **Split APK merge:** Use `java -jar APKEditor.jar m -i <dir> -o merged.apk -f` to merge split APKs before jadx decompilation. Merged APK gives complete view (all DEX + native libs + resources in one file).
+- **Split APK merging:** When pulling from device, apps often have split APKs (base + config.arm64 + config.xxhdpi). Merge before analysis: `java -jar APKEditor.jar m -i <dir_with_apks> -o merged.apk -f`. This produces a single APK suitable for jadx/apktool. Tool: REAndroid/APKEditor.
+- **hluda-server (Frida anti-detection build):** When regular frida-server is detected (port 27042, /proc/self/maps strings), use hluda-server — a Frida build with anti-detection patches (randomized port, stripped strings, hidden from maps). Path on device: `/data/local/tmp/hluda-server`. Start same way: `su -c '/data/local/tmp/hluda-server -D'`. Still uses same `frida -U` client commands.
+- **DexGuard inline syscall detection (unbypassable via Frida):** When an app uses DexGuard with inline `svc #0` assembly for exit_group, ALL userspace hooks fail — libc exit/kill hooks, syscall() wrapper hooks, pthread_create blocking. Symptoms: process exits cleanly (code 0), no hook messages fire for exit. The ONLY solutions are: (1) Shamiko/Zygisk (kernel-level root hiding), (2) non-rooted device, (3) APK patching to remove detection code. For bug bounty, static analysis evidence is sufficient — don't waste hours on bypass.
+- **pthread_create thread identification:** To identify which native lib runs root detection, hook `pthread_create` and log `module.name` for each `start_routine`. Filter out system libs (libc, libart, libhwui, libutils, libgui). The detection thread is usually from a small obfuscated lib (e.g., 7KB `libh9740d.so`). But blocking the thread may crash the app if it's not actually the detection (e.g., ANR handler).
+- **DexGuard native root detection defeats Frida hooks:** DexGuard (used by Gojek, banking apps) uses inline `svc #0` assembly to call exit_group directly, bypassing ALL libc hooks (exit, _exit, kill, syscall wrapper). Even with native Interceptor hooks on every libc function, the process still dies. Detection vectors: (1) `/proc/self/maps` for frida-agent strings, (2) `/proc/net/tcp` for port 27042 (frida default), (3) `access()` for su/magisk/kernelsu paths, (4) custom kernel string in `/proc/version`. Solutions in order of reliability: (1) Shamiko + Zygisk Next (kernel-level hiding), (2) hluda-server (Frida build with anti-detection patches — hides from /proc/maps, randomizes port), (3) Frida Gadget injection into patched APK, (4) non-rooted device for dynamic testing. For bug bounty, static code evidence is sufficient when the code path is unambiguous.
+- **hluda-server (anti-detection Frida):** When standard frida-server is detected, use hluda-server (`/data/local/tmp/hluda-server -D`). It patches Frida's identifiable strings and port. However, hluda alone doesn't hide root — you still need root-hiding hooks or Shamiko. hluda solves frida detection; Shamiko solves root detection. For DexGuard apps that use inline syscalls, even hluda + Frida hooks may not suffice — the detection bypasses all userspace instrumentation.
+- **KernelSU + Zygisk Next version requirement:** Zygisk Next requires recent KernelSU (ksud). If install fails with "ksud version is too old", update KernelSU first. KernelSU 0.7.1 is too old; need latest from GitHub releases.
+- **APK merge for split APKs:** Use APKEditor (`java -jar APKEditor.jar m -i <dir> -o merged.apk -f`) to merge split APKs (base + config splits) into a single APK before analysis. This ensures jadx decompiles all DEX files and resources together. Tool: https://github.com/REAndroid/APKEditor
+- **DexGuard root detection pattern:** Commercial apps (fintech, ride-hailing) use DexGuard with dedicated `ard` (App Root Detection) modules. Symptoms: app launches then immediately dies with `Process exited cleanly (0)` in logcat (NOT a crash — it's `System.exit(0)`). Detection is heavily obfuscated via reflection (`C15197fsZ.c()`, `C15197fsZ.d()` patterns). Often controlled by Firebase Remote Config (`RootCheckerRemoteConfig`). KernelSU without hiding modules (susfs/Shamiko) gets detected. Fix: install Zygisk Next + Shamiko for KernelSU, or use a non-rooted device. Key grep: `grep -rl "DexGuard\|AppProtection\|isRooted\|RootChecker" sources/` to confirm.
+- **Split APK merging before analysis:** Modern apps ship as split APKs (base + config splits for ABI/density). Always merge with `java -jar APKEditor.jar m -i <dir> -o merged.apk -f` before running jadx. Analyzing base.apk alone misses native libs and density-specific resources. APKEditor also fixes `extractNativeLibs` and sanitizes the manifest automatically.
+- **Large app static analysis (50K+ classes):** Delegate Phase 2 analysis to a subagent via `delegate_task` with specific goals (deeplinks, secrets, exported components, network security, webview analysis). The subagent writes results to `phase2-static/android/` as separate markdown files. This preserves main context for exploitation phases. Works well for apps like Gojek (79K classes, 17 DEX files).
+- **Split APK handling:** Modern Play Store apps install as split APKs. Always merge with `java -jar APKEditor.jar m -i <dir> -o merged.apk -f` before jadx decompilation. Analyzing individual splits causes missing class errors and incomplete results.
