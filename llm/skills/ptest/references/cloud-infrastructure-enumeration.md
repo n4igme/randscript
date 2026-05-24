@@ -281,6 +281,119 @@ curl -s "https://login.microsoftonline.com/TARGET.COM/v2.0/.well-known/openid-co
 
 ---
 
+## Alibaba Cloud Resource Discovery
+
+### DNS-Based Discovery
+
+```bash
+# Alibaba Cloud CNAME patterns
+dig +short CNAME target.com
+
+# Common Alibaba Cloud DNS patterns:
+# *.w.cdngslb.com → Alibaba Cloud CDN (DCDN/CDN)
+# *.oss-REGION.aliyuncs.com → Object Storage Service (OSS)
+# *.REGION.alb.aliyuncs.com → Application Load Balancer
+# *.mns.REGION.aliyuncs.com → Message Service
+# *.REGION.fc.aliyuncs.com → Function Compute
+# *.rds.aliyuncs.com → ApsaraDB RDS
+
+# Server header: Tengine = Alibaba Cloud CDN (nginx fork)
+```
+
+### Header-Based Discovery
+
+```bash
+# Identify Alibaba Cloud from response headers
+curl -sI https://target.com/ | grep -iE '(server|x-oss|eagleid|timing-allow-origin)'
+
+# Key indicators:
+# Server: Tengine → Alibaba Cloud CDN
+# Server: AliyunOSS → Direct OSS access
+# x-oss-request-id → OSS bucket
+# EagleId → Alibaba Cloud CDN trace ID
+# Via: Chinese city names (kunlun, etc.) → Alibaba CDN PoP
+```
+
+### OSS Bucket Enumeration
+
+```bash
+# Check bucket existence
+# 403 = exists (AccessDenied), 404 = doesn't exist (NoSuchBucket)
+curl -s -o /dev/null -w '%{http_code}' "https://BUCKET.oss-REGION.aliyuncs.com/"
+
+# Common regions for Indonesian targets:
+# oss-ap-southeast-5 = Jakarta
+# oss-ap-southeast-1 = Singapore
+
+# Naming pattern derivation (real-world example from Moka/GoTo):
+# Known bucket: al-ms-id-p-file-public
+# Pattern: {company}-{service}-{country}-{env}-{purpose}-{access}
+#   al = alibaba (or company prefix)
+#   ms = microservice
+#   id = indonesia
+#   p = production, s = staging, d = dev
+#   file-public / file-private = purpose + access level
+
+# Derive variants from a known bucket name:
+KNOWN="al-ms-id-p-file-public"
+REGION="oss-ap-southeast-5"
+for env in p s d u; do  # prod, staging, dev, uat
+  for access in public private; do
+    bucket="al-ms-id-${env}-file-${access}"
+    code=$(curl -s -o /dev/null -w '%{http_code}' "https://${bucket}.${REGION}.aliyuncs.com/")
+    [ "$code" != "404" ] && echo "[EXISTS $code] $bucket"
+  done
+done
+
+# Also try service-specific buckets:
+for svc in api backup logs data assets config; do
+  bucket="al-ms-id-p-${svc}"
+  code=$(curl -s -o /dev/null -w '%{http_code}' "https://${bucket}.${REGION}.aliyuncs.com/")
+  [ "$code" != "404" ] && echo "[EXISTS $code] $bucket"
+done
+```
+
+### OSS Bucket Content Enumeration
+
+```bash
+# If bucket allows listing (rare but check):
+curl -s "https://BUCKET.oss-REGION.aliyuncs.com/" | head -50
+# Look for XML with <ListBucketResult> containing <Contents>
+
+# Check known paths from JS bundles or API docs:
+# If you found: https://BUCKET.oss-REGION.aliyuncs.com/static/open-platform/api-docs/swagger/api-docs-prod.json
+# Try adjacent paths:
+curl -s -o /dev/null -w '%{http_code}' "https://BUCKET.oss-REGION.aliyuncs.com/static/"
+curl -s -o /dev/null -w '%{http_code}' "https://BUCKET.oss-REGION.aliyuncs.com/static/open-platform/"
+
+# Error messages reveal bucket ownership:
+# "The bucket you access does not belong to you" = exists, private
+# "NoSuchBucket" = doesn't exist
+# "NoSuchKey" = bucket exists, file doesn't (can enumerate files)
+```
+
+### Direct IP Discovery (Alibaba Cloud ECS)
+
+```bash
+# Alibaba Cloud ECS IP ranges (common for Jakarta region):
+# 8.215.x.x, 8.219.x.x, 47.254.x.x, 149.129.x.x
+
+# When subdomains resolve to Alibaba IPs directly (not behind CDN/Cloudflare):
+# These are direct-to-origin and bypass any external WAF
+# Priority targets for port scanning in Phase 2
+
+# Identify by checking if IP is NOT Cloudflare/CDN:
+for host in $(cat subdomains.txt); do
+  ip=$(dig +short $host | tail -1)
+  # Check if it's a direct Alibaba IP (not Cloudflare 104.x/172.67.x)
+  if echo "$ip" | grep -qE '^(8\.21[0-9]|47\.254|149\.129)'; then
+    echo "[DIRECT] $host -> $ip"
+  fi
+done
+```
+
+---
+
 ## Cross-Cloud Enumeration Workflow
 
 ### Step 1: DNS Reconnaissance

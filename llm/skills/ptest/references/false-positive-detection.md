@@ -98,6 +98,16 @@ fi
 | `x-amzn-requestid` header | AWS |
 | `via: 1.1 google` | GCP load balancer |
 | Generic 403 with no app-specific content | WAF block |
+| `T-Sec-WAF: StdPortNoMatchServer` header | Tencent Cloud WAF (no matching Host) |
+| HTML title "WAF Block Page" + `waf-intl.qq.com` feedback URL | Tencent Cloud WAF (rule triggered) |
+| `Server: TencentEdgeOne` + 418 status | Tencent EdgeOne CDN (unknown vhost) |
+| `Server: TencentEdgeOne` + 302 to main domain | Tencent EdgeOne CDN (path redirect rule) |
+
+**Tencent Cloud WAF specifics:**
+- Returns 400 with `T-Sec-WAF: StdPortNoMatchServer` when Host header doesn't match any configured server — this is NOT a Kong/app response
+- Returns 403 with full HTML block page (2838 bytes typical) when a WAF rule triggers (dotfiles, path traversal, SQLi patterns)
+- The 403 block page contains a UUID for feedback: `api.waf-intl.qq.com/waf-attack-feedback/{uuid}`
+- Port 8080 on Tencent IPs often returns the same WAF 400 — it's the WAF catching unmatched traffic, not an exposed service
 
 **Rule:** Distinguish between "WAF blocked my request" (not a finding about the app) vs "application returned 403" (the app's own access control). Check response headers to identify the source.
 

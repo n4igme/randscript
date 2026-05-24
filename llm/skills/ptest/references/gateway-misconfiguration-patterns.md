@@ -689,6 +689,39 @@ For every vulnerability discovered during a pentest:
 
 ---
 
+## Appendix: Kong API Gateway Response Taxonomy
+
+When testing targets behind Kong + Tencent WAF (common in GoTo/Gojek ecosystem), responses follow a strict hierarchy. Understanding this prevents wasted time on false positives.
+
+| Response | Source | Meaning | Action |
+|----------|--------|---------|--------|
+| 400 + `T-Sec-WAF: StdPortNoMatchServer` | Tencent WAF | Host header doesn't match any configured server | Wrong Host or direct IP access — try proper hostname |
+| 403 + HTML "WAF Block Page" (2838 bytes) | Tencent WAF | WAF rule triggered (dotfiles, traversal, SQLi patterns) | Try WAF bypass techniques |
+| 404 + `{"message":"no Route matched with those values"}` (48 bytes) | Kong | Path exists in Kong but no route configured | Path doesn't reach any backend — try different prefixes |
+| 401 + `{"message":"missing auth header"}` (40 bytes) | Kong auth plugin | Route exists AND requires Bearer token | Real endpoint — needs auth token |
+| 401 + `{"message":"invalid_auth_header"}` | Kong auth plugin | Token provided but malformed/expired | Token validation is happening — real endpoint |
+| 401 + `{"message":"invalid_algorithm"}` | Kong/backend | JWT alg:none or unsupported algorithm rejected | JWT validation is strict |
+| 307/308 + Location header | Kong/backend | Redirect (e.g., /auth/login → Google OAuth) | Follow redirect, map auth flow |
+| 301 + Location to login page | Kong catch-all | All unmatched routes redirect to auth | False positive — Kong catch-all rule |
+
+**Enumeration strategy for Kong targets:**
+1. First, identify the "no route" response (404, 48 bytes) — this is your baseline for "path doesn't exist"
+2. Any response OTHER than this baseline means the path is routed somewhere
+3. 401 = real endpoint requiring auth (highest value for mapping)
+4. 403 = WAF blocking (try bypass) OR application-level block (check response body)
+5. Filter ffuf/gobuster by size: `-fs 48` (Kong no-route) and `-fs 2838` (WAF block page)
+
+**Kong + SPA catch-all pitfall:**
+When Kong routes a path to a React/Next.js SPA backend, ALL sub-paths return 200 with the same HTML (SPA serves index.html for client-side routing). Always verify by comparing response sizes:
+```bash
+# If these are all identical size → SPA catch-all, not real endpoints
+curl -sk -o /dev/null -w "%{size_download}" "https://target/app/actuator"
+curl -sk -o /dev/null -w "%{size_download}" "https://target/app/nonexistent12345"
+curl -sk -o /dev/null -w "%{size_download}" "https://target/app/"
+```
+
+---
+
 ## Appendix: Common Gateway Technologies in Indonesian Fintech
 
 | Technology | Indicators | Common Drift Points |

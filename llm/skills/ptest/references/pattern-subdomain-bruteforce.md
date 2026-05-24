@@ -163,9 +163,12 @@ done
 **Why this matters:** Passive recon often finds `service.dev.domain.com` or `service.staging.domain.com` but misses the production equivalent `service.domain.com` (no env prefix). This is the #1 cause of missed subdomains in real engagements.
 
 **Real-world example (BFI Finance, May 2026):**
-- Passive recon found: `e-pmo2.dev.bfi.co.id` (from crt.sh)
+- Passive recon found: `e-pmo2.dev.bfi.co.id` → 172.22.32.94 (from crt.sh)
 - Never tested: `e-pmo2.bfi.co.id` (production — no env prefix)
-- Result: Production asset missed entirely from scope
+- Result: Production asset missed entirely from initial scope
+- **Later confirmed (2026-05-22):** `e-pmo2.bfi.co.id` → 34.111.225.150 (GCP), live Apache2 with forgotten PHP app at `/rapi/` (RAPI — "Report All Project Implementation"). Classic SQLi in `build/login.php` line 11 (`mysqli->query()` with string concatenation). Error-based extraction via EXTRACTVALUE revealed **21 databases** on shared GCP Cloud SQL instance: `mysql`, `information_schema`, `performance_schema`, `sys`, `pmotools`, `room`, `vms`, `resep`, `briliance`, `momo`, `dfr`, `absen`, `dfr_new`, `pdc`, `kboard`, `core`, `actionlog`, `projo`, `boarding`, `rapi`, `pmotools2`. Includes employee PII (KTP, NPWP, bank accounts in `boarding`), employee passwords (`absen`), and customer financial data (`pmotools` — Sharia finance, loan collections). CVSS 10.0.
+- **Root cause:** env-prefix mutation was not performed during Phase 1/2 — the bare domain was never tested. The quick-win check (strip `dev.` prefix, resolve bare domain) would have caught this in seconds.
+- **Lesson:** This is now the canonical example of why the Env-Prefix Quick-Win Check is MANDATORY at end of Phase 1. A 5-second `dig +short e-pmo2.bfi.co.id` would have revealed the production asset.
 
 ### Mutation Rules
 

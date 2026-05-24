@@ -867,6 +867,148 @@ Java.perform(function() {
 
 ---
 
+## DexGuard / Native Root Detection Bypass (Aggressive)
+
+When standard Java-level hooks fail because the app kills itself before hooks establish (common with DexGuard, Promon, Guardsquare), use native-level interception:
+
+```javascript
+// dexguard_bypass.js - Native-level anti-kill + anti-detection
+// Use when: app exits cleanly (exit code 0) despite Java System.exit hooks
+// Symptom: "Process exited cleanly (0)" in logcat, hooks fire but process dies
+
+// ===== BLOCK ALL EXIT PATHS AT NATIVE LEVEL (before Java loads) =====
+Interceptor.attach(Module.findExportByName("libc.so", "exit"), {
+    onEnter: function(args) {
+        console.log("[!] NATIVE exit(" + args[0] + ") BLOCKED");
+        // Replace with infinite sleep to prevent termination
+        var nanosleep = new NativeFunction(
+            Module.findExportByName("libc.so", "nanosleep"), 'int', ['pointer', 'pointer']);
+        var ts = Memory.alloc(16);
+        ts.writeU64(0x7FFFFFFF);
+        nanosleep(ts, ptr(0));
+    }
+});
+
+Interceptor.attach(Module.findExportByName("libc.so", "_exit"), {
+    onEnter: function(args) {
+        console.log("[!] NATIVE _exit(" + args[0] + ") BLOCKED");
+        var nanosleep = new NativeFunction(
+            Module.findExportByName("libc.so", "nanosleep"), 'int', ['pointer', 'pointer']);
+        var ts = Memory.alloc(16);
+        ts.writeU64(0x7FFFFFFF);
+        nanosleep(ts, ptr(0));
+    }
+});
+
+Interceptor.attach(Module.findExportByName("libc.so", "kill"), {
+    onEnter: function(args) {
+        if (args[0].toInt32() === Process.id) {
+            console.log("[!] NATIVE kill(self, " + args[1] + ") BLOCKED");
+            args[0] = ptr(-1);  // Invalid PID
+        }
+    }
+});
+
+// ===== HIDE FRIDA FROM /proc/self/maps =====
+// DexGuard reads maps via fgets or direct read() syscall
+Interceptor.attach(Module.findExportByName("libc.so", "fgets"), {
+    onEnter: function(args) { this.buf = args[0]; },
+    onLeave: function(retval) {
+        if (!retval.isNull() && this.buf) {
+            try {
+                var line = this.buf.readUtf8String();
+                if (line && (line.indexOf("frida") !== -1 || line.indexOf("gadget") !== -1 ||
+                    line.indexOf("linjector") !== -1)) {
+                    this.buf.writeUtf8String("");
+                    retval.replace(ptr(0));
+                }
+            } catch(e) {}
+        }
+    }
+});
+
+// ===== HIDE FRIDA PORT (27042) FROM /proc/net/tcp =====
+// DexGuard scans /proc/net/tcp for 0x69A2 (27042 in hex)
+// Solution: also filter fgets for "69A2" when reading tcp
+Interceptor.attach(Module.findExportByName("libc.so", "fgets"), {
+    onEnter: function(args) { this.buf2 = args[0]; },
+    onLeave: function(retval) {
+        if (!retval.isNull() && this.buf2) {
+            try {
+                var line = this.buf2.readUtf8String();
+                if (line && line.indexOf("69A2") !== -1) {
+                    this.buf2.writeUtf8String("");
+                    retval.replace(ptr(0));
+                }
+            } catch(e) {}
+        }
+    }
+});
+
+// ===== HIDE ROOT BINARIES AT NATIVE LEVEL =====
+Interceptor.attach(Module.findExportByName("libc.so", "access"), {
+    onEnter: function(args) {
+        var path = args[0].readUtf8String();
+        if (path && (path.indexOf("/su") !== -1 || path.indexOf("magisk") !== -1 ||
+            path.indexOf("kernelsu") !== -1 || path.indexOf("frida") !== -1 ||
+            path.indexOf("xposed") !== -1 || path.indexOf("supersu") !== -1)) {
+            args[0] = Memory.allocUtf8String("/nonexistent");
+        }
+    }
+});
+
+// ===== FILTER strstr FOR DETECTION STRINGS =====
+Interceptor.attach(Module.findExportByName("libc.so", "strstr"), {
+    onEnter: function(args) {
+        try { this.needle = args[1].readUtf8String(); } catch(e) { this.needle = null; }
+    },
+    onLeave: function(retval) {
+        if (this.needle && !retval.isNull()) {
+            var n = this.needle.toLowerCase();
+            if (n.indexOf("frida") !== -1 || n.indexOf("xposed") !== -1 ||
+                n.indexOf("substrate") !== -1 || n.indexOf("magisk") !== -1 ||
+                n.indexOf("kernelsu") !== -1) {
+                retval.replace(ptr(0));
+            }
+        }
+    }
+});
+
+// ===== JAVA HOOKS (loaded after native) =====
+Java.perform(function() {
+    Java.use("java.lang.System").exit.implementation = function(code) {
+        console.log("[!] System.exit(" + code + ") BLOCKED");
+    };
+    Java.use("java.lang.Runtime").exit.implementation = function(code) {
+        console.log("[!] Runtime.exit(" + code + ") BLOCKED");
+    };
+    Java.use("android.os.Process").killProcess.implementation = function(pid) {
+        if (pid === Java.use("android.os.Process").myPid()) {
+            console.log("[!] killProcess(self) BLOCKED");
+            return;
+        }
+        this.killProcess(pid);
+    };
+    console.log("[+] DexGuard bypass active (native + Java)");
+});
+```
+
+**When this still fails** (DexGuard uses direct syscalls bypassing libc):
+1. **Shamiko + Zygisk Next** — hides root at kernel level (requires Magisk or updated KernelSU)
+2. **Frida Gadget injection** — patch APK with gadget.so (avoids frida-server detection entirely)
+3. **APK patching** — remove DexGuard init from smali (complex for multi-DEX apps)
+4. **Non-rooted device** — cleanest for bug bounty (static evidence is sufficient for submission)
+
+**Detection layers in DexGuard (observed in Gojek 5.61.1):**
+- File-based: `access()` for /su, /magisk, /kernelsu, /frida paths
+- Port-based: reads `/proc/net/tcp` for 0x69A2 (frida port 27042)
+- Maps-based: reads `/proc/self/maps` for frida-agent strings (4+ reads per cycle)
+- Native watchdog: spawns thread that kills process via direct syscall (bypasses libc hooks)
+- Remote config: `RootCheckerRemoteConfig` via Firebase controls detection behavior
+- Kill method: `exit(0)` — clean exit, not crash
+
+---
+
 ## Usage Quick Reference
 
 ```bash

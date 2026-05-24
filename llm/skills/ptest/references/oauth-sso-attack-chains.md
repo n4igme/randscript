@@ -398,7 +398,54 @@ curl -sk -X POST "$TOKEN_ENDPOINT" \
 
 ---
 
-## Keycloak-Specific Attack Chains
+### Device Code Flow Abuse (RFC 8628)
+
+**Detection:** Check `.well-known/openid-configuration` for `device_authorization_endpoint`. Common on ArgoCD/Dex, Azure AD, Okta, Google Workspace.
+
+**Attack chain:**
+1. Request device code (no auth required): `POST /device/code` with `client_id` + `scope`
+2. Receive `device_code`, `user_code`, `verification_uri_complete`
+3. Send `verification_uri_complete` to victim (legitimate domain URL — bypasses email/URL filters)
+4. Poll token endpoint: `POST /token` with `grant_type=urn:ietf:params:oauth:grant-type:device_code`
+5. Returns `authorization_pending` until victim authorizes, then returns valid JWT
+
+**Why it's dangerous:**
+- Phishing URL is on the LEGITIMATE service domain (not attacker-controlled)
+- No redirect_uri validation needed (device flow doesn't use redirects)
+- Works even when `userLoginsDisabled: true` (SSO-only environments)
+- Codes can be generated unlimited times without rate limiting (usually)
+- `offline_access` scope often grants refresh tokens (persistent access)
+
+**Common targets:**
+- ArgoCD + Dex (K8s deployment tool) — `client_id=argo-cd` or `argo-cd-cli`
+- Azure AD device code flow — `client_id` from app registration
+- Vault, Consul, Boundary (HashiCorp) — if OIDC auth configured
+- Grafana with OAuth — if device code grant enabled
+
+**Testing procedure:**
+```bash
+# 1. Discover device auth endpoint
+curl -sk "$ISSUER/.well-known/openid-configuration" | jq .device_authorization_endpoint
+
+# 2. Request device code
+curl -sk -X POST "$DEVICE_ENDPOINT" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "client_id=$CLIENT_ID&scope=openid+profile+email+groups+offline_access"
+
+# 3. Poll for token (run in loop every 5s)
+curl -sk -X POST "$TOKEN_ENDPOINT" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=urn:ietf:params:oauth:grant-type:device_code&device_code=$DEVICE_CODE&client_id=$CLIENT_ID"
+```
+
+**Severity guidance:**
+- Device code flow accessible + sensitive service (ArgoCD, Vault) = High (8.0+)
+- Device code flow accessible + low-value service = Medium
+- If `execEnabled: true` on ArgoCD or similar RCE capability = Critical
+
+**Reporting note:** Frame as "exposed internal service with device code phishing vector" — not as "social engineering." The finding is the exposed service + unauthenticated device code generation. Social engineering is the impact amplifier, not the vulnerability itself.
+
+### Keycloak-Specific Chains
 
 ### KC-1: Public Client Enumeration → Redirect Bypass → Code Theft
 

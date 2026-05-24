@@ -2,6 +2,28 @@
 
 ## Android APK Analysis
 
+### Split APK Merging (Required for Modern Apps)
+
+Most apps from the Play Store install as split APKs (base + config splits). Merge before analysis:
+
+```bash
+# Pull all splits from device
+adb shell pm path <package>
+# Outputs: base.apk, split_config.arm64_v8a.apk, split_config.xxhdpi.apk, etc.
+adb pull <each_path> .
+
+# Merge with APKEditor (recommended — handles manifest sanitization)
+java -jar APKEditor.jar m -i . -o merged.apk -f
+# Merges all .apk files in directory into single APK
+# Fixes extractNativeLibs, merges resources, combines DEX files
+
+# Alternative: merge with apkcombo or manual zip merge
+# APKEditor: https://github.com/REAndroid/APKEditor
+
+# Always analyze the MERGED apk, not individual splits
+# Split APKs missing native libs or resources cause jadx errors
+```
+
 ### Decompilation Pipeline
 
 ```bash

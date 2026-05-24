@@ -29,7 +29,8 @@ Quick lookup: what you found → which reference to load.
 | Node.js / Express / Next.js backend | `prototype-pollution.md` |
 | GCP IAP redirect | `cloud-infrastructure-enumeration.md` §1 |
 | AWS CNAME (S3, Transfer, CloudFront) | `cloud-infrastructure-enumeration.md` §2 |
-| CI/CD tool (ArgoCD, Atlantis, Airflow, n8n, Jenkins) | `cicd-pipeline-exploitation.md`, `cicd-devops-assessment.md` |
+| CI/CD tool (ArgoCD, Atlantis, Airflow, n8n, Jenkins) | `cicd-pipeline-exploitation.md`, `cicd-devops-assessment.md`, `kubernetes-management-tooling.md` |
+| ArgoCD / Grafana / Prometheus / Vault / Harbor exposed | `kubernetes-management-tooling.md` |
 | Kubernetes / GKE / container environment | `kubernetes-container-attacks.md`, `microservice-architecture-mapping.md` |
 | Istio / Envoy headers | `kubernetes-container-attacks.md` §Istio, `operational-pitfalls.md` (Istio section) |
 | SFTP / SSH port open | `non-http-protocol-testing.md` §2 |
@@ -57,7 +58,18 @@ Quick lookup: what you found → which reference to load.
 | NTLM relay / Responder | `internal-ad-attacks.md` (LLMNR/NBT-NS poisoning, relay) |
 | Windows privilege escalation | `internal-ad-attacks.md` (token impersonation, CVEs) |
 | Cloud credentials found (AWS/GCP/Azure keys, tokens) | `cloud-privilege-escalation.md`, `credential-chaining.md` |
+| Source map (.js.map) accessible | `source-map-token-exploitation.md`, `js-bundle-recon.md` (Source Map section) |
+| Clickstream / telemetry token in JS | `source-map-token-exploitation.md` (Telemetry Token section) |
+| CORS `*` + Debug mode combined | `source-map-token-exploitation.md` (CORS + Debug section) |
+| Flutter Web app (main.dart.js) | `source-map-token-exploitation.md` (Flutter/Proto section), `js-bundle-recon.md` |
+| Protobuf bundle in JS (*-protos*.js) | `source-map-token-exploitation.md` (Flutter/Proto section) |
 | SPA / React / Angular / Vue frontend | `web-vuln-bypass-tables.md` (DOM XSS sources/sinks, postMessage, DOM clobbering) |
+| Bug bounty submission / report writing | `bug-bounty-submission-guide.md` |
+| Multi-step attack chain (need to explain WHY) | `attack-chain-narrative-writing.md` |
+| Telemetry token found (Clickstream, Faro, NR, Sentry) | `source-map-token-exploitation.md` (Telemetry Token Severity Classification) |
+| Scope boundary question (related domain, same company) | `bug-bounty-submission-guide.md` (Scope Boundary Decisions) |
+| Combining multiple findings into one report | `bug-bounty-submission-guide.md` (Multi-Finding Consolidation) |
+| Public disclosure risk / PoC hosting | `bug-bounty-submission-guide.md` (Disclosure Policy) |
 | Cache / CDN in front | `advanced-web-attacks.md` §2-3 |
 | Partner API gateway (shared IP, 403) | `cloudflare-bypass-techniques.md` §4 |
 | Microservice architecture | `microservice-architecture-mapping.md`, `kubernetes-container-attacks.md` |
@@ -82,14 +94,14 @@ Quick lookup: what you found → which reference to load.
 
 | Phase | Relevant References |
 |-------|-------------------|
-| 1 — Passive Recon | `dns-record-intelligence.md`, `js-bundle-recon.md`, `operational-pitfalls.md` |
-| 2 — Active Recon | `pattern-subdomain-bruteforce.md`, `nmap-cloud-targets.md`, `operational-pitfalls.md` |
-| 3 — Enumeration | `bulk-actuator-scanning.md`, `javascript-secret-scanning.md`, `framework-specific-attacks.md`, `api-first-methodology.md` |
+| 1 — Passive Recon | `dns-record-intelligence.md`, `js-bundle-recon.md`, `source-map-token-exploitation.md`, `operational-pitfalls.md` |
+| 2 — Active Recon | `pattern-subdomain-bruteforce.md`, `nmap-cloud-targets.md`, `source-map-token-exploitation.md`, `operational-pitfalls.md` |
+| 3 — Enumeration | `bulk-actuator-scanning.md`, `javascript-secret-scanning.md`, `source-map-token-exploitation.md`, `framework-specific-attacks.md`, `api-first-methodology.md` |
 | 4 — Attack Surface | `depth-vs-breadth-decisions.md`, `cloud-infrastructure-enumeration.md` |
 | 5 — Vuln Assessment | `web-vuln-bypass-tables.md`, `web-testing-checklist.md`, `false-positive-detection.md`, `web-cache-poisoning.md`, `host-header-attacks.md`, `http-request-smuggling.md` |
 | 6 — Exploitation | `phase6-exploitation-framework.md`, `web-testing-checklist.md`, `jwt-attack-techniques.md`, `signal-hunting-table.md`, `attack-chain-framework.md`, `credential-chaining.md`, `re-validation-loops.md`, `advanced-web-attacks.md`, `insecure-deserialization.md`, `parameter-pollution.md`, `graphql-websocket-testing.md`, `kubernetes-container-attacks.md`, `cicd-pipeline-exploitation.md`, `prototype-pollution.md`, `file-upload-attacks.md`, `http-request-smuggling.md`, `host-header-attacks.md`, `oauth-sso-attack-chains.md`, `gateway-misconfiguration-patterns.md` |
 | 7 — Post-Exploitation | `phase7-post-exploitation-framework.md`, `data-classification-framework.md` |
-| 8 — Reporting | `phase8-reporting-process.md`, `time-box-enforcement.md` |
+| 8 — Reporting | `phase8-reporting-process.md`, `time-box-enforcement.md`, `bug-bounty-submission-guide.md`, `attack-chain-narrative-writing.md` |
 
 ---
 
@@ -133,11 +145,13 @@ Quick lookup: what you found → which reference to load.
 
 ```
 advanced-web-attacks.md              — WebSocket, cache poisoning, HTTP smuggling, race conditions
+attack-chain-narrative-writing.md    — How to write "Why This Attack Chain Works" sections for reports
 api-first-methodology.md             — API-centric testing approach
 api-fuzzing-methodology.md           — Parameter discovery, type/boundary fuzzing, auth manipulation, mass assignment, rate limit bypass, Content-Type switching, SpEL injection, GraphQL fuzzing
 attack-chain-framework.md            — Compound attack path documentation
 bug-bounty-osint-checklist.md         — Bug bounty OSINT techniques
 browser-extension-security.md        — Chrome/Firefox extension static+dynamic analysis, message passing, CORS proxy, privesc chains
+bug-bounty-submission-guide.md       — Bug bounty report writing, disclosure policy, scope decisions, multi-finding strategy
 bulk-actuator-scanning.md            — Bulk /actuator check across all hosts
 camunda-bpm-assessment.md            — Camunda BPM web UI and API testing
 cicd-devops-assessment.md            — ArgoCD, Atlantis, Airflow, n8n, Jenkins, Vault, Grafana
@@ -163,6 +177,7 @@ javascript-secret-scanning.md        — Bulk JS secret scanning patterns
 js-bundle-recon.md                   — Phase 1 JS bundle analysis for recon (URLs, configs, architecture)
 keycloak-assessment.md               — Keycloak realm/client enumeration
 keycloak-gateway-exploitation.md     — Keycloak behind API gateway
+kubernetes-management-tooling.md     — ArgoCD, Grafana, Prometheus, Vault, Harbor exposure testing
 legacy-protocol-bypass.md            — Legacy auth endpoints that bypass SSO/MFA (20+ platforms)
 llm-ai-feature-testing.md            — Prompt injection, AI IDOR/SSRF, OWASP LLM Top 10
 lucy-security-assessment.md          — Lucy phishing platform testing
@@ -187,6 +202,7 @@ re-validation-loops.md               — Mini-enumeration during exploitation
 saml-sso-assessment.md               — SAML metadata, IdP enum, SSO attacks
 signal-hunting-table.md              — A→B→C finding signal lookup (30+ pairs)
 snyk-token-enumeration.md            — Snyk API exploitation
+source-map-token-exploitation.md     — Source map → token extraction → verified write access chains, telemetry tokens, CORS+debug, Flutter/proto analysis
 ssrf-outbound-forcing.md             — Server-side callback forcing
 subdomain-takeover.md                — Dangling CNAME detection
 time-box-enforcement.md              — Budget tracking and over-budget decisions

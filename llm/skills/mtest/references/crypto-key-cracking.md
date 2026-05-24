@@ -73,7 +73,49 @@ print("[-] Not found in range")
 
 **Time estimate:** 1M PINs in ~2-5 seconds (Python), <1 second (C/hashcat).
 
-## Pattern 2: AES-CBC with Hardcoded IV + Key
+## Pattern 2: PBKDF2 + AES-CBC with Small PIN Keyspace
+
+**Signature:**
+```java
+// Key derived via PBKDF2 from short PIN
+PBEKeySpec keySpec = new PBEKeySpec(pin.toCharArray(), salt, iterationCount, 256);
+SecretKeyFactory keyFactory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA1");
+byte[] key = keyFactory.generateSecret(keySpec).getEncoded();
+Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(key, "AES"), new IvParameterSpec(iv));
+```
+
+**Crack script (parameters typically in assets/config.properties or hardcoded):**
+```python
+#!/usr/bin/env python3
+import base64, hashlib
+from Crypto.Cipher import AES
+
+# Extract from APK assets or decompiled source
+encrypted = base64.b64decode("bTjBHijMAVQX+CoyFbDPJXRUSHcTyzGaie3OgVqvK5w=")
+salt = base64.b64decode("m2UvPXkvte7fygEeMr0WUg==")
+iv = base64.b64decode("L15Je6YfY5owgIckR9R3DQ==")
+iterations = 10000
+
+for i in range(10000):  # 4-digit PIN = 0000-9999
+    pin = f'{i:04d}'
+    key = hashlib.pbkdf2_hmac('sha1', pin.encode(), salt, iterations, 32)
+    try:
+        cipher = AES.new(key, AES.MODE_CBC, iv)
+        decrypted = cipher.decrypt(encrypted)
+        pad_len = decrypted[-1]
+        if 1 <= pad_len <= 16 and all(b == pad_len for b in decrypted[-pad_len:]):
+            print(f'PIN={pin}: {decrypted[:-pad_len].decode("utf-8")}')
+            break
+    except:
+        continue
+```
+
+**Time estimate:** 10K PINs with 10K PBKDF2 iterations each = ~3-5 seconds (Python). Still trivial.
+
+**Key insight:** PBKDF2 iterations slow down each attempt but don't help when the keyspace is only 10,000. Even 100K iterations × 10K PINs = ~30 seconds. The weakness is the PIN size, not the stretching.
+
+## Pattern 3: AES-CBC with Hardcoded IV + Key
 
 **Signature:**
 ```java

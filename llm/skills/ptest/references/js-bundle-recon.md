@@ -67,6 +67,52 @@ curl -s https://target.com/static/js/main.abc123.js | tail -1
 curl -sI https://target.com/static/js/main.abc123.js | grep -i sourcemap
 ```
 
+### Module Federation (Webpack 5 Micro-Frontends)
+
+Modern SPAs using Module Federation load independent micro-apps at runtime via `remote-entry-*.js` files. Each micro-app is a separate webpack build with its own chunks, API endpoints, and potentially different security configurations.
+
+```bash
+# Identify Module Federation from the main bundle
+curl -s https://target.com/app.*.js | grep -oP 'https?://[^"]+remote-entry[^"]+\.js' | sort -u
+
+# Example output (real-world: Moka POS backoffice):
+# https://backoffice.mokapos.com/auth-micro-apps/remote-entry-BoAuthApp.js
+# https://backoffice.mokapos.com/payment-micro-apps/remote-entry-BoPaymentApp.js
+# https://backoffice.mokapos.com/customer-micro-apps/remote-entry-BoCustomerApp.js
+
+# Each remote-entry is a loader that references actual chunks:
+curl -s https://target.com/auth-micro-apps/remote-entry-BoAuthApp.js | \
+  grep -oP '[a-zA-Z0-9_-]+\.js' | sort -u
+
+# The actual app logic is in dynamically-loaded chunks, not the remote-entry itself.
+# To find chunks, look for chunk hash patterns in the remote-entry:
+curl -s https://target.com/auth-micro-apps/remote-entry-BoAuthApp.js | \
+  grep -oP '"[a-f0-9]{8,}"' | sort -u
+```
+
+**Why this matters for pentesting:**
+- Each micro-app may talk to different backend services with different auth
+- Micro-apps loaded from the same origin share cookies (CSRF potential)
+- A compromised micro-app CDN path = supply chain attack on the entire SPA
+- Different teams build different micro-apps → inconsistent security controls
+- The remote-entry URL pattern reveals the internal team/domain structure
+
+```bash
+# Derive team/service names from micro-app paths:
+# /auth-micro-apps/ → auth team
+# /payment-micro-apps/ → payment team
+# /customer-micro-apps/ → customer team
+# These map to backend microservices and potential API prefixes
+
+# Try to access chunk files directly (may contain API URLs):
+# Pattern: /{app-name}-micro-apps/{hash}.js
+for app in auth common payment customer online-store ingredient purchase-order table-management; do
+  # Check if directory listing works
+  curl -s -o /dev/null -w "%{http_code}" "https://target.com/${app}-micro-apps/"
+  echo " ${app}-micro-apps/"
+done
+```
+
 ### Webpack Chunk Manifests
 
 Webpack apps often have a runtime/manifest chunk that lists ALL chunk filenames:
@@ -429,9 +475,83 @@ grep -rhoP 'window\.__[A-Z_]+__' *.js | sort -u
 grep -rhoP 'window\.(config|CONFIG|env|ENV|settings|SETTINGS)' *.js
 
 # Check for config endpoints
-grep -rhoP '["'\''`](/config|/env|/settings|/app-config)[^"'\''`]*["'\''`]' *.js
+grep -rhoP '["\x27`](/config|/env|/settings|/app-config)[^"\x27`]*["\x27`]' *.js
 curl -s https://target.com/config.json
 curl -s https://target.com/env.js
+```
+
+### Inline $_ENV in HTML Body (Module Federation Pattern)
+
+Modern Module Federation host apps often inject the FULL environment config as a `<script>` block in the HTML body, NOT in JS bundles. This is because micro-frontends need runtime config that can change without rebuilding.
+
+**Detection:**
+```bash
+# Check HTML body directly (not JS files!)
+curl -sk "https://target.com/" | grep -oE '\$_ENV\s*=\s*\{[^}]*\}'
+
+# Also check: window.__ENV__, window.__CONFIG__, window.env
+curl -sk "https://target.com/" | grep -oE '(window\.__[A-Z_]+__|var \$_ENV|\$_ENV)\s*=\s*\{[^}]*\}'
+```
+
+**Extraction (parse as JSON):**
+```bash
+curl -sk "https://target.com/" | grep -oE '\$_ENV\s*=\s*\{[^}]*\}' | \
+  python3 -c "
+import json, sys, re
+raw = sys.stdin.read().strip()
+m = re.search(r'\{.*\}', raw)
+if m:
+    d = json.loads(m.group())
+    for k,v in sorted(d.items()):
+        print(f'{k}: {v}')
+"
+```
+
+**Why this is critical:**
+- Contains ALL API hosts, OAuth client IDs, feature flag keys, internal domains
+- Often exposes staging/internal URLs that aren't in DNS or CT logs
+- Different portals (prod, staging, internal) have DIFFERENT configs — compare them
+- Docker image tags and commit IDs reveal deployment cadence
+
+**Multi-portal comparison technique (discovered in GoBiz engagement, May 2026):**
+1. Extract $_ENV from the production portal
+2. Find staging/integration portals (common patterns: portal-integration.*, portal-stg.*, app.stg.*)
+3. Find internal portals (internal.*, app.gobiz.com, admin.*)
+4. Compare configs — differences reveal:
+   - Staging API hosts (api-s.*, api.stg.*, integration-api.*)
+   - Internal-only domains (internal.s.*, *.corp.*)
+   - Different OAuth configs (registration enabled/disabled)
+   - Different feature flags (beta features on staging)
+
+**Real-world example (GoBiz/GoFood Merchant, May 2026):**
+```
+Production (portal.gofoodmerchant.co.id):
+  REACT_APP_API_HOST: https://api.gobiz.co.id
+  REACT_APP_ENABLE_REGISTRATION: true
+  REACT_APP_COSMO_HOST: https://api.gobiz.co.id/cosmo
+
+Staging (portal-integration.gofoodmerchant.co.id):
+  REACT_APP_API_HOST: https://api-s.gobiz.co.id        ← NEW domain
+  REACT_APP_ENVIRONMENT: staging
+  REACT_APP_GOJEK_API_HOST: https://integration-api.gojekapi.com  ← NEW domain
+  REACT_APP_ZEUS_LOGIN_HOST: https://internal.s.gobiz.com          ← NEW domain
+
+Internal (internal.gobiz.com/micro-app/auth/login/email):
+  REACT_APP_ENABLE_REGISTRATION: false                  ← Different!
+  REACT_APP_COSMO_HOST: https://api-s.gobiz.co.id/cosmo ← Points to staging API
+  REACT_APP_MF_HOST_*: https://app.gobiz.com/micro-app/* ← Internal host
+```
+
+**Module Federation remoteEntry.js as additional config source:**
+```bash
+# MF host apps reference micro-app URLs in their config
+# Each micro-app has its own remoteEntry.js with potentially different config
+curl -sk "https://target.com/micro-app/auth/remoteEntry.js" -o mf-auth.js
+curl -sk "https://target.com/micro-app/dashboard/remoteEntry.js" -o mf-dashboard.js
+
+# The micro-app HTML pages also have their own $_ENV:
+curl -sk "https://target.com/micro-app/auth/login/email" | grep '\$_ENV'
+# This may have DIFFERENT config than the host app!
 ```
 
 ---
@@ -586,6 +706,115 @@ grep -rhoP '(redirect_uri|callback)[^"]*["'\''`]([^"'\''`]+)["'\''`]' js_bundles
 | GraphQL endpoints | Introspection, query fuzzing | 3/4 |
 | S3/GCS buckets | Bucket permission testing | 3 |
 | JWT/token config | Token forgery, algorithm confusion | 5 |
+
+---
+
+### Source Map Exploitation — Full Source Recovery
+
+**Chain exploitation:** See `references/source-map-token-exploitation.md` for the full pattern: source map → token extraction → verified API write access. This chain elevates severity from Medium (info disclosure) to High (authenticated write access). Also covers: multi-app sweep methodology, telemetry token exploitation, CORS+debug combined attacks, CMS route discovery, and Flutter/protobuf analysis.
+
+When source maps are found accessible, extract the complete original source tree:
+
+### Verification & Impact Assessment
+
+```bash
+# Check source map size (>500KB = likely full source)
+curl -sk -o /dev/null -w "%{http_code}:%{size_download}" "https://target.com/static/js/main.abc123.js.map"
+
+# Quick structure check
+curl -sk "https://target.com/static/js/main.abc123.js.map" | python3 -c "
+import json, sys
+sm = json.load(sys.stdin)
+app_sources = [s for s in sm.get('sources',[]) if 'node_modules' not in s]
+print(f'Total files: {len(sm[\"sources\"])}')
+print(f'App files (non-node_modules): {len(app_sources)}')
+print(f'Has sourcesContent: {bool(sm.get(\"sourcesContent\"))}')
+total_chars = sum(len(c) for c in sm.get('sourcesContent',[]) if c)
+print(f'Total source chars: {total_chars:,} (~{total_chars//60:,} lines)')
+for s in sorted(app_sources):
+    print(f'  {s}')
+"
+```
+
+### Extract Specific Files
+
+```python
+import json
+
+with open('sourcemap.json') as f:
+    sm = json.load(f)
+
+sources = sm.get('sources', [])
+contents = sm.get('sourcesContent', [])
+
+# Extract files matching pattern
+targets = ['environment', 'config', 'auth', 'api', 'clickstream', 'App.tsx']
+for t in targets:
+    for i, s in enumerate(sources):
+        if t.lower() in s.lower() and i < len(contents) and contents[i]:
+            print(f'=== {s} ===')
+            print(contents[i][:2000])
+```
+
+### What to Look For in Recovered Source
+
+| Target | Why |
+|--------|-----|
+| `helpers/environment.ts`, `config.ts` | API URLs, feature flags, env detection |
+| `utils/auth.ts`, `utils/api.ts` | Auth token patterns, header construction |
+| `utils/clickstream.ts`, `analytics.ts` | Telemetry tokens, event pipeline URLs |
+| `router/routes.tsx` | Full route structure, lazy-loaded pages |
+| Comments with URLs | Internal wiki, GitLab, Jira references |
+| `package.json` (in sources) | Exact dependency versions for CVE |
+
+### Real-World Example (GoPay, May 2026)
+
+Production source map at `gopay-web-page.gopayapi.com/static/js/main.*.js.map`:
+- 201 source files, 990KB of TypeScript/React source
+- Revealed `Authorization: Basic ${token}` pattern in clickstream utility
+- Exposed internal GitLab URL: `source.golabs.io/gopay/gopay-target-redirection-web-app`
+- Exposed Confluence wiki: `go-jek.atlassian.net/wiki/spaces/EP/pages/...`
+- Led to confirmed write access on production event pipeline (chained finding)
+
+**Key insight:** Always check BOTH production AND staging source maps. Staging often has MORE verbose config (debug flags, internal URLs) that production strips.
+
+### Reporting Source Map Findings
+
+Severity depends on what's IN the source:
+- Source map exists but only has node_modules → **Info** (framework code only)
+- Source map with app code but no secrets → **Low-Medium** (architecture disclosure)
+- Source map revealing auth patterns + internal URLs → **Medium** (aids further attacks)
+- Source map containing hardcoded tokens/keys → **High** (direct credential exposure)
+
+---
+
+## Flutter Web Bundle Analysis
+
+Flutter Web apps compile Dart to a single `main.dart.js` (often 3-10MB). These contain ALL app logic including API paths, deep link schemes, and business logic.
+
+```bash
+# Download Flutter main.dart.js
+curl -sk "https://target.com/main.dart.js" -o main.dart.js
+wc -c main.dart.js  # Expect 3-10MB
+
+# Extract API paths (Flutter uses string literals for routes)
+grep -oE '"/v[0-9]+/[a-z][a-z0-9/_.-]{3,80}"' main.dart.js | sort -u
+
+# Extract full URLs
+grep -oiE 'https?://[a-zA-Z0-9._:/-]+' main.dart.js | sort -u
+
+# Extract deep link schemes
+grep -oiE '[a-z]+://[a-z0-9/_.-]+' main.dart.js | grep -v "http" | sort -u
+
+# Flutter service worker (lists cached assets)
+curl -sk "https://target.com/flutter_service_worker.js" | grep -oiE 'https?://[^"]+' | sort -u
+```
+
+**Flutter-specific patterns:**
+- API paths are plain string literals (no obfuscation in web builds)
+- Deep link schemes reveal mobile app integration points
+- `findaya.co.id`, `app.jago.com` type URLs reveal partner integrations
+- Config JSON paths like `/mm_fe_configs/...` may be accessible on the same host
 
 ---
 

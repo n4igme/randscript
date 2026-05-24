@@ -123,6 +123,20 @@ Detect this early in Phase 2 by checking: (1) no `android.permission.INTERNET` i
 
 Critical and High findings discovered during static analysis (Phase 2) MUST be validated dynamically before advancing to Phase 7 (Reporting). Write exploitation evidence (logcat, proof files, screenshots) to the findings directory. If dynamic validation is not possible (no device, no account), document the limitation explicitly.
 
+### When to Stop Chasing a Bypass
+
+Anti-tampering bypass (root detection, Frida detection) is a MEANS to validate findings, not a finding itself. Apply these decision points:
+
+1. **After 5 failed bypass attempts:** Stop and assess — is the finding you're trying to validate actually exploitable? If it depends on a runtime condition (feature flag, server config) that you can't verify, the bypass is pointless.
+
+2. **After 10 failed bypass attempts:** Hard stop on bypass work. Submit findings with static evidence at Probable/Theoretical confidence. The code-level evidence is sufficient for bug bounty programs that accept static analysis.
+
+3. **If bypass works but finding doesn't:** (e.g., you bypass root detection, trigger the deep link, but the WebView still blocks your URL) — the finding has a mitigating control you missed in static analysis. Re-analyze the code path, identify the control, and downgrade severity.
+
+4. **Cost-benefit rule:** Time spent on bypass should be proportional to the finding's value. A Theoretical Medium finding doesn't justify 20+ bypass iterations. A Confirmed Critical does.
+
+5. **Alternative validation paths:** Before spending hours on Frida bypass, consider: (a) test on a non-rooted device (no bypass needed), (b) use an emulator without root indicators, (c) repackage APK with Frida Gadget (no frida-server = nothing to detect), (d) accept static evidence and move on.
+
 ### Gateway Transition (`next`)
 
 1. Verify phase gate criteria met (see each phase's Gate section)
@@ -217,6 +231,37 @@ Critical and High findings discovered during static analysis (Phase 2) MUST be v
    class-dump ipa_out/Payload/*.app/* > headers.h
    ```
 
+1b. Cross-platform framework detection:
+   ```bash
+   # Detect framework from APK contents
+   unzip -l target.apk | grep -qE "libflutter\.so|libapp\.so" && echo "FLUTTER DETECTED"
+   unzip -l target.apk | grep -qE "index\.android\.bundle|libjsc\.so|libhermes\.so" && echo "REACT NATIVE DETECTED"
+   unzip -l target.apk | grep -qE "assemblies/.*\.dll|libmonodroid\.so" && echo "XAMARIN DETECTED"
+   ```
+
+   **Flutter (libflutter.so + libapp.so):**
+   - App logic is compiled to native ARM in `libapp.so` (Dart AOT snapshot) — jadx only shows the thin Flutter engine wrapper
+   - `libapp.so` snapshot analysis: use `blutter` or `darter` to extract class/method names from the Dart snapshot
+   - Traffic interception: Flutter uses its own HTTP stack (dart:io) that ignores system proxy and system CA store. Use `reFlutter` to patch `libflutter.so` with proxy settings, or hook `ssl_crypto_x509_session_verify_cert_chain` in `libflutter.so`
+   - Dart AOT limitations: no source maps, no string-based decompilation — analysis is primarily at the snapshot metadata + native disassembly level
+   - Strings and API endpoints may still be extractable: `strings libapp.so | grep -iE "https?://|api|token|key"`
+
+   **React Native (index.android.bundle or libjsc.so/libhermes.so):**
+   - Bundle extraction: `unzip target.apk assets/index.android.bundle` — this is the JS source (possibly minified/bundled)
+   - If using Hermes engine (`libhermes.so`): the bundle is Hermes bytecode (`.hbc`), not plain JS. Decompile with `hbc-decompiler` or `hermes-dec`
+   - Source map check: look for `index.android.bundle.map` in assets or fetch `<bundle_url>.map` from the server — if present, gives full original source
+   - Plain JSC bundle (`libjsc.so`): bundle is readable JS, just beautify with `js-beautify`
+   - API keys, tokens, and endpoints are commonly embedded in the JS bundle — grep extensively
+   - Hook JS runtime via Frida: `Java.perform(() => { var module = Java.use('com.facebook.react.bridge.CatalystInstance'); ... })`
+
+   **Xamarin (assemblies/*.dll + libmonodroid.so):**
+   - DLL extraction: `unzip target.apk assemblies/*` — .NET assemblies contain the app logic
+   - Decompilation: use `monodis` (Mono disassembler), ILSpy, or dnSpy on extracted DLLs — produces near-original C# source
+   - Assemblies may be AOT-compiled (look for `.dll.so` files) — in that case, the .dll still contains metadata but method bodies are native
+   - Mono runtime hooking via Frida: hook `mono_jit_runtime_invoke` or specific managed methods via `Mono.Cecil` method tokens
+   - Look for `Xamarin.Essentials` usage — SecureStorage keys, preferences, and connectivity checks
+   - Network: Xamarin uses platform HTTP handlers — standard proxy/SSL bypass approaches work (unlike Flutter)
+
 2. Manifest/Info.plist analysis:
    - Android: debuggable, allowBackup, exported components, network security config
    - iOS: ATS exceptions, URL schemes, entitlements
@@ -239,7 +284,11 @@ Critical and High findings discovered during static analysis (Phase 2) MUST be v
    - Check if the WebView has `addJavascriptInterface` — if yes, map ALL `@JavascriptInterface` methods
    - Check if multiple deep link routes delegate to the same vulnerable handler
    - Check for HTTPS app link → internal deep link conversion (e.g., `https://app.link/path` → `appscheme://path`)
-   - If unvalidated URL + JS bridge found: **Critical** — document all entry points and bridge methods
+   - **Check for SecureWebView pattern:** Does the WebView subclass override `loadUrl()` with a domain allowlist check? Look for `super.loadUrl()` gated behind a boolean, and config keys like `DOMAIN_WHITELIST_BATCH_*`. If present, the finding is Medium (not Critical) unless allowlist is bypassable.
+   - **Check for feature flags:** If the allowlist logic has branching paths controlled by `getValue()` or remote config booleans, the behavior differs between flag ON/OFF. Static analysis CANNOT determine which path runs in production. Mark finding as Probable until dynamically verified on a non-rooted production device.
+   - If unvalidated URL + JS bridge + NO allowlist: **Critical (Confirmed)** — document all entry points and bridge methods
+   - If unvalidated URL + JS bridge + server-side allowlist: **Medium (Probable)** — document the allowlist as mitigating control and look for bypasses (open redirects on allowed domains, `allowAllAccess` partners, scheme bypass)
+   - If unvalidated URL + JS bridge + allowlist with feature-flag-dependent bypass: **Medium (Theoretical)** — the bypass may work when flag is OFF but you cannot verify production flag state without dynamic testing on a non-rooted device
    - See `deeplink-webview-hijack.md` for full exploitation patterns
 
 6. Unsafe file operations (path traversal vectors):
@@ -406,7 +455,9 @@ Critical and High findings discovered during static analysis (Phase 2) MUST be v
 
 5. Verify: app launches, traffic visible in proxy, no detection popups
 
-**Reference:** `dynamic-setup.md`, `frida-scripts.md`, `dexguard-appfence-bypass.md`
+**Reference:** `dynamic-setup.md`, `frida-scripts.md`
+
+**Cross-reference:** For DexGuard/AppFence protected apps, load the `dexguard-native-re` skill for full RE methodology and bypass scripts.
 
 ---
 
@@ -450,6 +501,13 @@ Critical and High findings discovered during static analysis (Phase 2) MUST be v
 ## Phase 5: Runtime Testing
 
 ### Gate: at least 3 test categories completed from the checklist below; Critical/High findings from Phase 2 must be dynamically validated
+
+**Production Validation Rule:** Before any finding can be rated Critical (Confirmed), it MUST be demonstrated on a non-rooted production device with a logged-in user account. Findings validated only on rooted/instrumented devices are capped at High (Probable) because:
+- Feature flags may behave differently on rooted vs non-rooted
+- Server-side checks may detect rooted devices and change responses
+- Anti-tampering bypasses may alter app behavior in ways that create false positives
+
+If you cannot test on a non-rooted device, explicitly state this limitation and cap severity at High.
 
 **Test Categories:**
 
@@ -595,12 +653,16 @@ Critical and High findings discovered during static analysis (Phase 2) MUST be v
 # MTEST-XXX: [Title]
 
 **Severity:** Critical|High|Medium|Low|Info
+**Confidence:** Confirmed|Probable|Theoretical
 **Platform:** Android|iOS|Both
 **Component:** Client|Server|Both
 **OWASP Mobile:** M1-M10 mapping
 
 ## Description
 [What the vulnerability is]
+
+## Confidence Justification
+[Why this confidence level — what was verified vs assumed]
 
 ## Steps to Reproduce
 1. ...
@@ -616,6 +678,20 @@ Critical and High findings discovered during static analysis (Phase 2) MUST be v
 ## Remediation
 [How to fix it]
 ```
+
+### Finding Confidence Levels
+
+| Level | Meaning | Bug Bounty Expectation |
+|-------|---------|----------------------|
+| **Confirmed** | Exploited dynamically on production build (non-rooted, logged-in user) | Full payout, Critical/High accepted |
+| **Probable** | Code path proven + partial dynamic evidence (e.g., intent accepted, activity launched) but full chain not demonstrated | Reduced payout, may be downgraded |
+| **Theoretical** | Code path exists in decompiled source but blocked by runtime condition (feature flag, server config, auth gate) that couldn't be verified | Often Informational/Won't Fix unless code evidence is compelling |
+
+**Rules:**
+- Never rate a finding Critical with Theoretical confidence
+- Probable + Critical code path = submit as High
+- Theoretical findings must explicitly state what runtime condition blocks exploitation
+- If you can't distinguish Confirmed from Theoretical (e.g., can't test on non-rooted device), state that limitation
 
 ---
 
@@ -633,52 +709,145 @@ Critical and High findings discovered during static analysis (Phase 2) MUST be v
 
 ## Operational Notes
 
+### General
+
 - Always test on a **dedicated device/emulator** — never on a personal device with real accounts
 - Some apps detect emulators (check for `generic`, `sdk`, `genymotion` in Build properties) — prefer rooted physical device
-- Frida detection is increasingly common in banking apps — have fallback: Gadget injection, patched APK, or Magisk+Zygisk hide
 - iOS testing requires a **jailbroken device** for most dynamic tests — checkra1n (A11 and below) or palera1n (A11-A16)
 - Save all Frida scripts to `phase3-dynamic-setup/scripts/` for reproducibility
 - When app uses certificate transparency or multiple pinning layers, combine approaches (Frida + patched config + invisible proxy)
 - **Client-side only** findings (no server validation) are typically Medium unless they expose sensitive data
 - Cross-reference extracted API endpoints with ptest skill for comprehensive server-side testing
+- **Large app static analysis (50K+ classes):** Delegate Phase 2 analysis to a subagent via `delegate_task` with specific goals (deeplinks, secrets, exported components, network security, webview analysis). The subagent writes results to `phase2-static/android/` as separate markdown files. This preserves main context for exploitation phases. Works well for apps like Gojek (79K classes, 17 DEX files).
+
+### Split APK Merging
+
+Modern Play Store apps install as split APKs (base + config.arm64 + config.xxhdpi + config.en). **Always merge before analysis** — analyzing base.apk alone misses native libs, density-specific resources, and cross-module references.
+
+```bash
+java -jar APKEditor.jar m -i <dir_with_splits> -o merged.apk -f
+```
+
+- Tool: [REAndroid/APKEditor](https://github.com/REAndroid/APKEditor)
+- Produces a single APK with all DEX files, native libs, and resources combined
+- Always merge before running jadx — split analysis causes missing class errors and incomplete results
+- APKEditor also fixes `extractNativeLibs` and sanitizes the manifest automatically
+- **`extractNativeLibs="false"` handling:** When this flag is set, native .so files live inside the APK (not extracted to filesystem). `System.loadLibrary()` works via the APK's zip, but you can't `dlopen` from a custom path. For Frida hooking, use `Process.findModuleByName()` after the app loads the library itself. You cannot `System.loadLibrary()` arbitrary libs from Frida scripts — only the app's own loading path works.
+
+### DexGuard / AppFence / Root Detection
+
+Enterprise apps (fintech, ride-hailing) use DexGuard with AppFence (`libaf-android.so`) and dedicated `ard` (App Root Detection) modules. Detection is heavily obfuscated via reflection (`C15197fsZ.c()`, `C15197fsZ.d()` patterns), often controlled by Firebase Remote Config (`RootCheckerRemoteConfig`).
+
+**Symptoms:** App launches then immediately dies with `Process exited cleanly (0)` in logcat (NOT a crash — it's `System.exit(0)`). Key grep: `grep -rl "DexGuard\|AppProtection\|isRooted\|RootChecker" sources/` to confirm.
+
+**Detection vectors:**
+1. `/proc/self/maps` — scans for non-whitelisted libraries (frida-agent strings)
+2. `/proc/net/tcp` — checks for port 27042 (frida default)
+3. `access()` for su/magisk/kernelsu paths
+4. Custom kernel string in `/proc/version`
+5. Inline `SVC #0` assembly — calls exit_group directly, bypassing ALL libc hooks
+
+**Kill chain (multi-layer):** (1) inline `SVC #0` (exit_group, bypasses ALL userspace hooks), (2) `syscall(94,0)` via libc wrapper, (3) `kill(getpid(), SIGKILL)` via dlsym'd function pointer, (4) `_exit(0)` + `abort()` fallbacks. Kill runs on a separate thread spawned via `pthread_create` with a configurable delay (`usleep(N*1000000)`). The library has integrity checks that detect on-disk patching (triggers SIGBUS).
+
+**Bypass approaches (priority order):**
+
+1. **Shamiko + Zygisk (kernel-level root hiding)** — most reliable, hides root from /proc entirely
+2. **hluda-server** — anti-detection Frida build (see below), solves Frida detection but NOT root detection
+3. **Frida Gadget injection** — inject into patched APK, no frida-server process to detect
+4. **Non-rooted device** — no root indicators to find; use WiFi proxy for traffic capture
+5. **Static evidence only** — for bug bounty, code-level evidence is sufficient when the code path is unambiguous
+
+**Working Frida bypass (v24 pattern):** (1) hook `fopen`/`fgets` to filter Frida lines from `/proc/self/maps`, (2) hook `pthread_create` to neutralize kill thread, (3) patch inline SVC to NOP after library loads, (4) hook libc `syscall`/`kill`/`_exit`/`abort` as safety nets. The maps filter is the PRIMARY defense — if detection doesn't see Frida, the kill thread is never spawned. See `dexguard-appfence-bypass.md`.
+
+**Inline syscall (unbypassable via Frida):** When DexGuard uses inline `svc #0` assembly for exit_group, ALL userspace hooks fail — libc exit/kill hooks, syscall() wrapper hooks, pthread_create blocking. Symptoms: process exits cleanly (code 0), no hook messages fire for exit. The ONLY solutions are: (1) Shamiko/Zygisk (kernel-level root hiding so detection never triggers), (2) non-rooted device, (3) APK patching to remove detection code. Don't waste hours on Frida bypass — static analysis evidence is sufficient for bug bounty.
+
+**pthread_create thread identification:** To identify which native lib runs root detection, hook `pthread_create` and log `module.name` for each `start_routine`. Filter out system libs (libc, libart, libhwui, libutils, libgui). The detection thread is usually from a small obfuscated lib (e.g., 7KB `libh9740d.so`). But blocking the thread may crash the app if it's not actually the detection (e.g., ANR handler).
+
+**Server-side device attestation (GoPay-1000 pattern):** Even when local root detection is bypassed (app stays alive, UI renders), the server may reject requests via Play Integrity / SafetyNet attestation. Symptom: app shows security error modal on login attempt (e.g., "Ada masalah keamanan (GoPay-1000)"). This CANNOT be bypassed with Frida alone — requires Zygisk + PlayIntegrityFix module. Document as a positive security control in the report, not a vulnerability.
+
+**Auth-gated API testing when root blocks login:** When the rooted device can't log in (DexGuard kills app) and the non-rooted device isn't adb-accessible, use **WiFi proxy** (no adb needed): (1) Start Burp/Caido on Mac listening on 0.0.0.0:8080, (2) On phone: WiFi settings → proxy → Mac IP:8080, (3) Download CA cert via phone browser (http://burp), (4) Install cert, (5) Use app normally — all API calls captured. This works when no cert pinning is present. If cert pinning IS present, this approach fails and you must fix root hiding first.
+
+### hluda-server (Anti-Detection Frida Build)
+
+When regular frida-server is detected (port 27042, /proc/self/maps strings), use hluda-server — a Frida build with anti-detection patches (randomized port, stripped strings, hidden from maps).
+
+- Path on device: `/data/local/tmp/hluda-server`
+- Start: `su -c '/data/local/tmp/hluda-server -D'`
+- Uses same `frida -U` client commands as standard frida-server
+- **hluda solves Frida detection; Shamiko solves root detection** — they address different problems
+- For DexGuard apps that use inline syscalls, even hluda + Frida hooks may not suffice — the detection bypasses all userspace instrumentation
+
+### KernelSU / Magisk / Zygisk (Root Hiding Decision Tree)
+
+**Decision tree based on kernel version:**
+
+1. **Kernel ≥5.10:** Use KernelSU (latest .ko + ksud) → install Zygisk Next → install Shamiko → add target app to DenyList
+2. **Kernel 4.4–5.9:** Modern KernelSU (v3.x) no longer ships .ko modules (minimum kernel 5.10). Options:
+   - Flash a custom kernel with KernelSU built-in, OR
+   - **Switch to Magisk** (supports all kernels, has native Zygisk + Shamiko) — this is the more reliable path
+3. **Any kernel with Magisk:** Magisk + Zygisk (built-in) + Shamiko + DenyList — proven stack for DexGuard/AppFence apps
+
+**Version requirements:**
+- Zygisk Next requires KernelSU ksud 0.9+. KernelSU 0.7.1 is too old.
+- Updating ksud requires a matching kernel module — you can't just replace the binary
+- If KernelSU version is too old for Zygisk (< 0.9.x on kernel 4.4), options: (a) switch to Magisk, (b) use non-rooted device with WiFi proxy, (c) accept limitation and submit static findings only
+
+### Frida Spawn / Compatibility
+
+**Frida 16.x changes:** `--no-pause` flag removed — apps auto-resume on spawn. Use:
+```bash
+frida -U -f <package> -l script.js
+```
+
+**Starting frida-server:** Required for `frida -U -f <package>` on rooted devices:
+```bash
+adb shell "su -c '/data/local/tmp/frida-server -D'"
+```
+Without it, you get "need Gadget to attach on jailed Android" even on rooted devices. Always verify with `frida-ps -U` before spawning.
+
+**Deep link two-step pattern:** Do NOT use `device.spawn(url=...)` — it doesn't work for Android intents. Instead:
+1. Spawn app normally → install hooks → resume
+2. Trigger deep link via separate command: `adb shell am start -a android.intent.action.VIEW -d "scheme://..."`
+
+This two-step pattern is required for hooking deep link handlers. Use Python frida bindings for complex hooks (spawn + attach + inject + trigger deep link in sequence).
+
+**Frida NativeCallback GC pitfall:** When replacing function pointers (e.g., `pthread_create` start_routine) with `new NativeCallback(...)` inside `onEnter`, the callback gets garbage-collected before the thread runs → SIGSEGV crash. **Fix:** declare ALL NativeCallbacks and Memory.alloc buffers as GLOBAL variables at script top level. Never create inline NativeCallbacks inside hook handlers. This is the #1 cause of "bypass works once then crashes on retry."
+
+### Device & Connectivity
+
 - **Locked device workaround:** When the device screen is locked and UI automation fails, validate findings via non-UI paths: `adb shell am broadcast` (broadcast receivers), `adb shell am start` (exported activities), `run-as` (data extraction on debuggable apps), and `adb shell content query` (content providers). These don't require an unlocked screen.
+- **Device-to-host connectivity:** When the device can't reach the host IP (different subnet, firewall, VPN), use `adb reverse tcp:PORT tcp:PORT` to forward device localhost to host. Then use `http://127.0.0.1:PORT/` in exploit URIs. Always verify with `adb shell curl http://127.0.0.1:PORT/file` before triggering the exploit. This is more reliable than finding the correct network interface IP.
+- **App restart issues:** Use `adb shell am start -S -W` to force-stop then start. Pre-grant permissions with `pm grant` and `appops set` to avoid dialogs blocking the flow.
+
+### Phase Skipping Rules
+
 - **Offline/no-network apps:** When the app has no internet permission and no HTTP URLs in source, mark Phases 3 (Dynamic Setup), 4 (Traffic Analysis), and 6 (API Testing) as N/A immediately after Phase 2. Focus Phase 5 on broadcast exploitation, SharedPreferences validation, and data storage inspection.
 - **Client-side-only exploit chains (WebView RCE, broadcast injection):** When the exploit is entirely client-side (no server API involved), mark Phases 3/4/6 as N/A. Phase 5 validates the exploit dynamically.
-- **Frida 16.x compatibility:** `--no-pause` flag removed (app auto-resumes on spawn). Use `frida -U -f <package> -l script.js`. For deep link exploitation, do NOT use `device.spawn(url=...)` — it doesn't work for Android intents. Instead: spawn app normally → install hooks → resume → trigger deep link via separate `adb shell am start -a android.intent.action.VIEW -d "scheme://..."` command. This two-step pattern is required for hooking deep link handlers.
-- **Exploit hosting pitfall:** Python's `http.server` decodes `%2F` in URL paths and resolves `../`, causing 404 for path traversal payloads. Use a custom server that serves the payload for any request path (see `android-path-traversal-rce.md`)
-- **Device-to-host connectivity:** When the device can't reach the host IP (different subnet, firewall, VPN), use `adb reverse tcp:PORT tcp:PORT` to forward device localhost to host. Then use `http://127.0.0.1:PORT/` in exploit URIs. Always verify with `adb shell curl http://127.0.0.1:PORT/file` before triggering the exploit.
-- **App restart issues:** Use `adb shell am start -S -W` to force-stop then start. Pre-grant permissions with `pm grant` and `appops set` to avoid dialogs blocking the flow
-- **Frida spawn on rooted devices:** `frida -U -f <package>` requires frida-server running on device (`adb shell "su -c '/data/local/tmp/frida-server -D'"`). Without it, you get "need Gadget to attach on jailed Android" even on rooted devices. Always verify with `frida-ps -U` before spawning.
-- **`extractNativeLibs="false"` and Frida:** When this flag is set, .so files live inside the APK (not extracted). You cannot `System.loadLibrary()` arbitrary libs from Frida scripts — only the app's own loading path works. Hook the native function after the app loads the library itself.
-- **Static analysis pattern for native lib hijack:** Look for `System.load()` with paths under `getFilesDir()`/`getCacheDir()` combined with unsanitized `getLastPathSegment()` in file download handlers
-- **Frida on rooted devices:** Start frida-server with `adb shell "su -c '/data/local/tmp/frida-server -D'"`. Frida 16.x removed `--no-pause` (apps auto-resume on spawn). Use Python frida bindings for complex hooks (spawn + attach + inject + trigger deep link in sequence).
+
+### Exploit Hosting & Delivery
+
+- **Exploit hosting pitfall:** Python's `http.server` decodes `%2F` in URL paths and resolves `../`, causing 404 for path traversal payloads. Use a custom server that serves the payload for any request path (see `android-path-traversal-rce.md`).
+- **Runtime.exec(String) splitting pitfall:** `Runtime.exec(String)` uses `StringTokenizer` to split on whitespace — shell features (pipes, redirects, semicolons) are NOT interpreted. `exec("sh -c id")` works (3 tokens: sh, -c, id) but `exec("sh -c id > /tmp/out")` fails (sh only executes "id", "> /tmp/out" becomes $0/$1). Workaround: push a script to an executable path first, then exec the script path. Or use `exec(String[])` if you control the call site.
+
+### High-Value Attack Patterns
+
 - **WebView + @JavascriptInterface = high-value target:** When an app has JS enabled + addJavascriptInterface, map ALL exposed methods. If any method calls Runtime.exec(), ProcessBuilder, or shell commands — that's an RCE chain. XSS in the WebView (via deep links, intent data, or stored content) becomes the trigger.
+- **SecureWebView pattern (server-side domain allowlist):** Modern apps (Gojek, fintech) wrap WebView in a `SecureWebView` subclass that overrides `loadUrl()` with a server-fetched domain allowlist check. Even if the deep link handler passes unvalidated URLs, the WebView blocks loading non-allowlisted domains. Detection: look for `extends WebView` with `super.loadUrl()` gated behind a boolean check, and config keys like `DOMAIN_WHITELIST_BATCH_*` or `JS_BRIDGE_WHITELIST_BATCH_*`. This downgrades a "no validation in handler" finding from Critical to Medium unless you can bypass the allowlist. **Bypass vectors (in order):** (1) `data:` URI scheme — may bypass if allowlist only checks `http`/`https` schemes. **CAVEAT:** depends on feature flag state — always verify dynamically before rating as Confirmed. (2) Open redirect on an allowed domain. (3) Partner with `allowAllAccess=true`. (4) Empty allowlist fallback (fail-open when `DOMAIN_WHITELIST_BATCH_SIZE` returns 0). (5) Feature flag OFF (unlikely in production). See `deeplink-webview-hijack.md`.
 - **Deep link escape bypass patterns:** When the app escapes single quotes but NOT backslashes, inject `\\'` — after escape it becomes `\\\\'` which in JS is literal backslash + string terminator. Always check: does the escape cover `\`, `"`, `'`, backtick, `$`, and newlines?
-- **Unity IL2CPP deep link parameter discovery:** Hardcoded URLs in `global-metadata.dat` may use DIFFERENT query parameter names than the deep link handler expects. Don't assume the parameter name from hardcoded strings — test systematically. Use `strings global-metadata.dat | grep -E "^(check|get|set|validate|parse)[A-Z]"` to find method names that hint at the actual parameter (e.g., `checkHost` → parameter is `host=`, not `patch=` from the hardcoded URL). When host extraction always returns empty despite correct URI format, the parameter name is likely wrong.
-- **Unity IL2CPP reverse engineering:** For Unity 2020.x IL2CPP apps, all C# class/method/field/string-literal names are in `global-metadata.dat`. Key patterns: (1) grep for `[ClassName]` log prefixes to find the relevant class, (2) grep for method names like `Handle*`, `check*`, `validate*`, `get*` to understand the flow, (3) look for field names like `domainRegex`, `updateHost` that reveal validation logic, (4) coroutine names like `<MethodName>d__N` reveal async operations. The actual game logic is NOT in `classes.dex` — it's in `libil2cpp.so` + metadata.
-- **Mono/Unity custom scheme URI parsing quirk:** In Unity 2020.x (Mono runtime), `System.Uri` does NOT reliably parse query parameters from custom scheme URIs (e.g., `customscheme://host?key=value`). The `Uri.Query` property may return empty. Apps work around this with manual string parsing or by using Android's Java-side `Uri.getQueryParameter()` via JNI. When testing deep links, if the app receives the full URI string (confirmed via logcat) but fails to extract parameters, try different parameter names — the extraction method may be parameter-name-specific.
-- **extractNativeLibs="false":** Native libs stay inside the APK (not extracted to filesystem). `System.loadLibrary()` works but you can't `dlopen` from a custom path. For Frida hooking, the lib loads from the APK's zip — use `Process.findModuleByName()` after the app loads it.
-- **Intent URI parsing (`Intent.parseUri`) is a high-value target:** When an app parses user-controlled strings as intent URIs (look for `Intent.parseUri(url, 1)` or `Intent.URI_INTENT_SCHEME`), it can launch ANY activity (including non-exported ones) with arbitrary extras. The attack surface is wherever the URL string originates: UI input, database, backup files, deep link parameters, QR codes. Even if the app "sanitizes" the intent before launching, check what the sanitizer ADDS (not just removes). TideLock challenge (2026-05): native `sanitizeIntent()` stripped all extras but then added `FLAG_REQUEST_VALID=true` — making it the enabler.
-- **Backup/restore bypasses input validation:** Apps that implement their own backup (JSON/XML to external storage) often skip the validation applied on the UI path. If `isValidUrl()` blocks `intent:` schemes on the add-entry UI, but `restoreEntries()` reads raw JSON without checking — inject via modified backup file. Always check: does the restore/import path apply the same validation as the UI input path?
-- **Intent URI injection via backup/restore:** When an app validates URLs on input (UI add) but NOT on restore/import, inject `intent:#Intent;component=pkg/.InternalActivity;end` into the backup file. If the app has any code path that calls `Intent.parseUri(url, 1)` + `startActivity()`, you can launch non-exported activities. Check: (1) backup format (plaintext JSON? XML?), (2) restore validation (usually missing), (3) code paths that handle `intent:` scheme. Common in password managers, note apps, bookmark managers.
+- **Intent URI parsing (`Intent.parseUri`) is a high-value target:** When an app parses user-controlled strings as intent URIs (look for `Intent.parseUri(url, 1)` or `Intent.URI_INTENT_SCHEME`), it can launch ANY activity (including non-exported ones) with arbitrary extras. The attack surface is wherever the URL string originates: UI input, database, backup files, deep link parameters, QR codes. Even if the app "sanitizes" the intent before launching, check what the sanitizer ADDS (not just removes).
+- **Backup/restore bypasses input validation:** Apps that implement their own backup (JSON/XML to external storage) often skip the validation applied on the UI path. If `isValidUrl()` blocks `intent:` schemes on the add-entry UI, but `restoreEntries()` reads raw JSON without checking — inject via modified backup file. Check: (1) backup format (plaintext JSON? XML?), (2) restore validation (usually missing), (3) code paths that handle `intent:` scheme. Common in password managers, note apps, bookmark managers.
 - **Native "sanitizer" as enabler pattern:** When a native function strips extras/data from an intent but then ADDS a validation flag (e.g., `putExtra("VALID", true)`), the sanitizer IS the exploit enabler. The app assumes only sanitized intents reach the protected activity, but the sanitizer itself grants access. Reverse the native function to confirm: look for `removeExtra` loop followed by `putExtra` with a boolean `true` (mov w4, 1 in arm64).
+- **Exported ContentProvider brute-force:** When a ContentProvider is exported without permission protection and uses a small keyspace for access control (e.g., 4-digit PIN), extract crypto parameters from assets/resources and brute-force offline. Pattern: `content query --uri content://authority --where "pin=XXXX"`. For offline cracking: extract encryptedData/salt/iv/iterations from APK assets, then PBKDF2+AES decrypt in Python loop. 4-digit PIN = 10K attempts = <1 second.
+- **SnakeYAML deserialization RCE:** When an app uses `yaml.load()` (not `yaml.loadAs()` or `SafeConstructor`), it allows arbitrary object instantiation via `!!fully.qualified.ClassName [args]` tags. Look for gadget classes with dangerous constructors (Runtime.exec, ProcessBuilder, file I/O). Common in config editor/viewer apps. The safe alternative is `new Yaml(new SafeConstructor(new LoaderOptions()))`.
+
+### Native Code Analysis
+
+- **Static analysis pattern for native lib hijack:** Look for `System.load()` with paths under `getFilesDir()`/`getCacheDir()` combined with unsanitized `getLastPathSegment()` in file download handlers.
 - **XOR-obfuscated strings in native libs:** Common pattern in MHL challenges. Decode with: `''.join(chr(b ^ key) for b in byte_array)`. Try keys 0x00-0x7F. Look for readable scheme strings (intent:, http://, https://) to identify the key quickly.
 - **r2 for quick native function analysis:** When Ghidra isn't running, use `r2 -q -c 'aa;s sym.Java_pkg_Class_method;pdf' lib.so` to disassemble JNI functions. Look for JNI call offsets (0xf8=GetObjectClass, 0x108=GetMethodID, 0x538=NewStringUTF, 0x2f0=GetFieldID, 0x2f8=GetObjectField, 0x558=GetArrayLength, 0x568=GetObjectArrayElement) to understand what Java methods the native code calls.
-- **SnakeYAML deserialization RCE:** When an app uses `yaml.load()` (not `yaml.loadAs()` or `SafeConstructor`), it allows arbitrary object instantiation via `!!fully.qualified.ClassName [args]` tags. Look for gadget classes with dangerous constructors (Runtime.exec, ProcessBuilder, file I/O). Common in config editor/viewer apps. The safe alternative is `new Yaml(new SafeConstructor(new LoaderOptions()))`.
-- **Runtime.exec(String) splitting pitfall:** `Runtime.exec(String)` uses `StringTokenizer` to split on whitespace — shell features (pipes, redirects, semicolons) are NOT interpreted. `exec("sh -c id")` works (3 tokens: sh, -c, id) but `exec("sh -c id > /tmp/out")` fails (sh only executes "id", "> /tmp/out" becomes $0/$1). Workaround: push a script to an executable path first, then exec the script path. Or use `exec(String[])` if you control the call site.
-- **Exported ContentProvider brute-force:** When a ContentProvider is exported without permission protection and uses a small keyspace for access control (e.g., 4-digit PIN), extract crypto parameters from assets/resources and brute-force offline. Pattern: `content query --uri content://authority --where "pin=XXXX"`. For offline cracking: extract encryptedData/salt/iv/iterations from APK assets, then PBKDF2+AES decrypt in Python loop. 4-digit PIN = 10K attempts = <1 second.
-- **adb reverse for exploit delivery:** When the device can't reach the host IP directly (different network/firewall), use `adb reverse tcp:PORT tcp:PORT` to forward device→host. Then use `http://127.0.0.1:PORT/` in the exploit URL. This is more reliable than finding the correct network interface IP.
-- **DexGuard/AppFence bypass:** Enterprise apps using `libaf-android.so` (AppFence by Guardsquare) have a multi-layer kill chain: (1) inline `SVC #0` (exit_group, bypasses ALL libc hooks), (2) `syscall(94,0)` via libc wrapper, (3) `kill(getpid(), SIGKILL)` via dlsym'd function pointer, (4) `_exit(0)` + `abort()` fallbacks. Detection scans `/proc/self/maps` for non-whitelisted libraries. Kill runs on a separate thread spawned via `pthread_create` with a configurable delay (`usleep(N*1000000)`). The library has integrity checks that detect on-disk patching (triggers SIGBUS). **Working bypass (v24 pattern):** (1) hook `fopen`/`fgets` to filter Frida lines from `/proc/self/maps`, (2) hook `pthread_create` to neutralize kill thread, (3) patch inline SVC to NOP after library loads, (4) hook libc `syscall`/`kill`/`_exit`/`abort` as safety nets. The maps filter is the PRIMARY defense — if detection doesn't see Frida, the kill thread is never spawned. See `dexguard-appfence-bypass.md`.
-- **Split APK merge:** Use `java -jar APKEditor.jar m -i <dir> -o merged.apk -f` to merge split APKs before jadx decompilation. Merged APK gives complete view (all DEX + native libs + resources in one file).
-- **Split APK merging:** When pulling from device, apps often have split APKs (base + config.arm64 + config.xxhdpi). Merge before analysis: `java -jar APKEditor.jar m -i <dir_with_apks> -o merged.apk -f`. This produces a single APK suitable for jadx/apktool. Tool: REAndroid/APKEditor.
-- **hluda-server (Frida anti-detection build):** When regular frida-server is detected (port 27042, /proc/self/maps strings), use hluda-server — a Frida build with anti-detection patches (randomized port, stripped strings, hidden from maps). Path on device: `/data/local/tmp/hluda-server`. Start same way: `su -c '/data/local/tmp/hluda-server -D'`. Still uses same `frida -U` client commands.
-- **DexGuard inline syscall detection (unbypassable via Frida):** When an app uses DexGuard with inline `svc #0` assembly for exit_group, ALL userspace hooks fail — libc exit/kill hooks, syscall() wrapper hooks, pthread_create blocking. Symptoms: process exits cleanly (code 0), no hook messages fire for exit. The ONLY solutions are: (1) Shamiko/Zygisk (kernel-level root hiding), (2) non-rooted device, (3) APK patching to remove detection code. For bug bounty, static analysis evidence is sufficient — don't waste hours on bypass.
-- **pthread_create thread identification:** To identify which native lib runs root detection, hook `pthread_create` and log `module.name` for each `start_routine`. Filter out system libs (libc, libart, libhwui, libutils, libgui). The detection thread is usually from a small obfuscated lib (e.g., 7KB `libh9740d.so`). But blocking the thread may crash the app if it's not actually the detection (e.g., ANR handler).
-- **DexGuard native root detection defeats Frida hooks:** DexGuard (used by Gojek, banking apps) uses inline `svc #0` assembly to call exit_group directly, bypassing ALL libc hooks (exit, _exit, kill, syscall wrapper). Even with native Interceptor hooks on every libc function, the process still dies. Detection vectors: (1) `/proc/self/maps` for frida-agent strings, (2) `/proc/net/tcp` for port 27042 (frida default), (3) `access()` for su/magisk/kernelsu paths, (4) custom kernel string in `/proc/version`. Solutions in order of reliability: (1) Shamiko + Zygisk Next (kernel-level hiding), (2) hluda-server (Frida build with anti-detection patches — hides from /proc/maps, randomizes port), (3) Frida Gadget injection into patched APK, (4) non-rooted device for dynamic testing. For bug bounty, static code evidence is sufficient when the code path is unambiguous.
-- **hluda-server (anti-detection Frida):** When standard frida-server is detected, use hluda-server (`/data/local/tmp/hluda-server -D`). It patches Frida's identifiable strings and port. However, hluda alone doesn't hide root — you still need root-hiding hooks or Shamiko. hluda solves frida detection; Shamiko solves root detection. For DexGuard apps that use inline syscalls, even hluda + Frida hooks may not suffice — the detection bypasses all userspace instrumentation.
-- **KernelSU + Zygisk Next version requirement:** Zygisk Next requires recent KernelSU (ksud). If install fails with "ksud version is too old", update KernelSU first. KernelSU 0.7.1 is too old; need latest from GitHub releases.
-- **APK merge for split APKs:** Use APKEditor (`java -jar APKEditor.jar m -i <dir> -o merged.apk -f`) to merge split APKs (base + config splits) into a single APK before analysis. This ensures jadx decompiles all DEX files and resources together. Tool: https://github.com/REAndroid/APKEditor
-- **DexGuard root detection pattern:** Commercial apps (fintech, ride-hailing) use DexGuard with dedicated `ard` (App Root Detection) modules. Symptoms: app launches then immediately dies with `Process exited cleanly (0)` in logcat (NOT a crash — it's `System.exit(0)`). Detection is heavily obfuscated via reflection (`C15197fsZ.c()`, `C15197fsZ.d()` patterns). Often controlled by Firebase Remote Config (`RootCheckerRemoteConfig`). KernelSU without hiding modules (susfs/Shamiko) gets detected. Fix: install Zygisk Next + Shamiko for KernelSU, or use a non-rooted device. Key grep: `grep -rl "DexGuard\|AppProtection\|isRooted\|RootChecker" sources/` to confirm.
-- **Split APK merging before analysis:** Modern apps ship as split APKs (base + config splits for ABI/density). Always merge with `java -jar APKEditor.jar m -i <dir> -o merged.apk -f` before running jadx. Analyzing base.apk alone misses native libs and density-specific resources. APKEditor also fixes `extractNativeLibs` and sanitizes the manifest automatically.
-- **Large app static analysis (50K+ classes):** Delegate Phase 2 analysis to a subagent via `delegate_task` with specific goals (deeplinks, secrets, exported components, network security, webview analysis). The subagent writes results to `phase2-static/android/` as separate markdown files. This preserves main context for exploitation phases. Works well for apps like Gojek (79K classes, 17 DEX files).
-- **Split APK handling:** Modern Play Store apps install as split APKs. Always merge with `java -jar APKEditor.jar m -i <dir> -o merged.apk -f` before jadx decompilation. Analyzing individual splits causes missing class errors and incomplete results.
+
+### Unity / IL2CPP
+
+- **Unity IL2CPP reverse engineering:** For Unity 2020.x IL2CPP apps, all C# class/method/field/string-literal names are in `global-metadata.dat`. Key patterns: (1) grep for `[ClassName]` log prefixes to find the relevant class, (2) grep for method names like `Handle*`, `check*`, `validate*`, `get*` to understand the flow, (3) look for field names like `domainRegex`, `updateHost` that reveal validation logic, (4) coroutine names like `<MethodName>d__N` reveal async operations. The actual game logic is NOT in `classes.dex` — it's in `libil2cpp.so` + metadata.
+- **Unity IL2CPP deep link parameter discovery:** Hardcoded URLs in `global-metadata.dat` may use DIFFERENT query parameter names than the deep link handler expects. Don't assume the parameter name from hardcoded strings — test systematically. Use `strings global-metadata.dat | grep -E "^(check|get|set|validate|parse)[A-Z]"` to find method names that hint at the actual parameter (e.g., `checkHost` → parameter is `host=`, not `patch=` from the hardcoded URL). When host extraction always returns empty despite correct URI format, the parameter name is likely wrong.
+- **Mono/Unity custom scheme URI parsing quirk:** In Unity 2020.x (Mono runtime), `System.Uri` does NOT reliably parse query parameters from custom scheme URIs (e.g., `customscheme://host?key=value`). The `Uri.Query` property may return empty. Apps work around this with manual string parsing or by using Android's Java-side `Uri.getQueryParameter()` via JNI. When testing deep links, if the app receives the full URI string (confirmed via logcat) but fails to extract parameters, try different parameter names — the extraction method may be parameter-name-specific.
