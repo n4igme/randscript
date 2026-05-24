@@ -31,6 +31,10 @@ Quick lookup: what you found → which reference to load.
 | AWS CNAME (S3, Transfer, CloudFront) | `cloud-infrastructure-enumeration.md` §2 |
 | CI/CD tool (ArgoCD, Atlantis, Airflow, n8n, Jenkins) | `cicd-pipeline-exploitation.md`, `cicd-devops-assessment.md`, `kubernetes-management-tooling.md` |
 | ArgoCD / Grafana / Prometheus / Vault / Harbor exposed | `kubernetes-management-tooling.md` |
+| Teleport remote access proxy exposed | `teleport-assessment.md` |
+| Signed URL (GCS/S3) in API response | `signed-url-exploitation.md` |
+| Callback / webhook / integration endpoint | Main SKILL.md (§ Unauthenticated Callback/Webhook Endpoint Testing) |
+| Alibaba Cloud WAF (Tengine, acw_tc cookie) | Main SKILL.md (§ Alibaba Cloud WAF Behavior Patterns) |
 | Kubernetes / GKE / container environment | `kubernetes-container-attacks.md`, `microservice-architecture-mapping.md` |
 | Istio / Envoy headers | `kubernetes-container-attacks.md` §Istio, `operational-pitfalls.md` (Istio section) |
 | SFTP / SSH port open | `non-http-protocol-testing.md` §2 |
@@ -67,6 +71,7 @@ Quick lookup: what you found → which reference to load.
 | Zip upload / archive extraction | `nodejs-library-attacks.md` §2, `web-vuln-bypass-tables.md` (Zip Slip) |
 | Custom crypto / license key / proprietary validation | `proprietary-crypto-reversing.md` |
 | Source code obtained (source map, git, debug, white-box) | **Invoke `scode` skill** (see main SKILL.md § Source Code Review Integration) |
+| CSP report-uri with internal app name (`/_/{AppName}/cspreport`) | `js-bundle-recon.md` (technology fingerprinting), `framework-specific-attacks.md` |
 | SPA / React / Angular / Vue frontend | `web-vuln-bypass-tables.md` (DOM XSS sources/sinks, postMessage, DOM clobbering) |
 | Bug bounty submission / report writing | `bug-bounty-submission-guide.md` |
 | Multi-step attack chain (need to explain WHY) | `attack-chain-narrative-writing.md` |
@@ -207,10 +212,13 @@ phase8-reporting-process.md          — Report writing, audience, delivery
 re-validation-loops.md               — Mini-enumeration during exploitation
 saml-sso-assessment.md               — SAML metadata, IdP enum, SSO attacks
 signal-hunting-table.md              — A→B→C finding signal lookup (30+ pairs)
+signed-url-exploitation.md           — GCS/S3 signed URL analysis, content-type bypass, service account drift, bucket enumeration
 snyk-token-enumeration.md            — Snyk API exploitation
 source-map-token-exploitation.md     — Source map → token extraction → verified write access chains, telemetry tokens, CORS+debug, Flutter/proto analysis
 ssrf-outbound-forcing.md             — Server-side callback forcing
 subdomain-takeover.md                — Dangling CNAME detection
+target-redirection-web-app.md        — GoPay target redirection web app analysis
+teleport-assessment.md               — Teleport Enterprise proxy: /webapi/ping, OIDC, JWKS, K8s/SSH/DB proxy, CVE mapping
 time-box-enforcement.md              — Budget tracking and over-budget decisions
 web-bypass-techniques.md             — WAF/auth bypass techniques
 web-testing-checklist.md             — User management, app logic, input handling, security headers, infra checks

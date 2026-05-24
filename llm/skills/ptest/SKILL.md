@@ -146,6 +146,43 @@ If any mandatory tool cannot be installed, the engagement can still proceed but 
 
 ---
 
+## Multi-Target Engagement Structure
+
+When a bug bounty program has multiple in-scope assets (e.g., 14 targets under GoTo Financial), organize the output directory per-target under the program directory:
+
+```
+./ptest-output/                    # Primary target (first tested)
+  state.yaml
+  scope.md                         # FULL program scope (all assets)
+  findings-log.md                  # Findings for primary target
+  ...
+./target2.domain/
+  ptest-output/
+    state.yaml                     # Independent state per target
+    scope.md                       # Target-specific scope subset
+    findings-log.md                # Findings for this target
+    ...
+./target3.domain/
+  ptest-output/
+    ...
+```
+
+**Rules:**
+1. The primary `scope.md` documents ALL program assets and their status (tested/dead/RBAC-blocked/pending)
+2. Each target gets its own `state.yaml` with independent phase tracking
+3. Finding IDs are unique per-target (F-1 in target A ≠ F-1 in target B)
+4. When submitting to the platform, reference findings by `{target}:{finding-id}` (e.g., `findaya.co.id:F-4`)
+5. Cross-target findings (e.g., shared Faro API key across gopayapi.com and findaya.co.id) go in the target where they have highest impact
+6. Mark targets as they're completed: `tested (N findings)`, `dead (decommissioned)`, `RBAC-blocked`, `hardened (0 findings)`
+
+**Fast-exit heuristics for multi-target programs:**
+- If a target returns identical Istio RBAC 403 on all paths → mark as "RBAC-blocked", move on (5 min max)
+- If all subdomains don't resolve → mark as "dead/decommissioned", move on (2 min max)
+- If a target is a well-known hardened service (e.g., Midtrans payment API) and all endpoints return proper 401 → mark as "hardened", move on (10 min max)
+- Prioritize targets that share infrastructure with already-vulnerable targets (e.g., findaya.com shares IPs with findaya.co.id)
+
+---
+
 ## Initialization (`start`)
 
 Before any testing begins, collect and document:
@@ -1023,6 +1060,29 @@ When redoing a pentest or reassessing previously reported findings:
 
 **When to use:** After automated scanning in Phase 5, cross-check this list to ensure no common test case was missed. During Phase 6 techniques 6.2 (Auth Bypass), 6.5 (Business Logic), and 6.6 (Access Control), use the relevant sections as a systematic guide.
 
+### Unauthenticated Integration/Callback Endpoint Testing (MANDATORY Phase 3/6)
+
+When actuator metrics or error messages reveal `/integration/*`, `/callback`, or `/webhook` paths, test them WITHOUT authentication. These endpoints are designed to receive calls from partner services (GoPay, payment gateways, KYC providers) and often lack auth by design — but this is a vulnerability when internet-facing.
+
+**Discovery technique:**
+1. Check actuator metrics URI tags for `/integration/*` or `/callback` paths
+2. Check error messages for internal routing (e.g., `executing POST http://internal-service/path`)
+3. Try POST with empty JSON body `{}` — look for 400 (parameter validation) vs 401 (auth required)
+4. If 400/500 returned (not 401): endpoint processes requests without auth
+
+**Key insight (Findaya, May 2026):**
+- `/integration/gopay/kyc/v1/{id}/callback` — no auth, 500 error leaked internal service name + domain
+- `/legalEntityKYC/v1/onboarding-doc` — no auth, returned signed GCS URLs to production KYC documents (Critical)
+- `/v1/user/progressive-kyc/callback` — no auth, 500 (processes request)
+- Pattern: callback/integration endpoints bypass auth middleware because they're meant for server-to-server calls
+
+**Checklist:**
+- [ ] Identify all `/integration/*`, `/**/callback`, `/webhook/*` paths from metrics/errors/JS bundles
+- [ ] Test each with POST + empty body (no auth header)
+- [ ] If response is NOT 401/403: document as unauthenticated endpoint
+- [ ] Check if response contains sensitive data (signed URLs, user records, status changes)
+- [ ] Test with crafted payloads to assess impact (can you approve KYC? change status? trigger actions?)
+
 ### OTP/2FA Endpoint Testing (MANDATORY when OTP endpoints exist)
 
 **Full reference:** See `references/otp-endpoint-testing.md` for:
@@ -1247,6 +1307,40 @@ Modern web apps (Next.js, Nuxt, SvelteKit) often proxy API calls through their o
 - 49 reCAPTCHA elements detected in login modal — heavy captcha protection
 - Headers from JS: `x-user-type`, `x-user-locale`, `gojek-country-code`, `gojek-timezone`, `x-location`, `x-uniqueId`, `x-platform`, `x-appversion`, `gojek-service-area`, `gojek-service-type`, `x-captcha-token`, `x-captcha-appid`
 
+### Alibaba Cloud WAF (aliyunwaf) Behavior Patterns
+
+When testing targets behind Alibaba Cloud WAF (Tengine):
+
+| Behavior | Indicator |
+|----------|-----------|
+| WAF presence | CNAME to `*.aliyunwaf2.com` or `*.aliyunwaf3.com` |
+| Session tracking | `acw_tc` cookie (HttpOnly, 30min Max-Age) |
+| WAF block (405) | HTML page with Chinese/English "request has been blocked" + traceid |
+| WAF block (403) | Alibaba CDN error page with `errors.aliyun.com` images |
+| Server header | `Tengine` (Alibaba's nginx fork) |
+| NLB pattern | CNAME to `nlb-*.ap-southeast-5.nlb.aliyuncsslbintl.com` (Jakarta region) |
+| Istio behind WAF | `server: istio-envoy` + `acw_tc` cookie = WAF → Istio mesh |
+
+**WAF rules observed (Findaya, May 2026):**
+- Blocks `/actuator/prometheus` with 405 (WAF rule on metrics endpoint)
+- Does NOT block `/actuator`, `/actuator/health`, `/actuator/metrics`, `/actuator/info` — partial rule
+- Blocks common attack paths (`.env`, `.git`, path traversal) with 405 block page
+- `acw_tc` cookie set on every response (session tracking, not auth)
+- NLB distributes to multiple IPs (round-robin)
+
+**Key difference from Tencent WAF:**
+- Alibaba WAF uses 405 status (not 403) for blocked requests
+- Block page includes `traceid` in a hidden textarea (useful for support escalation, not exploitable)
+- Alibaba WAF + Istio is a common pattern in GoTo/Gojek infrastructure (Jakarta region)
+
+**Bypass attempts that FAILED:**
+- All standard path normalization tricks (..;/, %2f, double encoding)
+- The WAF blocks at URL pattern level before reaching the application
+
+**What works:**
+- Endpoints not covered by WAF rules still pass through (e.g., `/actuator/metrics` but not `/actuator/prometheus`)
+- Callback/integration paths often bypass WAF rules (designed for partner access)
+
 ### Tencent Cloud WAF (T-Sec-WAF) Behavior Patterns
 
 When testing targets behind Tencent Cloud WAF:
@@ -1283,6 +1377,63 @@ HTTP/1.0 downgrade, case variation (.Git/.GIT), URL encoding (%2e%67%69%74), zer
 Tab in path (`%09`), semicolon path param (`;x=1`), fragment encode (`%23`) — these bypass the WAF dotfile rule but Express.js doesn't normalize them to the actual file path.
 
 **Key insight:** Tencent WAF checks the raw URL before decoding. If you can find a character that WAF ignores but the backend normalizes, you bypass. For Express.js specifically, no working bypass was found (Express serves files by exact decoded path).
+
+### Alibaba Cloud Infrastructure Patterns
+
+**Full reference:** See `references/alibaba-cloud-infrastructure.md` for:
+- Detection signals (Tengine WAF, `acw_tc` cookie, NLB hostnames, IP ranges)
+- WAF vs Istio RBAC differentiation
+- Kubernetes cluster naming convention (`al-mg-id-p`/`al-mg-id-s`)
+- Actuator metrics as API route discovery (extracting all routes from `http.server.requests` tags)
+- Integration/callback endpoint pattern (server-to-server endpoints lacking auth — HIGH VALUE)
+- Port exposure pattern (TCP open but app-layer filtered)
+
+### Unauthenticated Callback/Webhook Endpoint Testing (MANDATORY Phase 3/6)
+
+**When you discover `/integration/*`, `/callback/*`, `/webhook/*`, `/hook/*`, or `*/callback` paths (from actuator metrics, JS bundles, or path brute-force), ALWAYS test them without authentication.** These endpoints are designed to receive calls from partner services and often skip auth entirely.
+
+**Why callbacks are high-priority:**
+- They're meant to be called by external services (GoPay, payment gateways, KYC providers)
+- Developers often rely on "security through obscurity" (hard-to-guess URLs) instead of proper auth
+- They frequently return or accept sensitive data (KYC documents, payment status, account approvals)
+- Error messages on callbacks often disclose internal service names and routing
+
+**Discovery techniques:**
+1. Actuator `/metrics` → check `uri` tags for `/integration/*`, `*/callback` patterns
+2. JS bundle analysis → search for "callback", "webhook", "integration" in source
+3. Path brute-force with callback-specific wordlist
+4. Error-based discovery: POST to guessed paths, check for 500 (processed) vs 404 (doesn't exist)
+
+**Testing procedure:**
+```bash
+# For each discovered callback/integration path:
+for method in GET POST PUT; do
+  curl -sk -X $method "$URL" -H "Content-Type: application/json" -d '{}' -w " [%{http_code}]"
+done
+```
+
+**Interpretation:**
+- 400 (bad request) → endpoint processes requests without auth, needs correct payload
+- 500 (internal error) → endpoint processes requests without auth, backend issue (check error message for info disclosure)
+- 200 with data → **CRITICAL: unauthenticated data access**
+- 401/403 → auth enforced (safe)
+- 404 → path doesn't exist
+- 405 → method not allowed but path exists (try other methods)
+
+**Real-world example (Findaya, May 2026):**
+```
+POST /legalEntityKYC/v1/onboarding-doc → 200 with 9 signed GCS URLs to production KYC documents
+POST /integration/gopay/kyc/v1/test/callback → 500 disclosing internal service name "kyc-service"
+POST /v1/user/progressive-kyc/callback → 500 (processed without auth)
+```
+Result: Critical finding — unauthenticated access to production KYC documents (KTP, NPWP, akta pendirian) of legal entities.
+
+**Checklist (add to Phase 3 enumeration + Phase 6 exploitation):**
+- [ ] Identify all callback/integration/webhook paths (from actuator, JS, brute-force)
+- [ ] Test each with POST + empty JSON body (no auth headers)
+- [ ] If 400: analyze error message for required fields, construct minimal valid payload
+- [ ] If 500: document error message (often discloses internal services)
+- [ ] If 200 with data: **ESCALATE** — document as Critical if PII/financial data
 
 ### Exposed Kubernetes Management Tooling (ArgoCD, Grafana, Prometheus)
 
