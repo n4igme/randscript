@@ -271,6 +271,7 @@ If no results → mark ALL web3-* as SKIPPED.
 | 3q | web3-defi | `references/vuln-web3-defi.md` | AMM, lending, bridge, governance |
 | 3r | web3-nft | `references/vuln-web3-nft.md` | Metadata, randomness, royalty bypass |
 | 3s | web3-evm | `references/vuln-web3-evm.md` | Storage slots, returnbomb, gas griefing |
+| 3t | web3-modern | `references/vuln-web3-modern.md` | Restaking, Account Abstraction (ERC-4337), L2/Rollup, Intent-based protocols, Foundry PoC templates |
 | 3t | infra | `references/vuln-infra.md` | Terraform, Dockerfile, K8s, CI/CD, Helm |
 | 3u | spring-boot | `references/vuln-spring-boot.md` | Actuator, security annotations, SpEL, mass assignment, Keycloak |
 | 3v | deployment-security | (inline) | Helm values, Istio AuthorizationPolicy, NetworkPolicy, mTLS, PeerAuthentication |
