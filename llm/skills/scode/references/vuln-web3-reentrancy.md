@@ -12,6 +12,24 @@ $ARGUMENTS
 
 ## Vulnerability Patterns
 
+### Vyper-Specific Reentrancy
+- Vyper `@nonreentrant` decorator with key-based locking (different keys = different locks)
+- Vyper compiler bug (0.3.7-0.3.9): `@nonreentrant` lock not applied correctly on cross-function calls with same key
+- Vyper `raw_call` without `max_outsize` returning empty bytes (silent failure)
+- Vyper `send()` not checking return value (pre-0.4.0)
+- Vyper default function (`__default__`) acting as fallback — reentrancy via ETH receive
+- Missing `@nonreentrant` on functions that share state with guarded functions
+- Vyper `create_from_blueprint` / `create_minimal_proxy_to` with callback hooks
+
+**Grep patterns**: `@nonreentrant`, `raw_call`, `send(`, `__default__`, `@external`, `@internal`, `create_from_blueprint`, `create_minimal_proxy_to`, `.vy`
+
+**Vyper compiler version check:**
+```bash
+# Check for vulnerable Vyper versions (0.3.7-0.3.9 reentrancy lock bug)
+grep -r "# @version" --include="*.vy" | grep -E "0\.3\.[789]"
+grep -r "pragma version" --include="*.vy" | grep -E "0\.3\.[789]"
+```
+
 ### Classic Reentrancy
 - External calls before state updates (checks-effects-interactions violation)
 - ETH transfer via `.call{value:}` before balance deduction

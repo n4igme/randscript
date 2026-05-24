@@ -75,6 +75,17 @@ $ARGUMENTS
 
 **Grep patterns**: `permit(`, `PERMIT_TYPEHASH`, `nonces`, `deadline`, `EIP2612`, `IERC20Permit`
 
+### Permit2 / Signature-Based Approvals (2024-2026 Standard)
+- Permit2 `SignatureTransfer` replay (nonce not invalidated after use)
+- Permit2 `AllowanceTransfer` with excessive expiration (permanent approval)
+- Witness data manipulation in Permit2 (extra data not validated by protocol)
+- Missing Permit2 `InvalidateNonces` on order cancellation
+- Unordered nonces allowing selective replay of specific permits
+- Token approvals via Permit2 surviving contract upgrades
+- Permit2 batch transfer with mixed token amounts (partial fill exploitation)
+
+**Grep patterns**: `ISignatureTransfer`, `IAllowanceTransfer`, `Permit2`, `permit2`, `PermitTransferFrom`, `PermitBatchTransferFrom`, `SignatureTransferDetails`, `witness`, `permitWitnessTransferFrom`, `invalidateUnorderedNonces`, `nonceBitmap`, `PERMIT2`
+
 ### ERC-777 / Hooks Abuse
 - `tokensReceived` hook enabling reentrancy
 - `tokensToSend` hook blocking transfers (DoS)

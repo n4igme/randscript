@@ -64,6 +64,17 @@ If no assembly or low-level EVM code is present, report "No low-level EVM code f
 
 **Grep patterns**: `mstore(0x40`, `mload(0x40)`, `mstore(`, `mload(`, `add(ptr`, `calldatacopy`, `codecopy`, `extcodecopy`
 
+### Transient Storage (EIP-1153, Cancun+)
+- `TSTORE`/`TLOAD` used for reentrancy guards that reset at end of transaction
+- Transient storage not persisting across transactions (developer assumes persistence)
+- Reentrancy guard via transient storage bypassed in cross-transaction attack
+- `TSTORE` slot collision between different contracts in same transaction (delegatecall)
+- Transient storage used for access control that resets (lock valid only within tx)
+- Missing `TLOAD` check before `TSTORE` (overwriting mid-transaction state)
+- Callback-based attacks where transient guard is set but attacker re-enters via different path not checking same slot
+
+**Grep patterns**: `tstore`, `tload`, `TSTORE`, `TLOAD`, `transient`, `assembly.*tstore`, `assembly.*tload`, `EIP1153`, `ReentrancyGuardTransient`
+
 ### EVM Version Incompatibilities
 - `PUSH0` opcode used on chains not supporting it (pre-Shanghai)
 - `SELFDESTRUCT` reliance on chains deprecating it (post-Dencun)
