@@ -55,6 +55,11 @@ Quick lookup: what you found → which reference to load.
 | AMM / lending / bridge contract | `vuln-web3-defi.md` |
 | NFT metadata / randomness / royalty | `vuln-web3-nft.md` |
 | Storage slots / assembly / gas optimization | `vuln-web3-evm.md` |
+| Restaking, Account Abstraction, L2/Rollup, Intent-based | `vuln-web3-modern.md` |
+| Foundry fork PoC development for Immunefi | `foundry-poc-cookbook.md` |
+| Real exploit post-mortems by vuln class | `web3-real-exploits-database.md` |
+| Immunefi report format, severity, rejection reasons | `immunefi-report-template.md` |
+| Oracle manipulation math, profitability calculations | `web3-economic-feasibility.md` |
 | Terraform / Dockerfile / K8s manifest / CI config | `vuln-infra.md` |
 | Helm values / Istio AuthorizationPolicy / NetworkPolicy | `deployment-security-checks.md` |
 | Spring Boot actuator / SpEL / `@RequestBody` binding | `vuln-spring-boot.md` |
@@ -128,6 +133,10 @@ Quick lookup: what you found → which reference to load.
 | `nextjs-supabase-patterns.md` | Next.js + Supabase-specific patterns |
 | `ptest-integration.md` | Using black-box pentest findings to guide code review |
 | `validation-decision-trees.md` | Framework-specific false-positive elimination |
+| `foundry-poc-cookbook.md` | Foundry fork setup, flash loan interfaces, attack templates |
+| `web3-real-exploits-database.md` | Real incidents per vuln class with post-mortem links |
+| `immunefi-report-template.md` | Immunefi severity scale, report structure, rejection reasons |
+| `web3-economic-feasibility.md` | Pool manipulation math, flash loan fees, profitability framework |
 
 ---
 
@@ -167,9 +176,15 @@ vuln-web3-access.md                  — Access control, proxy, upgradeability
 vuln-web3-arithmetic.md              — Integer overflow, precision loss
 vuln-web3-defi.md                    — AMM, lending, bridge, governance
 vuln-web3-evm.md                     — Storage slots, returnbomb, gas griefing
+vuln-web3-modern.md                  — Restaking, Account Abstraction, L2/Rollup, Intent-based
 vuln-web3-mev.md                     — Front-running, flash loan, oracle manipulation
 vuln-web3-nft.md                     — Metadata, randomness, royalty bypass
 vuln-web3-reentrancy.md              — Reentrancy, unchecked calls, delegatecall
 vuln-web3-token.md                   — Token flaws, signature replay
+web3-economic-feasibility.md         — Pool manipulation math, flash loan fees, profitability
+web3-immunefi-hunting-strategy.md    — Pre-engagement target selection for web3 bug bounty
+web3-real-exploits-database.md       — Real exploit post-mortems by vulnerability class
 zero-auth-microservice-pattern.md    — Detection, reporting strategy for zero-auth services
+foundry-poc-cookbook.md               — Foundry fork setup, flash loan interfaces, attack templates
+immunefi-report-template.md          — Immunefi severity scale, report structure, rejection reasons
 ```

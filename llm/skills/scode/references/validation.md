@@ -76,6 +76,43 @@ For each confirmed finding, answer:
 - Are there rate limits, WAF rules, or other runtime controls that would block exploitation?
 - Is the vulnerable endpoint deployed/enabled in production?
 
+### 3b. On-Chain Fork Testing (MANDATORY for Web3 findings)
+
+For any smart contract vulnerability, static analysis alone is INSUFFICIENT. You MUST:
+
+1. **Write a Foundry fork test** against the live deployed contract state
+2. **Mock the attack preconditions** (e.g., `vm.mockCall` for oracle malfunction, `vm.prank` for access control)
+3. **Verify the exploit actually works** — don't assume code-level bugs translate to exploitable conditions
+4. **Check Solidity version interactions** — Solidity 0.8+ overflow checks may "accidentally" prevent exploits that look viable in code review (e.g., `uint256(-1) * 10^10` reverts instead of producing a large number)
+5. **Test ALL scenarios** — negative values, zero values, boundary values. Often only ONE specific input is exploitable while others revert
+
+Common pitfalls discovered through real engagements:
+- **Negative price cast:** `uint256(int256(-1))` in Solidity 0.8+ causes overflow revert in subsequent math — "accidentally safe"
+- **Zero price:** `uint256(0) * anything = 0` — no overflow, no revert, silently accepted — THIS is the real exploit
+- **try/catch scope:** A try/catch around `latestAnswer()` does NOT catch overflows in code AFTER the try block (e.g., `scaleAmount()`)
+- **Access control on trigger:** A vulnerability in a library is only exploitable if the attacker can trigger the code path. Check if `harvest()`, `deposit()`, etc. are permissionless or restricted.
+
+**Template:**
+```solidity
+function testExploit() public {
+    // 1. Verify normal operation
+    (uint256 normalPrice, bool normalSuccess) = oracle.getFreshPrice(TOKEN);
+    assertTrue(normalSuccess);
+    
+    // 2. Mock attack precondition
+    vm.mockCall(FEED, abi.encodeWithSelector(...), abi.encode(MALICIOUS_VALUE));
+    
+    // 3. Verify exploit works
+    (uint256 exploitPrice, bool exploitSuccess) = oracle.getFreshPrice(TOKEN);
+    assertTrue(exploitSuccess, "BUG: should have returned false");
+    assertEq(exploitPrice, 0, "BUG: zero price accepted as valid");
+}
+```
+
+**Run command:** `forge test --fork-url <RPC_URL> -vvv`
+
+If the fork test FAILS (reverts where you expected success), the finding is likely NOT exploitable as described. Reassess before reporting.
+
 ### 4. Re-assess Severity
 
 After validation, re-evaluate:

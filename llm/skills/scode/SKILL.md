@@ -500,6 +500,53 @@ This avoids shell quoting issues and macOS grep incompatibilities.
 **Output:** `./assessment/security-review-report.md` + `./assessment/poc/`
 **Output:** `./assessment/bug-bounty-report.md`
 
+### Bug Bounty Platform Report Formats
+
+When the target is a bug bounty program, generate a platform-specific report in addition to the standard security review report.
+
+**Immunefi format** (`./assessment/immunefi-report.md`):
+```markdown
+## Brief/Intro
+{One paragraph: what the bug is and what happens if exploited in production}
+
+## Vulnerability Details
+{Detailed explanation with code snippets. Make it obvious the vulnerability exists.
+Include: vulnerable code, attack chain steps, why existing protections don't help.}
+
+## Impact Details
+{Detailed breakdown of losses. Map to program's in-scope impacts.
+Quantify: how much can be stolen, how many users affected, which contracts.}
+
+## References
+{Links to: vulnerable contract on block explorer, source code on GitHub,
+relevant documentation, Chainlink/protocol incident history}
+```
+
+**YesWeHack format** (`./assessment/ywh-report.md`):
+```markdown
+## Description
+{What the vulnerability is and where it exists}
+
+## Exploitation
+{Step-by-step attack flow}
+
+## PoC
+{Working proof of concept — curl commands, Foundry test, or script}
+
+## Risk
+{Impact + likelihood assessment}
+
+## Remediation
+{Specific code fix with before/after}
+```
+
+**Key rules for bounty reports:**
+- Map your impact to the program's EXACT severity classification wording
+- Include the deployed contract address (block explorer link) as impacted asset
+- PoC must be RUNNABLE — not pseudocode, not "theoretically possible"
+- For web3: Foundry fork test that passes on mainnet fork
+- One finding per submission (don't bundle multiple bugs)
+
 ---
 
 ## Step 5b: PoC Generation (Optional but Recommended for Internal Pentests)

@@ -129,6 +129,33 @@ If the codebase contains Solidity, Vyper, or other smart contract code:
 
 If no smart contract code is present, skip this section.
 
+### 8. Bug Bounty Scope Verification (CRITICAL for bounty programs)
+
+Before proceeding to threat modelling, verify that the contracts you plan to audit are IN SCOPE:
+
+1. **List the program's in-scope assets** — copy the exact contract addresses from the bounty program page
+2. **Cross-reference deployed addresses** — for each contract in the repo, check if its deployed address is in the scope list
+3. **Identify scope gaps** — if the repo contains contracts NOT in scope (infra, oracles, helpers), note them as "out of scope unless manually submitted"
+4. **Check if manual asset submission is allowed** — some programs (e.g., Immunefi) allow submitting findings on unlisted assets with a note
+5. **Verify active usage** — even if a contract is in scope, check if it's actively used (has TVL, recent transactions, not deprecated)
+6. **Document scope mapping** in recon.md:
+
+```markdown
+## Scope Mapping (Bug Bounty)
+
+| Contract | Deployed Address | In Scope List? | Active? | Notes |
+|----------|-----------------|----------------|---------|-------|
+| BeefyVaultV7 | 0x1234... | YES | Yes | Listed in program |
+| BeefyOracleChainlink | 0x5678... | NO | Yes | Core infra, manual submission possible |
+| OldZapContract | 0x9abc... | YES | No | In scope but deprecated, no TVL |
+```
+
+**STOP if no in-scope contracts match your findings.** Either:
+- Pivot to audit the actual in-scope contracts
+- Or confirm the program accepts manual asset submissions before investing time in exploitation
+
+This step prevents wasting hours building exploits for out-of-scope contracts.
+
 ## Output
 
 Save the reconnaissance report to `./assessment/recon.md` (create the `assessment/` directory if it doesn't exist) with this structure:
