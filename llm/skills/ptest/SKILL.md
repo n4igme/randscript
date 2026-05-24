@@ -389,9 +389,29 @@ When mapping the attack surface, score each asset to determine exploitation prio
 
 This prevents wasting time on hardened low-value targets while missing easy wins on high-value ones.
 | 5 | Threat Modeling & Vuln Assessment | `vuln-assessment.md` | Attack trees documented, vuln scans complete, CORS reflection tested on all auth endpoints, vectors prioritized |
-| 6 | Exploitation | `exploit.md` | All mandatory techniques executed, credential inventory validated, top 5 vectors attempted, attack chains documented (see `references/phase6-exploitation-framework.md`) |
+| 6 | Exploitation | `exploit.md` | All mandatory techniques executed, credential inventory validated, top 5 vectors attempted, attack chains documented (see `references/phase6-exploitation-framework.md`). **Local verification passed** (see below). |
 | 7 | Post-Exploitation | `post-exploit.md` | Access type classified, appropriate playbook completed, data scope documented, attack path diagram created, credentials added to inventory (see `references/phase7-post-exploitation-framework.md`) |
 | 8 | Reporting | `report.md` | Final report delivered, pre-delivery checklist passed (see `references/phase8-reporting-process.md`) |
+
+### Local Exploit Verification Gate (Phase 6 → 7 transition, MANDATORY)
+
+Before advancing from Phase 6, every confirmed exploit MUST be locally verified when possible. This prevents submitting broken exploits (wrong payload format, missing interface requirements, incorrect assumptions about server behavior).
+
+**Verification procedure:**
+1. **Re-read the actual source/target behavior** — don't rely on notes from earlier analysis. Re-fetch/re-read the code.
+2. **Simulate the environment locally** — install the same libraries (yauzl, express, spring-boot, etc.), replicate the file structure, run the exploit against your local simulation.
+3. **Verify each chain link independently** — test validation bypass, test payload delivery, test execution separately before combining.
+4. **Compare your assumptions vs actual code** — check function signatures, required interfaces, return value handling, error paths.
+5. **Document verification result** — add "Locally verified: YES/NO (reason)" to the finding.
+
+**When local verification is NOT possible:**
+- Target uses proprietary/closed-source backend (no source available)
+- Environment requires specific cloud services that can't be replicated
+- Exploit depends on race conditions or timing that can't be simulated
+
+In these cases, document: "Local verification not possible: {reason}. Confidence level: HIGH/MEDIUM/LOW based on {evidence}."
+
+**Real-world save (Dojo #51, May 2026):** Initial exploit had wrong plugin interface (`module.exports = { result: flag }` instead of required `get()`, `getName()`, `run()` methods). Also had wrong first-nibble constraint (`0xA || 0xB` instead of actual `0xA || 0xC`). Local simulation caught both before submission.
 
 ---
 
@@ -1275,12 +1295,14 @@ Tab in path (`%09`), semicolon path param (`;x=1`), fragment encode (`%23`) — 
 
 **Key insight:** When Istio RBAC blocks all API services, look for management tooling that sits OUTSIDE the mesh or has different auth (ArgoCD with Dex, Grafana with local auth, Prometheus with no auth). These are often the only exploitable entry points on heavily-hardened cloud-native targets.
 
-**Minimum checklist (add to Phase 2/3 when cloud-native infra detected):**
-- [ ] Check for ArgoCD subdomains (argocd*, argo-cd*, gitops*)
+**Minimum checklist (add to Phase 1/2 when cloud-native infra detected):**
+- [ ] Check for ArgoCD subdomains (argocd*, argo-cd*, gitops*, argocd-ui*, argocd-grpc*)
+- [ ] Check for paired instances (argocd-ui + argocd-ui-stg on separate IPs — common GoTo/enterprise pattern)
 - [ ] Check for Grafana/Prometheus/Jaeger subdomains
 - [ ] If found: test unauthenticated endpoints (/api/version, /api/v1/settings, /healthz)
-- [ ] If Dex/OIDC present: test device code flow
+- [ ] If Dex/OIDC present: test device code flow (`POST /api/dex/device/code` with `client_id=argo-cd`)
 - [ ] Document version + exposed configuration even if auth blocks further access
+- [ ] Report PRODUCTION instance (staging may be excluded by program rules)
 
 ### Exploiting Exposed Keycloak via Gateway
 
@@ -1387,6 +1409,7 @@ If auth is app-level (not mesh-level), document that:
 ## Guardrails
 
 - **Public Disclosure Prohibition** — NEVER publish PoCs, exploit code, or vulnerability details on public URLs (GitHub Pages, personal blogs, Codepen, JSFiddle, public repos) before the vendor acknowledges AND fixes the vulnerability (or 90-day disclosure deadline passes). PoC code belongs in the report body or as a private attachment on the platform. If a hosted PoC is needed for demonstration (e.g., CORS chain), embed the HTML directly in the submission. If you accidentally publish, immediately remove it (git force-push to remove from history), check caches (Google, Wayback Machine), and disclose the brief exposure in your report. Violation = no bounty + potential platform ban. **Real incident (GoPay, May 2026):** PoC pushed to GitHub Pages had to be reverted via `git reset --hard` + force-push. The page was live briefly but returned 404 by the time we checked. Always keep PoCs local in `ptest-output/report/`. See `references/bug-bounty-submission-guide.md` for full policy.
+- **YesWeHack Dojo Challenges** — See `references/yeswehack-dojo-interaction.md` for UI interaction patterns (login requirement, tab structure, programmatic DOM access). Dojo challenges require YWH OAuth login to submit inputs.
 - **Bug Bounty Scope Interpretation** — Pay close attention to scope TYPE on bug bounty platforms. A target listed as "Web application" (e.g., `mokapos.com`) means ONLY that specific domain/app, NOT `*.mokapos.com` wildcard. Only targets explicitly listed as "Wildcard" (e.g., `*.gopayapi.com`) include subdomains. When in doubt, ask the operator before spending time on subdomain recon. Per most programs: "valid report submissions that are outside of the in-scope assets... won't probably go higher than a Tier 2 Medium bounty." Confirm scope interpretation BEFORE Phase 1 subdomain enumeration to avoid wasted effort.
 - **Account Creation Blockers (Bug Bounty)** — some targets require identity verification (KYC, PAN card, national ID) or region-specific phone numbers for account creation. Browser automation is often blocked by Cloudflare/reCAPTCHA. When unauthenticated testing is exhausted and account creation is blocked: (1) document the limitation clearly, (2) offer the user options (manual signup, Google OAuth, API-based registration if available), (3) if user creates account manually, request the auth token from DevTools (Authorization header or cookie). Never attempt to bypass KYC or create fraudulent accounts.
 - **Hardened Target Fast-Exit** — if the first 3 vectors on a target all fail cleanly (proper error handling, no info leak, auth enforced, no default creds), mark it as "hardened" in the checklist and move on. Maximum 15-20 minutes per hardened target. Document what was tested and why it's considered hardened. **Exception:** Always check pre-auth flows (OTP, login, registration, password reset) even on hardened targets — these are outside the auth boundary and often have different security controls than the main API.
@@ -1402,6 +1425,34 @@ If auth is app-level (not mesh-level), document that:
 - **Self-Audit Before Advancing** — before requesting gateway sign-off, proactively review what was missed in the current phase. List gaps honestly (e.g., "we didn't decompile the APK", "we didn't scrape the API docs"). Offer to fill gaps before moving forward. The operator expects thoroughness over speed. Never suggest skipping phases even for bug bounties or "efficiency" — the framework exists to prevent blind spots. Each phase builds on the previous one; shortcuts create gaps that cost more time later.
 - **Phase 1 OSINT Completeness** — before declaring Phase 1 complete, verify ALL of these were attempted: (1) WHOIS/DNS/TXT, (2) subdomain enum (multi-source), (3) Wayback Machine, (4) GitHub/GitLab code search, (5) Google dorking, (6) Shodan/Censys on discovered IPs, (7) JS bundle analysis from accessible apps, (8) Mobile app identification (package names, APK endpoints), (9) Docker Hub/container registry check, (10) dark web & breach data OSINT (see `references/dark-web-breach-osint.md` for full methodology: HIBP, DeHashed, IntelX, Ahmia, ransomware leak sites, DeepDarkCTI). Missing any of these is a gap that should be filled before advancing. Never SUGGEST skipping phases either — even for bug bounties where "time to bounty" feels urgent. The user has explicitly stated: "never skip the phase. because it's a fundamental thing." Each phase builds on the previous; shortcuts produce blind spots.
 - **Scope Enforcement** — never test targets outside defined scope. Re-read `scope.md` before each technique.
+
+### Source Code Review Integration (scode skill)
+
+When source code becomes available during an engagement (via source maps, git exposure, debug endpoints, CTF challenge, or client-provided code), invoke the `scode` skill for structured review. This can happen at any phase:
+
+**Trigger conditions:**
+- Phase 1: Source map (`.js.map`) discovered → extract and review
+- Phase 3: Git repository exposed (`.git/`) → clone and review
+- Phase 3: Debug endpoint leaks source (stack traces, Laravel debug, Spring actuator)
+- Phase 5: Client provides source for white-box assessment
+- Phase 6: Decompiled mobile app code (from `mtest` skill)
+- Any phase: CTF/Dojo challenge with source code provided
+
+**Integration workflow:**
+1. **Trigger:** Source code obtained → note in current phase checklist
+2. **Invoke:** Load `scode` skill, run steps 1-5 (inventory → threat model → trace → findings → report)
+3. **Feed back:** Any findings from code review feed into the ptest findings-log with source: "code review"
+4. **Priority:** Code review findings that reveal exploitable endpoints get fast-tracked to Phase 6 exploitation
+5. **Document:** Add `source-code-review.md` to the current phase's output directory
+
+**What scode adds that ptest alone misses:**
+- Logic flaws not detectable via black-box (auth bypass in middleware ordering)
+- Hardcoded secrets in non-deployed code paths
+- Unsafe deserialization in internal APIs
+- Race conditions in transaction handling
+- Crypto misuse (weak PRNG, ECB mode, static IV)
+
+**Key rule:** Code review does NOT replace black-box testing. A function that looks secure in source may be exploitable due to deployment configuration, library version differences, or environment-specific behavior. Always verify code review findings with actual exploitation.
 - **Bug Bounty Related-Domain Scope Risk** — when you discover findings on domains that are clearly the same company/product but use a DIFFERENT root domain than what's listed in scope (e.g., `go-pay.co.id` vs scoped `gopay.co.id`), treat these as borderline. Strategy: (1) submit clear-scope findings first to establish credibility, (2) submit borderline-scope findings LAST with a "Scope note" explaining why the asset relates to in-scope targets, (3) frame impact in terms of how it affects the explicitly-scoped assets (e.g., "ArgoCD manages the K8s cluster serving *.gopayapi.com"). Worst case: reduced bounty tier. Best case: accepted at full severity because the triager recognizes it's the same infrastructure.
 - **Bug Bounty Scope Type Interpretation** — when a program lists an asset as "Web application" (e.g., `mokapos.com`) vs "Wildcard" (e.g., `*.gopayapi.com`), treat them differently. A "Web application" scope means ONLY that specific domain (and www), NOT all subdomains. Subdomains may be accepted at program discretion but at reduced bounty. Always check the scope type column before starting subdomain enumeration. If the operator wants to test broadly anyway, document the risk of rejection in scope.md.
 - **Evidence Required** — every finding must have reproducible proof.

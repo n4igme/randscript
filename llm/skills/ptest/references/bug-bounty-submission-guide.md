@@ -411,6 +411,10 @@ Before submitting, verify you have:
 
 ## Finding Splitting Strategy
 
+### Default: Split Per Endpoint/App
+
+**User preference:** When in doubt, split findings into individual reports per affected endpoint or application. The operator prefers maximizing bounty count over combined severity. Only combine when findings are truly dependent (Step A is required to exploit Step B). When asked to "finalize reports," default to one finding per submission unless explicitly told to combine.
+
 ### When to Submit as One Chain vs Split
 
 | Scenario | Strategy | Rationale |

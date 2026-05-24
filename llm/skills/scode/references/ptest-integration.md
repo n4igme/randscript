@@ -433,7 +433,7 @@ mapper.enableDefaultTyping();  // <-- polymorphic deserialization
 # application.yml
 third-party:
   payment-gateway:
-    api-key: "sk_live_EXAMPLE_REDACTED"
+    api-key: "sk_live_EXAMPLE_REDACTED_KEY_HERE"
 ```
 
 **Craft exploit:**

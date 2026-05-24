@@ -152,8 +152,46 @@ When documenting bulk actuator exposure:
 3. **Medium-term:** Place all non-production environments behind VPN/IAP
 ```
 
+## WAF-Specific Bypass Patterns
+
+### Alibaba Cloud WAF (Tengine) — Confirmed May 2026
+
+On `api.findaya.co.id` (GoTo Financial):
+- **Blocked:** `/actuator/prometheus` → 405 (Alibaba WAF block page with Chinese/English error)
+- **Allowed:** `/actuator`, `/actuator/health`, `/actuator/info`, `/actuator/metrics`, `/actuator/metrics/{name}` → 200
+
+The WAF has a rule for `/prometheus` (likely matching the path keyword) but does NOT block the actuator index or individual metrics endpoints. This means:
+- `/actuator/metrics/http.server.requests` returns the SAME data as Prometheus (all URI tags, status codes, etc.)
+- You can enumerate every metric name via `/actuator/metrics` then query each individually
+- The WAF rule is path-keyword-based, not endpoint-function-based
+
+**Workaround when /actuator/prometheus is blocked:**
+```bash
+# 1. Get all metric names
+curl -sk "https://$TARGET/actuator/metrics" | jq '.names[]'
+
+# 2. Query each individually (same data as prometheus, just JSON not text)
+curl -sk "https://$TARGET/actuator/metrics/http.server.requests" | jq '.availableTags[] | select(.tag=="uri") | .values[]'
+
+# 3. The URI tag values ARE the complete API route map
+```
+
+**Detection:** Alibaba WAF block page has `<title>405</title>`, references `errors.aliyun.com`, contains `traceid` in a hidden textarea, and server header is `Tengine`.
+
+### Tencent Cloud WAF — Confirmed May 2026
+
+On GoTo/Gojek targets:
+- Blocks dotfile access (`.git`, `.env`) → 403 with WAF block page
+- Blocks `/actuator/env` → 403
+- Does NOT consistently block `/actuator/health` or `/actuator/info`
+- Server header: `stgw`, has `eo-log-uuid` header
+
 ## Lesson Learned
 
 > "Testing a few API endpoints and seeing 401 does NOT mean the host is secure.
 > Framework endpoints (actuator, swagger, console) operate independently of
 > application auth. ALWAYS test them separately, on EVERY host."
+
+> "When a WAF blocks /actuator/prometheus, try /actuator/metrics instead.
+> WAF rules are often keyword-based ('/prometheus') not function-based.
+> The metrics endpoint returns the same data in JSON format."

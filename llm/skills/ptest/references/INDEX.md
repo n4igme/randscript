@@ -63,6 +63,10 @@ Quick lookup: what you found → which reference to load.
 | CORS `*` + Debug mode combined | `source-map-token-exploitation.md` (CORS + Debug section) |
 | Flutter Web app (main.dart.js) | `source-map-token-exploitation.md` (Flutter/Proto section), `js-bundle-recon.md` |
 | Protobuf bundle in JS (*-protos*.js) | `source-map-token-exploitation.md` (Flutter/Proto section) |
+| Node.js library vuln (yauzl, adm-zip, require, path.join) | `nodejs-library-attacks.md` |
+| Zip upload / archive extraction | `nodejs-library-attacks.md` §2, `web-vuln-bypass-tables.md` (Zip Slip) |
+| Custom crypto / license key / proprietary validation | `proprietary-crypto-reversing.md` |
+| Source code obtained (source map, git, debug, white-box) | **Invoke `scode` skill** (see main SKILL.md § Source Code Review Integration) |
 | SPA / React / Angular / Vue frontend | `web-vuln-bypass-tables.md` (DOM XSS sources/sinks, postMessage, DOM clobbering) |
 | Bug bounty submission / report writing | `bug-bounty-submission-guide.md` |
 | Multi-step attack chain (need to explain WHY) | `attack-chain-narrative-writing.md` |
@@ -189,12 +193,14 @@ cicd-pipeline-exploitation.md        — Jenkins RCE, GitLab CI variables, GitHu
 multi-operator-coordination.md       — Team coordination for multi-person engagements
 nmap-cloud-targets.md                — Nmap behavior on GCP/AWS load balancers
 oauth-sso-attack-chains.md           — OAuth/OIDC attack chains, token analysis, Keycloak-specific attacks
+nodejs-library-attacks.md             — Node.js library-level vulns: path.join traversal, yauzl/adm-zip Zip Slip, require() RCE, prototype pollution, ReDoS
 non-http-protocol-testing.md         — SMTP, SFTP/SSH, OpenVPN, DNS
 operational-pitfalls.md              — 50+ battle-tested tool/target pitfalls
 parallel-http-probing.md             — Parallel bash probing pattern
 parameter-pollution.md               — HPP server behavior, WAF bypass
 path-traversal-actuator-bypass.md    — ..;/ ingress bypass techniques
 pattern-subdomain-bruteforce.md      — Pattern-based DNS brute-force
+proprietary-crypto-reversing.md      — Reversing custom crypto: LCG, XOR checksum, modular arithmetic, constraint solving, Z3, JS pitfalls
 phase6-exploitation-framework.md     — Structured exploitation checklist
 phase7-post-exploitation-framework.md — Access classification and playbooks
 phase8-reporting-process.md          — Report writing, audience, delivery

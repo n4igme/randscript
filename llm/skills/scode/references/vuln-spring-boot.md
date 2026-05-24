@@ -756,6 +756,102 @@ server:
 
 ---
 
+## 13. Zero-Security Internal Microservices (Kotlin/Java)
+
+**Severity:** Critical (systemic)
+**CWE:** CWE-306
+
+### Context
+
+Common in Kubernetes-native microservices that rely entirely on network-level security (service mesh, NetworkPolicy). The service has NO `spring-boot-starter-security` dependency at all. All endpoints are unauthenticated. This is a fundamentally different (worse) pattern than misconfigured Spring Security.
+
+### Patterns to Find
+
+```bash
+# Confirm no security dependency
+grep -rn "spring-boot-starter-security\|spring-security" build.gradle* pom.xml 2>/dev/null
+# If zero results → CRITICAL systemic finding
+
+# Confirm no security config
+find . -name "*Security*" -o -name "*SecurityConfig*" | grep -v test
+grep -rn "@EnableWebSecurity\|SecurityFilterChain\|WebSecurityConfigurerAdapter" --include="*.kt" --include="*.java" .
+
+# Count exposed endpoints (for impact assessment)
+grep -rn "@GetMapping\|@PostMapping\|@PutMapping\|@DeleteMapping\|@PatchMapping" --include="*.kt" --include="*.java" . | grep -v test | wc -l
+```
+
+### Reporting Strategy
+
+Do NOT list every endpoint as a separate finding. Instead:
+
+1. **One Critical finding**: "No Spring Security — all N endpoints unauthenticated" (systemic)
+2. **Individual findings only for high-impact operations**: loan disbursement, fund transfer, manual adjustment, FX rate update, admin operations — these get their own findings because they represent distinct attack scenarios with different impacts
+3. **Group IDOR findings**: endpoints that accept user-controlled IDs without ownership checks
+
+### Common Patterns in Bank Jago Internal Services
+
+```kotlin
+// Pattern: "private" prefix provides ZERO security — just naming convention
+@RestController
+@RequestMapping("/private/manual-adjustment")  // NOT actually private
+class ManualAdjustmentController { ... }
+
+// Pattern: Optional idempotency key defeats deduplication
+@PostMapping("/transfer/intrabank")
+fun createIntraBankTransaction(
+    @RequestBody request: IntraBankTransactionRequestDto,
+    @RequestHeader(IDEMPOTENCY_KEY) idempotencyKey: String? = null,  // Optional = double-spend risk
+): ResponseEntity<*> {
+    intraBankTransactionCoordinator.doTransaction(
+        request,
+        idempotencyKey?.takeIf { it.isNotBlank() } ?: uuidWrapper.randomUUID(),  // Auto-UUID = no idempotency
+    )
+}
+
+// Pattern: Mass assignment via Map<String, Any> in financial DTOs
+data class HoldBalanceRequestDto(
+    val sourceAccountNo: String,
+    val transactionAmount: BigDecimal,
+    val additionalPayload: Map<String, Any>? = null,  // Accepts ANYTHING
+)
+```
+
+### Key Differences from Misconfigured Security
+
+| Aspect | Misconfigured Security | Zero Security |
+|--------|----------------------|---------------|
+| Dependency | Has spring-security | No security dependency |
+| Fix effort | Config change | Architecture change |
+| Scanner approach | Check filter chain rules | Count exposed endpoints |
+| Report framing | "Gaps in auth" | "No auth layer exists" |
+| Typical context | External-facing app | Internal K8s microservice |
+| Trust model | Gateway + app auth | Network-only (insufficient) |
+
+### Remediation for Zero-Security Services
+
+```kotlin
+// Minimum viable: service-to-service JWT validation
+implementation("org.springframework.boot:spring-boot-starter-security")
+implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
+
+// SecurityConfig.kt
+@Configuration
+@EnableWebSecurity
+class SecurityConfig {
+    @Bean
+    fun filterChain(http: HttpSecurity): SecurityFilterChain = http
+        .authorizeHttpRequests { auth ->
+            auth.requestMatchers("/actuator/health", "/actuator/info").permitAll()
+            auth.requestMatchers("/private/admin/**").hasRole("ADMIN")
+            auth.anyRequest().authenticated()
+        }
+        .oauth2ResourceServer { it.jwt {} }
+        .build()
+}
+```
+
+---
+
 ## Integration with scode Steps
 
 | Step | How This Scanner Integrates |

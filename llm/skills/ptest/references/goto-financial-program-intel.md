@@ -325,14 +325,180 @@
 5. **`*.go-pay.co.id` IS in scope** (Medium wildcard, row 6 in scope table) — don't confuse with `gopay.co.id`. Submit ArgoCD finding under this asset directly, no scope note needed.
 6. **Disclosure policy lesson:** Never push PoC HTML to public GitHub Pages before vendor acknowledgment. Keep PoCs in local ptest-output directory and paste code directly in report body.
 
+## go-pay.co.id Infrastructure (from recon, May 2026)
+
+- **DNS:** Alibaba Cloud DNS (ns1/ns2.alidns.com)
+- **Main IP:** 34.96.114.176 (GCP) — go-pay.co.id apex, but HTTPS not responding
+- **TXT:** `v=spf1 -all` (no email sending), Google site verification
+- **WHOIS:** PT GOTO GOJEK TOKOPEDIA, CSC Corporate Domains registrar, created 2018
+- **Subdomains:** 55 discovered via subfinder. Most are internal IPs or non-resolving.
+- **Key services:** ArgoCD (prod+stg), imali, exchange, portal, global-portal, service-graph, VPN
+- **Cloud:** Mix of Alibaba Cloud (149.129.x.x, 147.139.x.x) + GCP (34.96.x.x)
+- **Service mesh:** Istio/Envoy on global-portal (RBAC: access denied)
+
+### ArgoCD Exposure (FINDING-9, May 2026)
+
+**Production:** `argocd-ui.go-pay.co.id` → 149.129.250.140 (Alibaba Cloud)
+- Version: v2.14.13+5ad281e
+- Auth: Google SSO via Dex, `userLoginsDisabled: true`
+- `execEnabled: true` (pod exec available to authenticated users)
+- Kustomize: `--load-restrictor LoadRestrictionsNone`
+- Managed resources: Elasticsearch, Kafka (Strimzi), Velero, cert-manager, ClusterRoleBindings, CRDs, Argo Rollouts
+- Unauthenticated endpoints: `/api/v1/settings`, `/api/version`, `/api/dex/keys` (5 RSA keys), `/api/dex/.well-known/openid-configuration`
+- **Device code flow works:** `POST /api/dex/device/code` with `client_id=argo-cd` returns valid device codes
+- Social engineering vector: trick engineer into approving device code → full cluster access with exec
+
+**Staging:** `argocd-ui-stg.go-pay.co.id` → 149.129.243.113
+- Version: v3.0.2+8a7c0f0 (newer than prod)
+- Same exposure pattern, same device code flow
+
+**Other live hosts:**
+- `global-portal.go-pay.co.id` → 8.215.48.67 (Alibaba) — Istio RBAC blocked
+- `stg.imali.go-pay.co.id` → 147.139.210.243 — 404 (empty)
+- `gopaysh-stg.go-pay.co.id` → 10.121.208.49 (internal, unreachable)
+- Most subdomains: internal IPs (10.x, portal.go-pay.co.id → 10.15.1.86) or non-resolving
+
+### go-pay.co.id Lessons Learned
+
+1. **ArgoCD is the gem** — most services are RBAC-blocked or internal, but ArgoCD management plane is internet-facing
+2. **Device code flow on Dex** is a reliable social engineering vector on ArgoCD instances with Google SSO
+3. **`stg.go-pay.co.id` doesn't exist** — no DNS record. Staging subdomains use pattern `argocd-ui-stg`, `stg.imali`, `stg.exchange` etc.
+4. **Production ArgoCD is in-scope** — it's under `*.go-pay.co.id` wildcard and is NOT a staging environment (it manages prod cluster)
+
+## gofin.io Infrastructure (from recon, May 2026)
+
+- **DNS:** Alibaba Cloud DNS (ns1/ns2.alidns.com)
+- **WHOIS:** PT GOTO GOJEK TOKOPEDIA, CSC Corporate Domains, created 2018-08-22
+- **TXT:** `v=spf1 -all`, Google site verification
+- **Subdomains:** 73 discovered. Services: cashloans, paylater, deduction-engine, findaya, northstar, yggdrasil, kafka
+- **Status: LARGELY DECOMMISSIONED/INTERNAL**
+  - Only 4 subdomains resolve externally: api.deduction-engine (13.214.67.72), api.kafka (same IP), portal.vpn (18.141.102.62), pact (10.x internal)
+  - ALL external IPs have NO open ports on top 20 — no HTTP/HTTPS response
+  - Staging NLB (dde-staging-internet-nlb-*.elb.ap-southeast-1.amazonaws.com) also unresponsive
+  - Infrastructure appears shut down or migrated elsewhere
+- **Not worth further investment** unless new intel surfaces
+
 ## Recommended Next Targets
 
 Priority order for future sessions:
-1. **gojekapi.com Phase 2** — port scan (8080 on api IP, MQTT ports, SSH on partners), active DNS brute-force
-2. **GoPay mobile app** — decompile APK, find hardcoded tokens/endpoints, test API with extracted auth
-3. ***.go-pay.co.id** — Medium value wildcard, may have different infra
-4. ***.gofin.io** — GoTo Financial labs, may have less hardened services
-5. ***.findaya.com / *.findaya.co.id** — Findaya (GoTo lending), separate infra likely
-6. ***.gtflabs.io** — GoTo Financial labs/experiments
-7. **gopaymerchant.midtrans.com** — High value, merchant-facing
-8. **gofood.co.id (authenticated)** — Obtain Gojek consumer token via mobile app, test /api/orders, /api/pricing/estimate, GoID flows on non-prod
+1. **findaya.co.id Phase 2+** — complete recon, test OTP endpoint rate limiting, probe more actuator metrics, check other app hosts for source maps
+2. **gojekapi.com Phase 2** — port scan (8080 on api IP, MQTT ports, SSH on partners), active DNS brute-force
+3. **GoPay mobile app** — decompile APK, find hardcoded tokens/endpoints, test API with extracted auth
+4. ***.findaya.com** — separate domain, may have different infra than findaya.co.id
+5. ***.gtflabs.io** — GoTo Financial labs/experiments (CDN domain seen: gopay-website.al-gp-id-p.cdn.gtflabs.io)
+6. **gopaymerchant.midtrans.com** — High value, merchant-facing
+7. **gofood.co.id (authenticated)** — Obtain Gojek consumer token via mobile app
+8. ~~***.go-pay.co.id**~~ — Mostly exhausted (ArgoCD found, rest is RBAC/internal)
+9. ~~***.gofin.io**~~ — Decommissioned, no live services
+
+---
+
+## go-pay.co.id Engagement Results (May 2026)
+
+**Program:** GoTo Financial (*.go-pay.co.id wildcard, Medium value)
+**Result:** 1 High finding (ArgoCD)
+
+### Infrastructure
+- **DNS:** Alibaba Cloud (vip7/vip8.alidns.com)
+- **Main site:** 34.96.114.176 (GCP) — not responding on HTTP
+- **ArgoCD prod:** argocd-ui.go-pay.co.id → 149.129.250.140 (Alibaba Cloud)
+- **ArgoCD stg:** argocd-ui-stg.go-pay.co.id → 149.129.243.113
+- **Other hosts:** mostly internal IPs or Istio RBAC-blocked (global-portal → 8.215.48.67, 403)
+- **Subdomains:** 55 discovered, most internal (portal, vpn, exchange, imali, service-graph)
+- **Internal tooling in DNS:** GitLab, VPN, Rancher, service-graph, dashboard
+
+### Findings
+
+| ID | Title | Severity | Asset | Reportable? |
+|----|-------|----------|-------|-------------|
+| F-9 | ArgoCD prod exposed + device code flow + execEnabled | High (7.3) | argocd-ui.go-pay.co.id | YES |
+
+### Key Lessons
+- `stg.go-pay.co.id` does NOT resolve — staging pattern is `argocd-ui-stg.go-pay.co.id` (stg as prefix in subdomain)
+- Most services are internal-only or RBAC-blocked
+- Management tooling (ArgoCD) was the only exploitable surface
+
+---
+
+## gofin.io Engagement Results (May 2026)
+
+**Program:** GoTo Financial (*.gofin.io wildcard, Medium value)
+**Result:** 0 findings — infrastructure decommissioned
+
+### Infrastructure
+- **DNS:** Alibaba Cloud (ns1/ns2.alidns.com)
+- **Registrant:** PT GOTO GOJEK TOKOPEDIA (CSC Corporate Domains)
+- **Subdomains:** 73 discovered (cashloans, paylater, deduction-engine, kafka, yggdrasil, northstar)
+- **Live hosts:** Only 4 resolve externally — ALL timeout on HTTP (ports 80/443/8080/8443)
+- **nmap:** No open ports on top 20
+
+### Key Lesson
+- gofin.io is DEAD — DNS records exist but no services respond
+- Lending services migrated to findaya.co.id infrastructure
+- Not worth further investment
+
+---
+
+## findaya.co.id Engagement Results (May 2026)
+
+**Program:** GoTo Financial (*.findaya.co.id wildcard, Medium value)
+**Result:** 3 findings (1 High, 1 Medium, 1 Low) — Phase 1 still in progress
+
+### Infrastructure
+- **DNS:** Alibaba Cloud (vip7/vip8.alidns.com)
+- **Cloud:** Alibaba Cloud Jakarta (8.215.x.x, 147.139.x.x)
+- **Email:** Google Workspace
+- **Integrations:** Atlassian, Mailgun, Salesforce
+- **Main IPs:**
+  - 8.215.152.172 — API/app cluster (api, app, cashloans, gomodal, modaltoko, tokokapital)
+  - 8.215.43.91 — Web/services cluster (www, sentry, lender-dashboard, funding, payment)
+  - 147.139.202.38 — Teleport proxy
+  - 8.215.87.224 — MLflow
+- **Service mesh:** Istio/Envoy on internal services (403 RBAC on lender-dashboard, funding, payment, mlflow)
+- **WAF:** Alibaba Cloud WAF (Tengine) on cashloans gateway
+- **Products:** cashloans (GoPay Pinjam Modal), paylater, modaltoko, tokokapital, gomodal
+- **Backend:** Spring Boot (Java 11), PostgreSQL, Kafka, HikariCP
+- **Frontend:** Next.js (cashloans), React SPA (app.findaya.co.id)
+- **Monitoring:** Grafana Faro (katulampa.gopay.sh — shared with GoPay), New Relic (accountID 1986505)
+- **Remote access:** Teleport Enterprise v17.7.21 (K8s + SSH + DB proxy)
+- **Error tracking:** Self-hosted Sentry (behind Istio)
+- **S3 bucket:** p-go-finance-paylater-asset-s3.s3-ap-southeast-1.amazonaws.com (403)
+
+### API Routes (from actuator metrics)
+- `/v1/login/token`, `/v1/login/sso/gobiz`, `/v1/login/sso/gopay`, `/v1/login/gma`
+- `/v2/login`, `/v2/login/gobiz`
+- `/v1/otp` (pre-auth, needs: phoneNumber, countryCode)
+- `/v1/user`, `/v1/user/events`, `/v1/user/token/ml-cashloan`
+- `/v1/user/kyc/submission`, `/v1/user/progressive-kyc/callback`
+- `/integration/gopay/kyc/v1/{gopay_account_id}/callback`
+- `/legalEntityKYC/v1`, `/legalEntityKYC/v1/onboarding-doc`
+- `/sme/v1/bank-profile`
+
+### Pre-Auth Endpoint Parameters
+- `POST /v1/otp` → needs: `phoneNumber`, `countryCode`
+- `POST /v2/login` → needs: `otpToken`, `otp`
+- `POST /v1/login/token` → needs: `code`
+- `POST /v1/login/sso/gopay` → needs: `code`, `redirectUrl`
+
+### Findings
+
+| ID | Title | Severity | Asset | Reportable? |
+|----|-------|----------|-------|-------------|
+| F-1 | Unauthenticated Spring Boot Actuator (health, info, metrics) | High (7.5) | api.findaya.co.id | YES |
+| F-2 | Teleport Enterprise config disclosure (K8s/SSH/DB proxy) | Medium (5.3) | teleport-proxy.apps.findaya.co.id | YES |
+| F-3 | Self-hosted Sentry exposed to internet | Low (3.7) | sentry.findaya.co.id | Borderline |
+
+### Business Context (from i18n strings)
+- **GoPay Pinjam Modal** = cash loan product (formerly Kredit Pintar, migrating to Findaya)
+- **Repayment:** GoPay, Virtual Account (BCA/BRI/Mandiri/BNI/Permata), Alfamart
+- **Daily deduction:** automatic from GoPay Merchant balance
+- **Partners:** Bank Jago (jago-client subdomains), GoBiz merchants
+- **Vehicle financing:** BPKB-backed loans up to 2B IDR (cross-sell)
+
+### Key Lessons
+- **Actuator is the weak link** — Spring Boot default config exposes metrics without auth
+- **Alibaba Cloud WAF blocks /prometheus** but NOT /actuator/metrics — WAF rule gap
+- **Shared monitoring infra** — same Grafana Faro API key as GoPay (katulampa.gopay.sh)
+- **Teleport /webapi/ping always unauthenticated** — by design; internet exposure is the issue
+- **252 subdomains** but most RBAC-blocked — management tooling and actuator are viable surface
+- **Pre-auth endpoints accessible** — OTP/login endpoints return field validation errors (parameter discovery)

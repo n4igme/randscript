@@ -364,6 +364,79 @@ admin:admin
 
 ---
 
+## Teleport (Gravitational)
+
+### Detection
+
+Common subdomain patterns:
+```
+teleport.domain.com / teleport-proxy.domain.com
+teleport-proxy.apps.domain.com
+remote.domain.com / access.domain.com
+```
+
+Fingerprint: `302 → /web` with `__Host-grv_csrf` cookie, CSP with `wss:` connect-src.
+
+### Unauthenticated Endpoints
+
+```bash
+# Version, auth config, proxy capabilities (ALWAYS accessible)
+curl -sk "https://$TELEPORT/webapi/ping" | python3 -m json.tool
+
+# OIDC discovery
+curl -sk "https://$TELEPORT/.well-known/openid-configuration"
+
+# JWKS (signing keys)
+curl -sk "https://$TELEPORT/.well-known/jwks-oidc"
+
+# Web config (may reveal cluster details)
+curl -sk "https://$TELEPORT/web/config.js"
+```
+
+### Key Settings from /webapi/ping
+
+| Setting | Risk if Exposed |
+|---------|----------------|
+| `proxy.kube.enabled: true` | Kubernetes cluster access gateway |
+| `proxy.ssh.listen_addr` | SSH server access |
+| `proxy.db.postgres_listen_addr` | Database proxy (PostgreSQL) |
+| `proxy.db.mysql_listen_addr` | Database proxy (MySQL) |
+| `auth.type: "oidc"` | SSO provider (Google, Okta, etc.) |
+| `auth.second_factor: "otp"` | 2FA method |
+| `cluster_name` | Internal cluster identifier |
+| `server_version` | Exact version for CVE targeting |
+| `edition: "ent"` | Enterprise vs OSS |
+| `tls_routing_enabled: true` | All services multiplexed on 443 |
+
+### Severity Guidance
+
+| Scenario | Severity |
+|----------|----------|
+| Teleport exposed + K8s/SSH/DB proxy enabled + config disclosure | Medium (5.3) |
+| Teleport exposed + weak auth (no 2FA, local accounts) | High |
+| Teleport exposed + known CVE for version | High-Critical |
+| Teleport exposed + anonymous access to resources | Critical |
+
+### Real-World Case Study: Findaya Teleport (May 2026)
+
+**Target:** `teleport-proxy.apps.findaya.co.id` (GoTo Financial, `*.findaya.co.id`)
+**Version:** 17.7.21 Enterprise
+**Config disclosed:**
+- Cluster name: `main`
+- Auth: Google SSO + OTP (2FA)
+- K8s proxy: enabled (0.0.0.0:443)
+- SSH proxy: enabled
+- DB proxy: PostgreSQL + MySQL
+- TLS routing: enabled
+- Session TTL: 12 hours
+- 2 RSA signing keys in JWKS
+
+**Severity:** Medium — config disclosure aids attack planning but auth is strong (SSO + OTP). No bypass found.
+
+**Key lesson:** Teleport's `/webapi/ping` is ALWAYS unauthenticated by design (it's how the client discovers auth requirements). The finding is the internet exposure itself — this should be behind VPN/IP allowlist.
+
+---
+
 ## Reporting Notes
 
 - Frame as "exposed internal service" not "social engineering" (for device code findings)

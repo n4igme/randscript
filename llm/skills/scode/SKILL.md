@@ -1,6 +1,6 @@
 ---
 name: scode
-version: 1.0.0
+version: 2.0.0
 description: "Source code security review framework with 5 gated steps: recon, threat model, vulnerability scanning (23 sub-scanners), validation, and reporting."
 tags: [code-review, bug-bounty, security, static-analysis, vulnerability]
 trigger: "code review, source code audit, bug bounty, security review, vuln scan"
@@ -107,6 +107,9 @@ scan_progress:
   web3-evm: PENDING
   infra: PENDING
   spring-boot: PENDING
+  nodejs: PENDING
+  custom-crypto: PENDING
+  mobile-code: PENDING
 
 time_tracking:
   step_1_start: ""
@@ -219,6 +222,8 @@ Before running all scanners, check recon.md and skip what doesn't apply:
 | No file upload endpoints | file-path (keep path traversal checks) |
 | No XML/SOAP | deserialization (keep JSON deser checks) |
 | Pure API (no HTML) | client-side (keep open redirect) |
+| No package.json / Node.js code | nodejs |
+| No mobile code (no AndroidManifest, Info.plist, .dart, RN bundle) | mobile-code |
 
 ### Deployment Security Scanner (3v)
 
@@ -269,6 +274,9 @@ If no results → mark ALL web3-* as SKIPPED.
 | 3t | infra | `references/vuln-infra.md` | Terraform, Dockerfile, K8s, CI/CD, Helm |
 | 3u | spring-boot | `references/vuln-spring-boot.md` | Actuator, security annotations, SpEL, mass assignment, Keycloak |
 | 3v | deployment-security | (inline) | Helm values, Istio AuthorizationPolicy, NetworkPolicy, mTLS, PeerAuthentication |
+| 3w | nodejs | `references/vuln-nodejs.md` | path.join traversal, require() RCE, Zip Slip, prototype pollution, vm escape, ReDoS |
+| 3x | custom-crypto | `references/vuln-custom-crypto.md` | Proprietary validation, LCG, custom HMAC, Math.random(), homegrown tokens |
+| 3y | mobile-code | `references/vuln-mobile-code.md` | Android/iOS decompiled code, React Native, Flutter, cert pinning, hardcoded secrets |
 | — | (supplement) | `references/spring-boot-mass-assignment-patterns.md` | Map<String,Any> in DTOs, force-flag injection, validation checklist |
 | — | (pattern) | `references/zero-auth-microservice-pattern.md` | Detection, reporting strategy, validation checklist for zero-auth services |
 | — | (supplement) | `references/deployment-security-checks.md` | Helm values, Istio AuthorizationPolicy, NetworkPolicy, mTLS |
@@ -398,20 +406,6 @@ Each scanner's section is identified by its header (`# Vulnerability Findings �
 ## Step 4: Validation (`validate`)
 
 Re-examine each finding by going back to source code. Confirm exploitability, eliminate false positives.
-
-**Gate:** validated-vulnerabilities.md exists with all findings classified
-
-### Validation Batching Strategy
-
-Validate by risk tier to maximize efficiency:
-1. **Critical findings** — validate individually, full data flow trace
-2. **High findings** — batch by category (all AC together, all LG together), delegate 3 categories per batch
-3. **Medium/Low findings** — spot-check 2-3 per category to confirm pattern, then accept rest if pattern holds
-
-For 50+ findings, use 3 parallel delegation batches:
-- Batch 1: Access Control + Logic (highest FP risk — need to check for hidden auth, unique indexes)
-- Batch 2: Spring Boot + Data Exposure + DoS (config-based, lower FP risk)
-- Batch 3: Injection + SSRF + Crypto + Dependency (version/pattern checks, lowest FP risk)
 
 ### Process
 
