@@ -1,6 +1,6 @@
 ---
 name: scode
-version: 2.0.0
+version: 2.1.0
 description: "Source code security review framework with 5 gated steps: recon, threat model, vulnerability scanning (23 sub-scanners), validation, and reporting."
 tags: [code-review, bug-bounty, security, static-analysis, vulnerability]
 trigger: "code review, source code audit, bug bounty, security review, vuln scan"
@@ -299,10 +299,15 @@ If ALL return empty → mark as "Zero Auth" and apply the Zero-Auth Fast Path be
 
 When a service has ZERO authentication (no Spring Security, no custom filters, no Istio AuthorizationPolicy):
 
-1. **Create ONE systemic finding** (Critical, CWE-306) with a table listing all affected endpoints — NOT 20+ individual findings
-2. **Still scan other categories normally** (logic, data-exposure, etc. are independent of auth)
-3. **In the report**, lead with the systemic auth gap as VULN-001, then list other findings separately
-4. **During validation**, confirm zero-auth once (check all build files, interceptors, Helm/Istio config) — don't re-validate per endpoint
+1. **Create ONE systemic finding** (Critical, CWE-306) with a table listing all controllers and their endpoints — NOT 20+ individual findings
+2. **Create individual IDOR findings** ONLY for endpoints where object-level authorization matters even with service-to-service auth (e.g., transaction lookup by arbitrary ID, capture by blockingId)
+3. **Create individual Critical findings** for highest-impact endpoints that warrant separate attention in remediation (BIFast transfers, bulk payroll, loan disbursement, FX rate updates)
+4. **Skip creating separate findings** for each "no auth" endpoint — the systemic finding covers them
+5. **Still scan other categories normally** (logic, data-exposure, etc. are independent of auth)
+6. **In the report**, lead with the systemic auth gap as VULN-001, then list other findings separately
+7. **During validation**, confirm zero-auth once (check all build files, interceptors, Helm/Istio config) — don't re-validate per endpoint
+
+This reduces 21 findings to ~8-10 focused ones without losing signal.
 
 Exception: If some endpoints have DIFFERENT risk levels (e.g., BIFast transfer vs health check), create 2-3 grouped findings by impact tier rather than one flat list.
 
@@ -330,8 +335,6 @@ For large codebases, batch scanners into parallel delegate_task calls (3 per bat
 
 **Pitfall:** macOS `grep` does not support `-P` (Perl regex). Use `grep -oE` with extended regex, or use Python/sed for complex pattern extraction. This matters when parsing SQLi output or scanner results on macOS.
 
-**Pitfall:** The `execute_code` tool requires explicit code content — it cannot be called with empty parameters. When compiling scanner results into files, use `write_file` or `terminal` with heredoc instead.
-
 **Pitfall:** When writing vulnerabilities.md with 50+ findings, the file content often exceeds what write_file can handle in a single call (context/token limits cause empty writes). Use `cat >> file << 'ENDOFFILE'` via terminal in batches (one scanner category per append). Verify with `wc -l` after each append.
 
 **Practical batch sizing:** 3 scanners per batch is optimal. Each scanner subagent needs ~50-200 file reads. More than 3 per batch risks timeout.
@@ -339,17 +342,6 @@ For large codebases, batch scanners into parallel delegate_task calls (3 per bat
 **Pitfall:** Writing vulnerabilities.md after multiple scanners return can exceed single write_file limits. Strategy: write each scanner's findings as a SEPARATE file (`vulnerabilities-ac.md`, `vulnerabilities-sb.md`, etc.) immediately after each delegation returns, then create a short `vulnerabilities.md` index that references them. Alternatively, write in chunks using append mode or terminal `cat >> file`. Never defer writing — if a scanner returns findings, persist them immediately before running the next scanner.
 
 **Pitfall:** For internal microservices with ZERO Spring Security (no `spring-boot-starter-security` dependency at all), the access-control scanner will produce 15-25+ findings because EVERY endpoint is unauthenticated. Group these by root cause ("No Spring Security dependency") in the report rather than listing each endpoint individually. The real finding is the systemic gap, not 20 instances of it.
-
-### Zero-Auth Fast Path
-
-If the Spring Boot Zero-Auth Detection check (in recon) confirms no auth exists at all, use this fast path for the access-control scanner:
-
-1. Create ONE Critical finding: "CWE-306: No Application-Level Authentication" with a table listing all controllers and their endpoints
-2. Create individual IDOR findings ONLY for endpoints where object-level authorization matters even with service-to-service auth (e.g., transaction lookup by arbitrary ID, capture by blockingId)
-3. Create individual Critical findings for highest-impact endpoints that warrant separate attention in remediation (BIFast transfers, bulk payroll, loan disbursement, FX rate updates)
-4. Skip creating separate findings for each "no auth" endpoint — the systemic finding covers them
-
-This reduces 21 findings to ~8-10 focused ones without losing signal.
 
 ### Output Strategy for Large Assessments
 

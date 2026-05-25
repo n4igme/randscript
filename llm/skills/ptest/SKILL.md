@@ -450,6 +450,30 @@ In these cases, document: "Local verification not possible: {reason}. Confidence
 
 **Real-world save (Dojo #51, May 2026):** Initial exploit had wrong plugin interface (`module.exports = { result: flag }` instead of required `get()`, `getName()`, `run()` methods). Also had wrong first-nibble constraint (`0xA || 0xB` instead of actual `0xA || 0xC`). Local simulation caught both before submission.
 
+### Pre-Report Gate 0 (MANDATORY before writing any finding)
+
+Before drafting any finding report, answer these 3 questions. One NO = KILL the finding and move on.
+
+1. **Can the attacker do this RIGHT NOW with a real HTTP request?**
+   - Not "theoretically possible" — demonstrate with an actual request/response
+   - If it requires external conditions outside attacker control (Chainlink malfunction, sequencer downtime, specific server load), it's borderline
+
+2. **What does the victim LOSE?**
+   - Map to CIA triad: confidentiality (data exposed), integrity (data modified), availability (data deleted/DoS)
+   - "The server responds differently" is NOT impact. Quantify: how many users, what data, what dollar value
+   - If the answer is only "information disclosure of non-sensitive data" — severity is Low at best
+
+3. **Can it be reproduced in 10 minutes from scratch?**
+   - Fresh browser, no prior state, following only your written steps
+   - If it requires lucky timing, specific victim behavior beyond "click a link", or network position — document those dependencies explicitly
+   - If you can't demo it reproducibly at least 3/5 attempts, do not file
+
+**Kill signals (instant NO):**
+- Finding requires privileged access an attacker can't obtain
+- Finding is already known/documented behavior (check program policy)
+- Finding is on the program's "never submit" list (self-XSS, logout CSRF, missing headers without impact)
+- Impact is purely theoretical with no concrete demonstration
+
 ---
 
 ## Effort Allocation
@@ -862,6 +886,24 @@ For targets in financial services (banking, multi-finance, insurance), consider 
 - 15-minute time-boxed procedure
 - Integration with Phase 6 checklist and attack chains
 
+**Chain hunting (A→B signal method):** See `references/chain-hunting-methodology.md` for:
+- Known A→B→C chain tables (10 escalation patterns)
+- 6-step Cluster Hunt Protocol
+- Top 1% mindset (crown jewel thinking, developer empathy, trust boundary mapping)
+- Signal→Hunt quick reference map
+
+**WAF bypass:** See `references/waf-bypass-techniques.md` for:
+- WAF detection/fingerprinting (Cloudflare, Akamai, Imperva, AWS WAF, ModSecurity)
+- 20 bypass techniques (origin discovery, encoding, HTTP protocol, TLS evasion, ML evasion)
+- SQLMap tamper script combos per WAF vendor
+- Bypass chaining recommended order
+
+**Race conditions:** See `references/race-condition-hunting.md` for:
+- HTTP/2 single-packet attack (Turbo Intruder Last-Byte Sync)
+- Race targets and attack surface signals
+- Python asyncio / curl parallel / Burp Repeater group-in-parallel patterns
+- Bypass techniques against common defenses
+
 ### HTTP Method Testing on Unauthenticated Endpoints (MANDATORY)
 
 **When you find an unauthenticated GET endpoint, ALWAYS test other HTTP methods.** This is the single highest-ROI exploitation technique for API-focused engagements.
@@ -1130,6 +1172,19 @@ When redoing a pentest or reassessing previously reported findings:
 - No binding + no replay + no expiry → High (permanent irrevocable takeover, victim cannot self-remediate)
 
 **Compare against EIP-4361 (SIWE) standard:** domain binding, nonce, expiration, statement, chain ID. Any missing element is a finding.
+
+### Supabase Backend Testing (when Supabase detected)
+
+**Full reference:** See `references/supabase-testing.md` for:
+- Detection signals (CNAME, JS patterns, header leaks)
+- Finding the anon key (5 locations to check)
+- 10-step testing checklist (auth settings, RLS bypass, storage, RPC, schema enum)
+- Severity assessment matrix
+- Common misconfigurations (RLS not enabled, mailer_autoconfirm, storage without RLS)
+
+**Quick detection:** CNAME to `*.supabase.co`, `sb-project-ref` header, `createBrowserClient()` in JS, `sb_publishable_*` or `eyJ*` keys in source.
+
+**Minimum checklist:** Find anon key → query auth/v1/settings → test table reads → test INSERT (RLS bypass) → check storage buckets → probe RPC functions via error hints.
 
 ### OAuth/OIDC redirect_uri Validation Testing (MANDATORY Phase 5/6)
 
@@ -1712,6 +1767,7 @@ When source code becomes available during an engagement (via source maps, git ex
 - **No Time/Schedule Commentary** — never comment on the time, suggest stopping, or recommend "coming back later." The operator decides their own schedule. Focus on the work.
 - **Authorization First** — refuse to begin without confirmed authorization.
 - **No Deployed Persistence** — document persistence techniques but do not deploy backdoors without explicit authorization.
+- **ALWAYS do post-exploitation.** See `references/post-exploitation-rules.md`. Never stop at "proved access exists" — extract real data, enumerate resources, demonstrate actual impact with raw responses. Theoretical impact = rejected report.
 - **CTI-Sourced Credentials** — credentials found via Cyber Threat Intelligence (breach databases, dark web) require EXPLICIT authorization to test against production systems. The finding is provable without authentication: (1) credential exists in breach DB, (2) auth endpoint is internet-accessible, (3) no MFA enforced, (4) no credential rotation caught it. Document the risk without logging in. If the client explicitly authorizes credential stuffing against prod, require real-time observation by the client's security team. Never test CTI credentials without confirming scope covers this technique — it may violate local law (e.g., UU ITE in Indonesia) even with a general pentest authorization.
 - **Scope Type Awareness** — skip techniques that don't apply to the engagement's scope type.
 

