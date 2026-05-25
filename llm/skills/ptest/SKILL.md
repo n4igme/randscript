@@ -1024,13 +1024,112 @@ When redoing a pentest or reassessing previously reported findings:
 - Stack trace disclosure via broken WooCommerce dependency
 - Severity assessment matrix
 
-**Full reference:** See `references/oauth-sso-attack-chains.md` (Chain 3: CORS Misconfiguration) for:
+- `references/google-pitchfork-testing.md` for Google Pitchfork framework RPC testing (batchexecute endpoint, AT token, RPC discovery, CSRF/IDOR, WIZ_global_data fields, nflpzd is NOT a vuln)
+- `references/google-maps-ssrf-kml.md` for SSRF via KML import in Google My Maps (NetworkLink, Icon href, GroundOverlay, callback setup)
+- `references/oauth-sso-attack-chains.md` (Chain 3: CORS Misconfiguration) for:
 - Complete origin test payloads and rationale (7 bypass variants)
 - Interpretation guide (ACAO + ACAC combinations → severity)
 - Exploitation PoC templates (XHR, sandboxed iframe, XSS chain)
 - Key targets and reporting guidance for financial services
 
 **Minimum checklist:** Test ALL auth endpoints with `Origin: https://evil.com` + check for `Access-Control-Allow-Credentials: true`. If reflected → Critical. Load full reference for bypass variants and PoC templates.
+
+### GraphQL API Testing (MANDATORY when GraphQL detected)
+
+**Detection:** Check `/graphql`, `/api/graphql`, `/v1/graphql` — look for GraphiQL UI or `{"errors":[{"message":"..."}]}` responses.
+
+**Checklist (in order of ROI):**
+
+1. **Introspection** — schema dump reveals full attack surface:
+   ```bash
+   curl -s https://target.com/graphql -H "Content-Type: application/json" \
+     -d '{"query":"{ __schema { mutationType { fields { name args { name type { name } } } } } }"}'
+   ```
+   If enabled: extract all mutations, identify which require auth vs don't.
+
+2. **Unauthenticated mutations** — test EVERY mutation without auth headers:
+   ```bash
+   # For each mutation discovered via introspection:
+   curl -s https://target.com/graphql -H "Content-Type: application/json" \
+     -d '{"query":"mutation { mutationName(arg: \"test\") { result } }"}'
+   ```
+   If response is data (not auth error) → High finding (missing auth on write operation).
+
+3. **Alias-based batching** — amplifies any unauth mutation:
+   ```bash
+   curl -s https://target.com/graphql -H "Content-Type: application/json" \
+     -d '{"query":"mutation { a: upload(x:\"1\") { id } b: upload(x:\"2\") { id } c: upload(x:\"3\") { id } }"}'
+   ```
+   If all aliases execute → no per-request mutation limit. Combined with no rate limiting = resource abuse.
+
+4. **Array batching** — alternative amplification:
+   ```bash
+   curl -s https://target.com/graphql -H "Content-Type: application/json" \
+     -d '[{"query":"{ __typename }"},{"query":"{ __typename }"}]'
+   ```
+   Often disabled ("Batching is not enabled") but alias batching still works.
+
+5. **CORS on GraphQL endpoint** — test separately from main app:
+   ```bash
+   curl -sI -H "Origin: https://evil.com" -X OPTIONS \
+     -H "Access-Control-Request-Method: POST" https://target.com/graphql
+   ```
+
+6. **Sensitive data in queries** — check for PII exposure (email, phone) in user/profile queries without auth.
+
+7. **Subscription abuse** — WebSocket subscriptions may bypass auth:
+   ```bash
+   wscat -c wss://target.com/graphql -x '{"type":"connection_init","payload":{}}'
+   ```
+
+**Key insight:** DeFi/fintech devs often assume "wallet signature = auth" and leave GraphQL mutations unprotected server-side. Always test mutations without ANY auth header first.
+
+### Signature-Based Authentication Testing (when wallet/crypto signatures used)
+
+**Detection:** Look for mutations/endpoints requiring `signature`, `message`, `nonce` parameters. Common in Web3 but also in fintech (document signing, API key auth).
+
+**Checklist:**
+
+1. **Timestamp expiry** — sign with old timestamp (years ago) → still accepted?
+   ```bash
+   # If message format is "Timestamp: <unix>", try timestamp from 2020
+   # Accepted = no expiry enforcement → replay window is infinite
+   ```
+
+2. **Replay protection** — reuse same signature with different action params:
+   ```bash
+   # Call 1: signature X + email "legit@user.com" → success
+   # Call 2: signature X + email "attacker@evil.com" → success?
+   # If yes: no nonce/one-time-use enforcement
+   ```
+
+3. **Parameter binding** — is the action (email, amount, recipient) included in the signed message?
+   ```
+   # If signed message is just "Timestamp: 1716000000" but the mutation
+   # also accepts emailAddress as a SEPARATE parameter → email is unbound
+   # One signature can set ANY email = blank check
+   ```
+
+4. **Message format strictness** — does it require exact format or just "contains keyword"?
+   ```bash
+   # Try: "Random text Timestamp: 1716000000 more text" → accepted?
+   # If yes: cross-protocol signature reuse possible
+   ```
+
+5. **Future timestamps** — sign with far-future timestamp → accepted?
+
+6. **Wrong signer** — confirm crypto validation actually works (sanity check):
+   ```bash
+   # Use invalid/zero signature → should get "invalid signature" error
+   # This proves the server DOES verify — it just lacks temporal/replay checks
+   ```
+
+**Severity mapping:**
+- No expiry alone → Medium (bounded replay if signature intercepted)
+- No replay + no expiry → High (unlimited reuse forever)
+- No binding + no replay + no expiry → High (permanent irrevocable takeover, victim cannot self-remediate)
+
+**Compare against EIP-4361 (SIWE) standard:** domain binding, nonce, expiration, statement, chain ID. Any missing element is a finding.
 
 ### OAuth/OIDC redirect_uri Validation Testing (MANDATORY Phase 5/6)
 
@@ -1610,6 +1709,7 @@ When source code becomes available during an engagement (via source maps, git ex
 - **Verified Findings Only** — a finding must be backed by direct evidence of exploitability or exposure. DNS resolution or CT log presence alone does NOT constitute a finding. Every finding must include proof that the issue is currently exploitable or observable (e.g., HTTP response showing an unauthenticated panel, not just a DNS record pointing to it). Unverified potential issues belong in a "Potential Issues" list for the next phase to validate — not in the findings log.
 - **Mandatory Tool Execution** — mandatory tools listed per phase must be run. If unavailable, document the gap explicitly. Never substitute manual probing for an available automated scanner.
 - **Human Sign-off** — always request user confirmation before passing a gateway.
+- **No Time/Schedule Commentary** — never comment on the time, suggest stopping, or recommend "coming back later." The operator decides their own schedule. Focus on the work.
 - **Authorization First** — refuse to begin without confirmed authorization.
 - **No Deployed Persistence** — document persistence techniques but do not deploy backdoors without explicit authorization.
 - **CTI-Sourced Credentials** — credentials found via Cyber Threat Intelligence (breach databases, dark web) require EXPLICIT authorization to test against production systems. The finding is provable without authentication: (1) credential exists in breach DB, (2) auth endpoint is internet-accessible, (3) no MFA enforced, (4) no credential rotation caught it. Document the risk without logging in. If the client explicitly authorizes credential stuffing against prod, require real-time observation by the client's security team. Never test CTI credentials without confirming scope covers this technique — it may violate local law (e.g., UU ITE in Indonesia) even with a general pentest authorization.

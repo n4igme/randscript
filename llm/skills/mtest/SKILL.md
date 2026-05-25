@@ -244,7 +244,22 @@ Anti-tampering bypass (root detection, Frida detection) is a MEANS to validate f
    - `libapp.so` snapshot analysis: use `blutter` or `darter` to extract class/method names from the Dart snapshot
    - Traffic interception: Flutter uses its own HTTP stack (dart:io) that ignores system proxy and system CA store. Use `reFlutter` to patch `libflutter.so` with proxy settings, or hook `ssl_crypto_x509_session_verify_cert_chain` in `libflutter.so`
    - Dart AOT limitations: no source maps, no string-based decompilation — analysis is primarily at the snapshot metadata + native disassembly level
-   - Strings and API endpoints may still be extractable: `strings libapp.so | grep -iE "https?://|api|token|key"`
+   - **String literals ARE preserved in Dart AOT snapshots.** API paths, URLs, JSON field names, class names, and package paths all survive compilation as readable strings in `libapp.so`. This is the PRIMARY static analysis technique for Flutter apps:
+     ```bash
+     # Extract ALL API endpoints (often 200-400 for banking apps)
+     strings lib/arm64-v8a/libapp.so | grep -E "^/(bff-mobile|auth|account|api)" | sort -u
+     # Extract base URLs
+     strings lib/arm64-v8a/libapp.so | grep -iE "^https?://" | sort -u
+     # Extract data model classes (reveals request/response structure)
+     strings lib/arm64-v8a/libapp.so | grep -iE "Model\.(fromJson|toJson)" | sort -u
+     # Extract Dart package paths (reveals app architecture)
+     strings lib/arm64-v8a/libapp.so | grep "^package:" | sort -u
+     # Extract JSON field names (request parameters)
+     strings lib/arm64-v8a/libapp.so | grep -oE '[a-z][a-zA-Z0-9]*' | sort -u | grep -xE '(accountNumber|password|pin|otp|...)'
+     # Find IDOR targets (path template variables)
+     strings lib/arm64-v8a/libapp.so | grep -E "\{\{[a-zA-Z]+\}\}" | sort -u
+     ```
+   - jadx is still useful for: native Android components, third-party SDK configs, WebView implementations, security SDK code
 
    **React Native (index.android.bundle or libjsc.so/libhermes.so):**
    - Bundle extraction: `unzip target.apk assets/index.android.bundle` — this is the JS source (possibly minified/bundled)
@@ -428,10 +443,17 @@ Anti-tampering bypass (root detection, Frida detection) is a MEANS to validate f
 
 3. SSL pinning bypass:
    ```bash
-   # Frida (comprehensive)
+   # Frida (comprehensive — native Android apps)
    frida -U -f <package> -l ssl_pinning_bypass.js
 
-   # Objection (quick)
+   # Flutter apps — MUST use flutter_ssl_bypass.js (standard hooks don't work)
+   # Flutter uses BoringSSL in libflutter.so, ignores system proxy + CA store
+   # See frida-scripts.md → "Flutter SSL Pinning Bypass" for full script
+   # Key: scan only r-x ranges, hook by byte pattern, use Python to keep session alive
+   # Also requires iptables redirect (Flutter ignores system proxy):
+   #   iptables -t nat -A OUTPUT -p tcp -m owner --uid-owner <UID> --dport 443 -j DNAT --to <HOST>:8080
+
+   # Objection (quick — native apps only, NOT Flutter)
    objection -g <package> explore
    android sslpinning disable   # or: ios sslpinning disable
 
@@ -456,6 +478,8 @@ Anti-tampering bypass (root detection, Frida detection) is a MEANS to validate f
 5. Verify: app launches, traffic visible in proxy, no detection popups
 
 **Reference:** `dynamic-setup.md`, `frida-scripts.md`
+
+**Script:** `scripts/flutter_ssl_bypass.js` — ready-to-use Flutter BoringSSL bypass for ARM64 (supports Flutter 3.10-3.24+). Use with: `frida -U -f <package> -l scripts/flutter_ssl_bypass.js`
 
 **Cross-reference:** For DexGuard/AppFence protected apps, load the `dexguard-native-re` skill for full RE methodology and bypass scripts.
 
@@ -494,7 +518,7 @@ Anti-tampering bypass (root detection, Frida detection) is a MEANS to validate f
    - Rate limiting (or lack thereof)
    - Certificate pinning coverage gaps
 
-**Reference:** `traffic-analysis.md`
+**Reference:** `traffic-analysis.md`, `burp-mcp-integration.md`
 
 ---
 
@@ -515,6 +539,8 @@ If you cannot test on a non-rooted device, explicitly state this limitation and 
    ```bash
    # Android SharedPreferences
    adb shell "run-as <package> cat /data/data/<package>/shared_prefs/*.xml"
+   # Or with root:
+   adb shell "su -c 'cat /data/data/<package>/shared_prefs/*.xml'"
 
    # Android SQLite
    adb shell "run-as <package> ls /data/data/<package>/databases/"
@@ -531,6 +557,44 @@ If you cannot test on a non-rooted device, explicitly state this limitation and 
    adb logcat | grep -i "token\|password\|key\|secret"
    ```
 
+   **Local storage security checklist (rooted device):**
+   - **PIN/login attempt counters:** Check if `pinAuthAttempts`, `loginAttempts` etc. are in plaintext SharedPreferences. If resettable → client-side lockout bypass (Low, requires root).
+     ```bash
+     grep -iE "attempt|lock|pin|biometric" shared_prefs/FlutterSharedPreferences.xml
+     # Reset test: modify value → force-stop → restart → verify app accepts new value
+     ```
+   - **Token storage:** Check if JWT/refresh tokens are plaintext or encrypted. Look for:
+     - Hive databases (`app_flutter/*.hive`) — run `strings` on them for plaintext tokens
+     - `cipherImplementationKeystore.xml` — indicates Android Keystore encryption (good)
+     - If tokens in Hive are binary blobs (not readable JWT strings) → encrypted at rest (good)
+   - **Cached sensitive data:** Check Hive boxes for plaintext PII:
+     ```bash
+     for f in app_flutter/*.hive; do
+       echo "=== $f ==="; strings "$f" | grep -iE "token|password|account|card|[0-9]{10,}" | head -5
+     done
+     ```
+   - **Flutter SharedPreferences leakage:** Look for account numbers, customer IDs, phone numbers stored unencrypted. These are Low severity but worth documenting for banking apps.
+   - **Biometric flags:** Check if `activeFingerprint`, `validBiometricLimit` can be flipped to bypass biometric enrollment requirements.
+
+   **Local storage security checklist (rooted device):**
+   - **PIN/login attempt counters:** Check if `pinAuthAttempts`, `loginAttempts` etc. are in plaintext SharedPreferences. If resettable → client-side lockout bypass (Low, requires root).
+     ```bash
+     grep -iE "attempt|lock|pin|biometric" shared_prefs/FlutterSharedPreferences.xml
+     # Reset test: modify value → force-stop → restart → verify app accepts new value
+     ```
+   - **Token storage:** Check if JWT/refresh tokens are plaintext or encrypted. Look for:
+     - Hive databases (`app_flutter/*.hive`) — run `strings` on them for plaintext tokens
+     - `cipherImplementationKeystore.xml` — indicates Android Keystore encryption (good)
+     - If tokens in Hive are binary blobs (not readable JWT strings) → encrypted at rest (good)
+   - **Cached sensitive data:** Check Hive boxes for plaintext PII:
+     ```bash
+     for f in app_flutter/*.hive; do
+       echo "=== $f ==="; strings "$f" | grep -iE "token|password|account|card|[0-9]{10,}" | head -5
+     done
+     ```
+   - **Flutter SharedPreferences leakage:** Look for account numbers, customer IDs, phone numbers stored unencrypted. These are Low severity but worth documenting for banking apps.
+   - **Biometric flags:** Check if `activeFingerprint`, `validBiometricLimit` can be flipped to bypass biometric enrollment requirements.
+
 2. **Deep Link / URL Scheme Injection:**
    ```bash
    # Android
@@ -540,6 +604,14 @@ If you cannot test on a non-rooted device, explicitly state this limitation and 
    # Test: open redirect, XSS via WebView, auth bypass
    ```
    - **Parameter name fuzzing:** When a deep link handler fails to extract a value despite correct URI format, the parameter name may differ from what hardcoded URLs suggest. Enumerate candidate names from: (1) field names in decompiled source/metadata (e.g., `updateHost` → try `host=`), (2) method names (`checkHost` → `host=`), (3) common variants (`url=`, `server=`, `target=`, `endpoint=`, `addr=`). Test each systematically before concluding extraction is broken.
+   - **Deep link parameters leaked to analytics:** After triggering any deep link, check logcat for analytics SDK logging. CleverTap, Mixpanel, Firebase Analytics often log the full deep link URI (including query parameters) as a "page" or "referrer" event. Test with sensitive parameters:
+     ```bash
+     # Trigger deep link with financial params
+     adb shell am start -d "scheme://app/transfer?amount=1000000&to=9999999999" <package>
+     # Check if params leak to analytics
+     adb logcat -d -t 30 | grep -iE "CleverTap|Mixpanel|firebase.*event" | grep -i "referrer\|page\|event"
+     ```
+     If the full URI (including amount, account numbers) appears in analytics events, this is a data leakage finding (Low-Medium depending on sensitivity of leaked params). Combined with unencrypted analytics transport (no SSL pinning on analytics SDK), it becomes Medium.
 
 3. **WebView Attacks:**
    - JavaScript enabled + addJavascriptInterface = RCE potential
@@ -574,6 +646,30 @@ If you cannot test on a non-rooted device, explicitly state this limitation and 
 ## Phase 6: API Testing (Server-side)
 
 ### Gate: at least BOLA, auth bypass, and injection tests completed (OR documented N/A with justification if no server-side API exists)
+
+**Eversafe/attestation-protected APIs — partial unblock workflow:**
+
+When direct API replay is blocked by device attestation tokens (Eversafe, AppAttest, etc.), use this time-boxed approach:
+
+1. **Keep the app active** with proxy intercepting traffic (SSL bypass + iptables)
+2. **Capture fresh tokens** from Burp: both the attestation token and JWT/session token
+3. **Immediately replay** with curl within the JWT TTL window (typically 5 min for banking apps):
+   ```bash
+   # Extract latest tokens from Burp MCP
+   EVERSAFE=$(grep -oP 'x-eversafe-verification-token: \K.*' /tmp/latest_request.txt)
+   JWT=$(grep -oP 'Bearer \K[^ ]+' /tmp/latest_request.txt)
+   
+   # Replay with modified parameters (IDOR test)
+   curl -s "https://stg-api.example.com/account/accounts?include=balance" \
+     -H "authorization: Bearer $JWT" \
+     -H "x-eversafe-verification-token: $EVERSAFE" \
+     -H "x-device-id: <device_id>" \
+     -H "x-cuid: OTHER_CUSTOMER_ID"
+   ```
+4. **Automate capture-and-replay** if testing multiple endpoints — script the Burp MCP token extraction
+5. **Document the constraint** in the report: "API testing performed within 5-min JWT windows using replayed attestation tokens"
+
+If the attestation token itself expires before you can test (< 5 min validity), mark Phase 6 as N/A with justification. The token replay window is the practical limit of what's testable without RE of the native attestation library.
 
 **Steps:**
 
@@ -734,6 +830,22 @@ java -jar APKEditor.jar m -i <dir_with_splits> -o merged.apk -f
 - APKEditor also fixes `extractNativeLibs` and sanitizes the manifest automatically
 - **`extractNativeLibs="false"` handling:** When this flag is set, native .so files live inside the APK (not extracted to filesystem). `System.loadLibrary()` works via the APK's zip, but you can't `dlopen` from a custom path. For Frida hooking, use `Process.findModuleByName()` after the app loads the library itself. You cannot `System.loadLibrary()` arbitrary libs from Frida scripts — only the app's own loading path works.
 
+### Eversafe (kr.co.everspin) Anti-Tampering
+
+Korean anti-tampering SDK used by Indonesian fintech apps (Bank Jago, etc.). Runs as an isolated service (`EversafeService` with `android:isolatedProcess="true"`).
+
+**Key behavior difference:** Staging/dev builds often have relaxed Eversafe detection — the app stays alive on rooted devices with Frida attached. Always test staging builds first before investing in bypass work. Production builds may behave differently.
+
+**Detection indicators in manifest:**
+- `<service android:name="kr.co.everspin.eversafe.service.EversafeService" android:isolatedProcess="true"/>`
+- Native libs: `libeversafe.so`, `libeversafe-loader.so`
+
+**If Eversafe kills the app on production:**
+1. Try hluda-server (anti-detection Frida build) — solves Frida detection
+2. Shamiko + Zygisk — solves root detection at kernel level
+3. Non-rooted device with WiFi proxy — avoids all detection
+4. Submit findings with static evidence only
+
 ### DexGuard / AppFence / Root Detection
 
 Enterprise apps (fintech, ride-hailing) use DexGuard with AppFence (`libaf-android.so`) and dedicated `ard` (App Root Detection) modules. Detection is heavily obfuscated via reflection (`C15197fsZ.c()`, `C15197fsZ.d()` patterns), often controlled by Firebase Remote Config (`RootCheckerRemoteConfig`).
@@ -766,6 +878,310 @@ Enterprise apps (fintech, ride-hailing) use DexGuard with AppFence (`libaf-andro
 **Server-side device attestation (GoPay-1000 pattern):** Even when local root detection is bypassed (app stays alive, UI renders), the server may reject requests via Play Integrity / SafetyNet attestation. Symptom: app shows security error modal on login attempt (e.g., "Ada masalah keamanan (GoPay-1000)"). This CANNOT be bypassed with Frida alone — requires Zygisk + PlayIntegrityFix module. Document as a positive security control in the report, not a vulnerability.
 
 **Auth-gated API testing when root blocks login:** When the rooted device can't log in (DexGuard kills app) and the non-rooted device isn't adb-accessible, use **WiFi proxy** (no adb needed): (1) Start Burp/Caido on Mac listening on 0.0.0.0:8080, (2) On phone: WiFi settings → proxy → Mac IP:8080, (3) Download CA cert via phone browser (http://burp), (4) Install cert, (5) Use app normally — all API calls captured. This works when no cert pinning is present. If cert pinning IS present, this approach fails and you must fix root hiding first.
+
+### Flutter SSL Pinning Bypass (BoringSSL in libflutter.so)
+
+**Problem:** Flutter uses its own BoringSSL in `libflutter.so` — ignores system proxy AND system CA store. Standard SSL bypass scripts (objection, generic Frida) don't work.
+
+**Working approach (ARM64, Flutter 3.x):**
+
+1. Find executable ranges only (avoid access violations from unmapped pages):
+```javascript
+var ranges = Process.enumerateRanges('r-x');
+var flutterRanges = ranges.filter(r => r.base.compare(m.base) >= 0 && r.base.compare(m.base.add(m.size)) < 0);
+```
+
+2. Scan for `ssl_crypto_x509_session_verify_cert_chain` prologue pattern:
+   - Primary: `FF 03 05 D1 FD 7B 0F A9` (sub sp, #0x140; stp x29, x30)
+   - This typically yields 3-5 matches — hook ALL of them to return success
+
+3. Hook all candidates (one of them is the verify function):
+```javascript
+Interceptor.attach(addr, { onLeave: function(retval) { retval.replace(0x1); } });
+```
+
+**Critical pitfall:** Do NOT use `Memory.scanSync(m.base, m.size, pattern)` directly — libflutter.so has unmapped pages within its address range that cause access violations. Always filter through `Process.enumerateRanges('r-x')` first.
+
+**Traffic interception for Flutter:** Since Flutter ignores system proxy, use iptables DNAT:
+```bash
+# Get app UID from packages.list
+UID=$(grep <package> /data/system/packages.list | awk '{print $2}')
+iptables -t nat -A OUTPUT -p tcp -m owner --uid-owner $UID --dport 443 -j DNAT --to <host_ip>:8080
+iptables -t nat -A OUTPUT -p tcp -m owner --uid-owner $UID --dport 80 -j DNAT --to <host_ip>:8080
+```
+
+**Verification:** Confirm `CERTIFICATE_VERIFY_FAILED` string exists in libflutter.so readable ranges to confirm BoringSSL is present. If the string is at offset ~0x26xxxx and your pattern matches are at ~0x5axxxx-0x9bxxxx, you're in the right area.
+
+### Flutter SSL Pinning Bypass (Modern Builds)
+
+When standard BoringSSL patterns fail (Flutter 3.22+), use this approach:
+
+1. **Scan only executable ranges** — `Process.enumerateRanges('r-x')` filtered to libflutter.so base/size. Scanning the full module range causes access violations on unmapped pages.
+
+2. **Use 2-instruction prologue patterns** — Modern Flutter builds change the third stp pair. Start with `FF 03 05 D1 FD 7B 0F A9` (sub sp, #0x140 + stp x29, x30) which is more stable across versions.
+
+3. **Hook ALL candidates** — If the pattern matches 2-5 functions, hook them all to return 0x1. One of them is the verify function. Don't try to identify the exact one — the overhead is negligible.
+
+4. **Verify via CERTIFICATE_VERIFY_FAILED string** — Scan readable ranges for this string to confirm BoringSSL is present. The verify function is typically within 0x50000 bytes before this string.
+
+5. **Pattern priority for ARM64:**
+   - `FF 03 05 D1 FD 7B 0F A9` (sub sp, #0x140) — Flutter 3.22-3.24
+   - `FF 83 04 D1 FD 7B 0F A9` (sub sp, #0x120) — Flutter 3.19-3.21
+   - `FF C3 03 D1 FD 7B 0E A9` (sub sp, #0xF0) — Flutter 3.13-3.18
+
+**Working script pattern:**
+```javascript
+var ranges = Process.enumerateRanges('r-x');
+var flutterRanges = ranges.filter(r => r.base.compare(m.base) >= 0 && r.base.compare(mEnd) < 0);
+for (var r = 0; r < flutterRanges.length; r++) {
+    var matches = Memory.scanSync(flutterRanges[r].base, flutterRanges[r].size, pattern);
+    matches.forEach(m => Interceptor.attach(m.address, { onLeave: retval => retval.replace(0x1) }));
+}
+```
+
+**Spawn flow (Python):**
+```python
+pid = device.spawn(['com.package.name'])
+session = device.attach(pid)
+script = session.create_script(ssl_bypass_code)
+script.load()
+device.resume(pid)
+```
+
+### Eversafe SDK (kr.co.everspin) — Staging vs Production
+
+**Key differences from DexGuard/AppFence:**
+- Eversafe runs as an isolated service (`EversafeService` with `android:isolatedProcess="true"`)
+- **Staging builds typically have relaxed detection** — app stays alive on rooted devices with Frida attached
+- Production builds may behave differently (kill on root detection)
+- Eversafe uses its own native HTTP stack (`libeversafe.so`) — NOT Java HttpURLConnection, NOT OkHttp
+- Network calls from Eversafe bypass system proxy, iptables UID-based redirect, and all Java/Dart-level hooks
+- Token exchange happens via native FFI to Dart — invisible to MethodChannel/BasicMessageChannel hooks
+
+**Cloudflare API Token Flow:**
+1. App starts → Eversafe calls `GET /appprotect/eversafe/mode/a` (mode check)
+2. Eversafe calls `POST /appprotect/eversafe/{encoded_device_info}/auth/v2` (token request)
+3. Eversafe calls `POST /appprotect/eversafe/{encoded_device_info}/update/{uuid}/v2` (status update)
+4. Token is passed to Dart layer via native FFI
+5. All subsequent BFF-Mobile API calls include this token as Cloudflare auth
+
+**Encoded device info format:** `AQEQNkE4RDhCMUExQ0ZGNUExMAIMOC44Ni4wKDk2MjQp` — base64-like encoding of device fingerprint + app version
+
+**Implications for testing:**
+- Cannot replay API calls with curl alone — Cloudflare rejects without the Eversafe token
+- Must capture traffic through the app itself (proxy + SSL bypass while app is running)
+- WiFi proxy on device captures Eversafe Java-layer calls but NOT the Flutter dart:io calls
+- iptables DNAT captures Flutter calls but may break Eversafe's native calls
+- **Best approach:** WiFi proxy for Eversafe token capture + iptables for Flutter BFF calls (two-phase)
+- **Alternative:** Use the app normally with proxy, let Eversafe auth succeed, then all Flutter calls flow through iptables
+
+### Flutter SSL Pinning Bypass (BoringSSL in libflutter.so)
+
+Flutter apps use their own BoringSSL implementation in `libflutter.so`. The standard Android SSL bypass (OkHttp, TrustManager) does NOT work. The key function is `ssl_crypto_x509_session_verify_cert_chain`.
+
+**Working approach (tested on Flutter 3.24.x, ARM64):**
+
+1. **Scan only executable ranges** — `Process.enumerateRanges('r-x')` filtered to libflutter.so. Scanning the full module range causes access violations on unmapped pages.
+
+2. **Pattern**: `FF 03 05 D1 FD 7B 0F A9` (sub sp, #0x140; stp x29, x30, [sp, #offset]). This matches the function prologue. Expect 3-5 matches — hook ALL of them to return 0x1 (success).
+
+3. **No exports** — modern Flutter strips all symbols. `Module.findExportByName('libflutter.so', 'SSL_write')` returns null. Pattern scanning is the only way.
+
+4. **Timing** — libflutter.so loads after app spawn. Use `setTimeout(bypass, 500)` and retry if module not found.
+
+5. **Verification** — find `CERTIFICATE_VERIFY_FAILED` string in readable ranges to confirm BoringSSL is present: pattern `43 45 52 54 49 46 49 43 41 54 45 5F 56 45 52 49 46 59 5F 46 41 49 4C 45 44`.
+
+6. **Flutter ignores system proxy** — must use iptables DNAT to redirect traffic:
+   ```bash
+   iptables -t nat -A OUTPUT -p tcp -m owner --uid-owner <APP_UID> --dport 443 -j DNAT --to <HOST_IP>:8080
+   ```
+   Get UID from: `cat /data/system/packages.list | grep <package>`
+
+**Script template**: See `references/flutter-ssl-bypass.md`
+
+### Eversafe Anti-Tampering (kr.co.everspin)
+
+Korean anti-tampering SDK (different from DexGuard/AppFence). Identified by:
+- `kr.co.everspin.eversafe.service.EversafeService` in manifest (isolated process)
+- `libeversafe.so` + `libeversafe-loader.so` in native libs
+- Calls to `dev-api.jago.com/appprotect/eversafe/` endpoints
+
+**Behavior:**
+- Staging builds may have relaxed detection (app stays alive on rooted device)
+- Production builds likely kill on root detection
+- Generates `x-eversafe-verification-token` header required for ALL API calls
+- Token contains device state: root status, proxy detection, module version, pin verification status
+- Token is generated by native library via FFI to Dart — invisible to Java-layer hooks
+- Token has ~15-30 min validity window — CAN be replayed via curl within that window (see "Token replay for API testing" below)
+
+**Impact on testing:**
+- Direct API replay (curl-based IDOR testing) is possible within a short window: capture fresh Eversafe token + JWT from Burp, replay within 5 min (JWT TTL). The Eversafe token itself lasts ~15-30 min.
+- All API testing must be time-boxed to the JWT validity window (typically 5 min for banking apps)
+- Alternative: RE `libeversafe.so` to understand token generation (significant effort)
+
+**Detection of Eversafe in traffic:**
+- `x-eversafe-verification-token` header (base64-encoded binary blob)
+- API calls to `/appprotect/eversafe/{encoded_device_info}/auth/v2`
+- Token contains `["PROXY"]` when proxy is detected
+
+### Tyk API Gateway Pattern (Banking Apps)
+
+Some banking apps use Tyk as API gateway with a static auth key:
+- Header: `x-tyk-auth: <static_hex_key>`
+- This key is the same across all requests from the app
+- Extractable from traffic capture
+- BUT: additional layers (Eversafe, JWT Bearer) still required
+- The Tyk key alone returns `MISSING_API_TOKEN` or `EMPTY_AUTH_TOKEN`
+
+When you see `x-tyk-auth` + `x-eversafe-verification-token` + `Authorization: Bearer`, the app has 3-layer auth:
+1. Gateway key (static, extractable)
+2. Device attestation (dynamic, device-bound)
+3. User session (JWT, short-lived)
+
+This makes direct API replay nearly impossible without going through the app.
+
+### Burp MCP Integration for Traffic Analysis
+
+When Burp Suite has the MCP extension installed (BApp Store), use it to query proxy history programmatically:
+
+```python
+# Key tools available:
+# - get_proxy_http_history(count, offset) — all history
+# - get_proxy_http_history_regex(regex, count, offset) — filtered
+# - send_http1_request / send_http2_request — replay requests
+
+# Connection: java -jar mcp-burp.jar --sse-url http://127.0.0.1:9876
+# Protocol: JSON-RPC 2.0 over stdio
+```
+
+**Pitfalls:**
+- `get_proxy_http_history` REQUIRES `count` and `offset` params (not optional)
+- Response entries are newline-separated JSON objects (not a JSON array)
+- Binary response bodies cause JSON parse errors — use try/except per entry
+- SSE endpoint (port 9876) appears to hang on curl — it's long-polling, use `--max-time`
+- The MCP server must be tested with `hermes mcp test burpsuite` to verify connectivity
+
+### Flutter SSL Pinning Bypass (BoringSSL in libflutter.so)
+
+Flutter uses BoringSSL compiled into `libflutter.so`. The `ssl_crypto_x509_session_verify_cert_chain` function is NOT exported (symbols stripped). Bypass requires pattern scanning in executable memory ranges.
+
+**Working approach (tested on Flutter 3.24.x / libflutter.so ~11MB):**
+
+1. Find executable ranges within libflutter.so (avoid access violations from unmapped pages):
+```javascript
+var m = Process.findModuleByName('libflutter.so');
+var ranges = Process.enumerateRanges('r-x');
+var flutterRanges = ranges.filter(r => r.base.compare(m.base) >= 0 && r.base.compare(m.base.add(m.size)) < 0);
+```
+
+2. Scan for function prologue pattern `FF 03 05 D1 FD 7B 0F A9` (sub sp, #0x140; stp x29, x30):
+```javascript
+var pattern = 'FF 03 05 D1 FD 7B 0F A9';
+for (var r = 0; r < flutterRanges.length; r++) {
+    var matches = Memory.scanSync(flutterRanges[r].base, flutterRanges[r].size, pattern);
+    for (var j = 0; j < matches.length; j++) {
+        Interceptor.attach(matches[j].address, {
+            onLeave: function(retval) { retval.replace(0x1); }
+        });
+    }
+}
+```
+
+3. Typically finds 4 candidates — hook ALL of them (one is the verify function, others are harmless).
+
+**Pitfalls:**
+- Do NOT use `Memory.scanSync(m.base, m.size, ...)` — libflutter.so has unmapped pages that cause access violations. Always scan only `r-x` ranges.
+- Standard patterns from older Flutter versions (FF 83 04 D1, FF C3 03 D1) may not match newer builds. Start with `FF 03 05 D1 FD 7B 0F A9` (8 bytes) and expand if needed.
+- `Module.findExportByName("libflutter.so", "SSL_write")` returns null — Flutter strips all BoringSSL exports.
+- The bypass must be installed AFTER libflutter.so loads. Use `setTimeout(bypass, 500)` when spawning.
+- For spawn: `device.spawn(['pkg'])` + attach + load script + `device.resume(pid)`. The `--no-pause` flag was removed in Frida 16.x.
+
+**iptables for Flutter traffic (ignores system proxy):**
+```bash
+# Get app UID from packages.list
+UID=$(adb shell "su -c 'cat /data/system/packages.list'" | grep <pkg> | awk '{print $2}')
+# Redirect only this app's traffic
+adb shell "su -c 'iptables -t nat -A OUTPUT -p tcp -m owner --uid-owner $UID --dport 443 -j DNAT --to <host_ip>:8080'"
+adb shell "su -c 'iptables -t nat -A OUTPUT -p tcp -m owner --uid-owner $UID --dport 80 -j DNAT --to <host_ip>:8080'"
+```
+
+### Eversafe SDK (kr.co.everspin.eversafe) — Token Architecture
+
+Eversafe is a Korean anti-tampering SDK that provides device attestation tokens. Key characteristics:
+
+- **Loader pattern:** `libeversafe.so` (thin, only JNI_OnLoad) → extracts `.so` files to cache → loads them → deletes from disk (anti-analysis)
+- **Isolated service:** Runs in `pkg:kr.co.everspin.eversafe.service.EversafeService` (separate process)
+- **Token flow:** Native lib → HTTP to `<env>-api.<domain>/appprotect/eversafe/.../auth/v2` → server returns signed token → passed to app via FFI (NOT Java MethodChannel)
+- **Java hooks DON'T work:** Token generation and HTTP calls happen in native code, passed to Dart via FFI
+- **Token header:** `x-eversafe-verification-token: AgUs...` (base64-encoded binary blob with device state, timestamps, detection results)
+- **Token contains:** Module version, proxy detection flags (`["PROXY"]`), pin verification status, timestamps
+- **API replay blocked:** All API calls require a valid Eversafe token — curl-based testing fails with `"eversafe token verification failed"`
+
+**Token replay for API testing (confirmed technique):**
+1. Capture `x-eversafe-verification-token` from Burp proxy (visible in intercepted traffic)
+2. Token is NOT per-request — generated once at app startup, reused across all API calls
+3. Replay window: ~15-30 minutes from generation (server validates embedded timestamp)
+4. Within the window, curl replay works — server returns JWT errors (not Eversafe errors)
+5. After expiry: server returns `{"error":{"message":"eversafe token verification failed","code":"TOKEN_VERIFICATION_FAILED"}}`
+6. **Staging servers ignore attestation failures** — token reports `["PROXY"]` and pin verification failure, yet server still accepts it. Production may enforce these flags.
+7. Practical workflow for API testing:
+   - Keep app active with proxy (generates fresh tokens every ~15 min)
+   - Grab fresh Eversafe token + JWT from Burp
+   - Replay within 5 min (JWT TTL is the real limiter, not Eversafe)
+   - Test IDOR, parameter tampering, etc. directly with curl
+
+**Token structure (decoded base64, ~755 bytes binary):**
+- Device ID, model, kernel version, app version + build number
+- Module version (e.g., "31054")
+- Timestamps (epoch ms — used for validity window enforcement)
+- Network state: ONL/offline, carrier info
+- Proxy detection: `["PROXY"]` when intercepting proxy detected
+- Pin verification: reports configured pins + peer cert chain (including Burp cert fingerprint)
+- Connection state transitions (CXS>NWS, ATB0, ATF1)
+
+**Decode token for analysis:**
+```python
+import base64, re
+token = open('/tmp/eversafe_token.txt').read().strip()
+raw = base64.b64decode(token)
+strings = re.findall(b'[\x20-\x7e]{4,}', raw)
+for s in strings: print(s.decode())
+```
+
+**Key decoded fields to look for:**
+- `["PROXY"]` — proxy detection flag (reported to server)
+- `Pin verification failed` + configured pins + peer cert chain — SSL pinning status
+- Device model, kernel version, app version + build
+- `moduleVersion` — Eversafe SDK version
+- Timestamps (epoch ms) — used for validity window
+- Connection state codes: ONL (online), CXS>NWS (state transitions)
+
+**Staging vs Production attestation enforcement:**
+- Staging servers often accept tokens that report `["PROXY"]` and pin verification failure — "report-only mode"
+- Production servers likely reject these (enforce mode) — document this difference
+- If staging ignores attestation failures, note it as a finding: device attestation provides no security enforcement on staging
+- Test by sending a token with known proxy/pin failure flags — if server returns JWT errors (not Eversafe errors), attestation is not enforced
+
+**Report-only attestation as a finding:**
+When the Eversafe token explicitly reports security failures (proxy detected, pin verification failed, rooted device) but the server still accepts the request, this is a distinct finding:
+- Severity: Low (staging) / Medium-High (if production also ignores)
+- The device attestation SDK provides no actual security enforcement
+- An attacker with a captured token can make API calls from any client regardless of device state
+- Remediation: enforce attestation results server-side (reject tokens reporting proxy/root/pin failure)
+
+**Additional workarounds:**
+1. For staging builds: Eversafe may not kill the app (relaxed policy), allowing Frida attachment
+2. Test through the app UI with Frida hooks monitoring responses
+3. Memory scanning for token in Dart VM is unreliable (UTF-16 internal encoding, large heap ranges)
+
+**Why Frida memory scanning fails for Dart tokens:**
+- Dart VM stores strings internally as UTF-16 (not UTF-8) — byte pattern scans for ASCII strings miss them
+- Dart heap allocations are in large rw- ranges (>10MB) that are slow to scan
+- Hooking `libc send()` only sees TLS ciphertext (BoringSSL encrypts before send)
+- `SSL_write` is not exported from libflutter.so (symbols stripped)
+- **Best approach:** Capture tokens from Burp proxy traffic (already decrypted by proxy) rather than trying to extract from process memory
+
+**Staging vs Production behavior:** Staging builds often have relaxed Eversafe policies — app stays alive on rooted devices, Frida can attach. Production builds typically kill the app immediately.
 
 ### hluda-server (Anti-Detection Frida Build)
 
@@ -847,6 +1263,16 @@ This two-step pattern is required for hooking deep link handlers. Use Python fri
 - **r2 for quick native function analysis:** When Ghidra isn't running, use `r2 -q -c 'aa;s sym.Java_pkg_Class_method;pdf' lib.so` to disassemble JNI functions. Look for JNI call offsets (0xf8=GetObjectClass, 0x108=GetMethodID, 0x538=NewStringUTF, 0x2f0=GetFieldID, 0x2f8=GetObjectField, 0x558=GetArrayLength, 0x568=GetObjectArrayElement) to understand what Java methods the native code calls.
 
 ### Unity / IL2CPP
+
+- **Flutter deep link handler not in DEX:** When a Flutter app declares a `DeepLinkHandlerActivity` in the manifest but the class doesn't exist in any DEX file, it's handled by the Flutter engine via `flutter_deeplinking_enabled` meta-data and `HANDLE_DEEPLINKING_META_DATA_KEY`. The deep link URI is passed directly to the Dart layer (libapp.so) where a `DeeplinkBloc` routes it. You won't find the handler in jadx — instead, extract route names from `strings libapp.so | grep -E "^/"` and deep link config from `strings libapp.so | grep -i deeplink`.
+- **Flutter app static analysis strategy:** For Flutter apps, jadx only shows the thin Java wrapper (Application class, native SDKs, third-party Java libraries). The real app logic is in `libapp.so`. Key extraction commands:
+  - Routes: `strings libapp.so | grep -E "^/[a-z]" | sort -u`
+  - API endpoints: `strings libapp.so | grep -iE "https?://" | sort -u`
+  - Deep link config: `strings libapp.so | grep -iE "deeplink|deep_link" | sort -u`
+  - WebView routes: `strings libapp.so | grep -iE "webview|web_view" | sort -u`
+  - Dart package paths: `strings libapp.so | grep "^package:" | sort -u` (reveals module structure)
+  - Secrets: `strings libapp.so | grep -iE "api.key|secret|token|password|firebase" | sort -u`
+- **Staging builds have relaxed security:** Banking apps with Eversafe/DexGuard often disable root detection on staging builds. Always try launching on rooted device first — if it survives, you skip the entire bypass effort.
 
 - **Unity IL2CPP reverse engineering:** For Unity 2020.x IL2CPP apps, all C# class/method/field/string-literal names are in `global-metadata.dat`. Key patterns: (1) grep for `[ClassName]` log prefixes to find the relevant class, (2) grep for method names like `Handle*`, `check*`, `validate*`, `get*` to understand the flow, (3) look for field names like `domainRegex`, `updateHost` that reveal validation logic, (4) coroutine names like `<MethodName>d__N` reveal async operations. The actual game logic is NOT in `classes.dex` — it's in `libil2cpp.so` + metadata.
 - **Unity IL2CPP deep link parameter discovery:** Hardcoded URLs in `global-metadata.dat` may use DIFFERENT query parameter names than the deep link handler expects. Don't assume the parameter name from hardcoded strings — test systematically. Use `strings global-metadata.dat | grep -E "^(check|get|set|validate|parse)[A-Z]"` to find method names that hint at the actual parameter (e.g., `checkHost` → parameter is `host=`, not `patch=` from the hardcoded URL). When host extraction always returns empty despite correct URI format, the parameter name is likely wrong.
