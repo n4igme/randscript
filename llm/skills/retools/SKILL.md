@@ -25,6 +25,7 @@ Utility skill for RE tool setup, scripting, and integration. Supports xdev (expl
 | `ida` | IDA Pro workflows (IDAPython, plugins, remote debug) |
 | `binja` | Binary Ninja workflows (API, plugins, IL) |
 | `mcp` | MCP bridge setup and usage |
+| `malware` | Malware deobfuscation, implant analysis, IOC extraction |
 
 ---
 
@@ -302,6 +303,37 @@ r2 -q -c 'izz' ./binary       # all strings (including code section)
 # Specific patterns
 strings ./binary | grep -iE 'http|api|key|secret|password|token'
 ```
+
+---
+
+## Malware Deobfuscation & Implant Analysis
+
+For in-the-wild malware samples, obfuscated loaders, and supply chain implants.
+
+**Reference:** `references/malware-deobfuscation.md`
+
+### Quick Workflow
+```
+1. Triage — identify language, encoding layers, entry point
+2. Map layers — list each obfuscation stage (permutation, base64, compression)
+3. Decode outside-in — reimplement each layer's algorithm in Python (DON'T execute malware)
+4. Extract IOCs — C2 IPs, wallets, tokens, campaign markers, paths
+5. Document — architecture diagram, decoded config, attribution indicators
+```
+
+### Key Patterns
+- **Seed-based string permutation** — deterministic char swap, fully reversible with known seed
+- **Function constructor abuse** — `NVu['constructor']` = `Function()` for dynamic exec
+- **Dictionary compression** — positional encoding referencing previously decoded strings
+- **Per-machine tokens** — 256-byte RSA-like signatures for C2 auth (blocks sandbox retrieval)
+- **Multi-tier C2 routing** — campaign version string selects primary vs fallback infrastructure
+
+### Supported Targets
+- JavaScript loaders (Node.js supply chain, trojanized configs)
+- Python RATs/stealers (urllib + exec pattern)
+- PowerShell downloaders
+- .NET obfuscated assemblies
+- Multi-stage implants (JS → Python, PS → .NET → shellcode)
 
 ---
 
