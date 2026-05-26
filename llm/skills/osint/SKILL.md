@@ -26,6 +26,9 @@ $ARGUMENTS
 | Command | Action |
 |---------|--------|
 | `start` | Initialize OSINT engagement — collect seed data (name, handle, email, domain, location) |
+| `preflight` | Verify tool availability (curl, dig, whois, python3, sherlock/maigret if installed) |
+| `status` | Show current progress — seeds collected, platforms checked, findings count |
+| `resume` | Resume interrupted engagement — reload state and continue from last checkpoint |
 | `handles` | Username/handle enumeration across platforms |
 | `emails` | Email discovery from git commits, WHOIS, public profiles, breach data |
 | `platforms` | Platform presence check (GitHub, HackerOne, Bugcrowd, TryHackMe, HTB, CTFtime, etc.) |
@@ -34,6 +37,7 @@ $ARGUMENTS
 | `breaches` | Breach database lookups and paste site checks |
 | `chain` | Build cross-reference chain map showing how identities link |
 | `report` | Compile full OSINT report with findings |
+| `cleanup` | Archive engagement output, remove temporary files |
 
 ## Phase 1: Seed Collection
 

@@ -30,6 +30,7 @@ Phase 1: Scope & Discovery → Phase 2: IAM & Access → Phase 3: Service Exploi
 | `resume` | Resume interrupted engagement from last checkpoint |
 | `next` | Advance to next phase (runs exit criteria check) |
 | `report` | Generate final report |
+| `cleanup` | Archive engagement output, remove temporary files |
 
 If no command is given, show current status and suggest next action.
 
@@ -128,6 +129,12 @@ time_tracking:
    aws s3 ls s3://<bucket> --no-sign-request
    gsutil ls gs://<bucket>
 
+   # PITFALL: Some buckets have different ACLs via CNAME vs direct S3 URL
+   # e.g., assets.target.com (CNAME → bucket.s3.amazonaws.com) may allow ListBucket
+   # but s3://bucket directly returns AccessDenied. Always test BOTH paths.
+   curl -s 'https://assets.target.com/'  # via CNAME
+   aws s3 ls s3://bucket-name --no-sign-request  # direct
+
    # Cloud metadata from SSRF (if web app in scope)
    curl http://169.254.169.254/latest/meta-data/
    curl -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/
@@ -146,10 +153,18 @@ time_tracking:
    - `.env` files, terraform state files, CI/CD configs
    - JS bundles with embedded cloud credentials
    - Docker images with baked-in secrets
+   - **GitHub OSINT for leaked session tokens** (see `references/github-credential-osint.md`)
 
 **Reference:** `references/aws-attack-paths.md`, `references/gcp-attack-paths.md`, `references/azure-attack-paths.md`
 
 **Cross-reference:** ptest `references/cloud-infrastructure-enumeration.md` for passive enumeration techniques.
+
+**Cross-skill triggers from ctest:**
+- Web app found on cloud infra → invoke `ptest` for web pentest
+- API gateway discovered → invoke `atest` for API-specific testing
+- Container with mobile backend → invoke `mtest` if app in scope
+- SSRF to internal services → feed endpoints back to `ptest`/`atest`
+- Geo-blocked cloud services → see ptest `references/geo-restriction-bypass.md`
 
 ---
 
@@ -421,3 +436,6 @@ time_tracking:
 - **Region Awareness** — test ALL regions, not just the primary. Resources hidden in unused regions are a common finding.
 - **No Persistence** — document persistence techniques but do NOT deploy backdoors without explicit authorization.
 - **Evidence Preservation** — screenshot/log everything before remediation discussions. Cloud resources can be deleted quickly.
+- **Geo-blocking** — SEA companies (Grab, Gojek, Tokopedia, OVO) commonly geo-restrict API gateways. All endpoints return 502 from outside the region. If you hit consistent 502s across all API paths, test from a regional VPN before concluding the service is down. Static assets (CDN, S3 via CNAME) often remain accessible globally even when APIs are blocked.
+- **S3 ListBucket via CNAME** — some buckets allow ListBucket only through their CNAME (e.g., `subdomain.target.com` → bucket) but deny direct `bucket.s3.amazonaws.com` access. Always test both paths. A 200 on listing doesn't mean GetObject works — test read/write separately.
+- **cloud_enum on macOS** — the pip-installed `cloud_enum` may fail with "Cannot access mutations file" because it looks for `fuzz.txt` relative to the binary, not the package. Fix: find the package dir (`pip3 show cloud_enum | grep Location`) and run from there, or symlink the enum_tools directory.

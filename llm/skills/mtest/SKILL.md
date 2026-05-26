@@ -5,6 +5,10 @@ description: "Structured mobile application penetration testing framework with g
 tags: [mobile, pentest, android, ios, frida, security]
 trigger: "mobile pentest, mobile app test, APK test, IPA test, android security, ios security, dexguard bypass, appfence bypass, libaf-android, native root detection, inline svc bypass"
 argument-hint: "<command: start|status|next|report>"
+metadata:
+  hermes:
+    tags: [mobile, pentest, android, ios, frida, security]
+    related_skills: [ptest, retools, scode, atest]
 ---
 
 # Mobile Application Penetration Testing (mtest)
@@ -797,6 +801,14 @@ If the attestation token itself expires before you can test (< 5 min validity), 
 - When app uses certificate transparency or multiple pinning layers, combine approaches (Frida + patched config + invisible proxy)
 - **Client-side only** findings (no server validation) are typically Medium unless they expose sensitive data
 - Cross-reference extracted API endpoints with ptest skill for comprehensive server-side testing
+
+**Cross-skill triggers from mtest:**
+- API endpoints discovered in traffic → invoke `atest` for structured AuthN/AuthZ testing
+- Cloud storage URLs (S3/GCS) in app config or traffic → invoke `ctest` Phase 3
+- Web endpoints found → feed back into `ptest` findings-log
+- Hardcoded secrets/source code in APK → invoke `scode` for review
+- Smart contract/Web3 SDK in app → invoke `w3hunt`
+- API geo-blocked from your location → see ptest `references/geo-restriction-bypass.md`
 - **Large app static analysis (50K+ classes):** Delegate Phase 2 analysis to a subagent via `delegate_task` with specific goals (deeplinks, secrets, exported components, network security, webview analysis). The subagent writes results to `phase2-static/android/` as separate markdown files. This preserves main context for exploitation phases. Works well for apps like Gojek (79K classes, 17 DEX files).
 
 ### Split APK Merging

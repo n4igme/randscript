@@ -76,6 +76,9 @@ If ANY is missing → the oracle→harvest→sandwich pattern does NOT apply. Pi
 | `scope` | Verify program scope on Immunefi (web+contract assets, impacts, rules) |
 | `targets` | Research and shortlist suitable programs from Immunefi |
 | `status` | Show current target, phase, findings |
+| `resume` | Resume interrupted hunting session from last checkpoint |
+| `report` | Generate finding report in platform-specific format (Immunefi/YesWeHack) |
+| `cleanup` | Archive engagement output, sanitize sensitive data |
 
 ## Phase 1: Target Selection & Scope Verification
 

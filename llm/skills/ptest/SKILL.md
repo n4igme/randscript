@@ -8,7 +8,7 @@ argument-hint: "<command: start|preflight|status|resume|next|escalate|cleanup|re
 metadata:
   hermes:
     tags: [pentest, penetration-testing, security, recon, exploitation, post-exploitation, red-teaming, offensive-security]
-    related_skills: [godmode, parse-finding, mtest, scode]
+    related_skills: [godmode, parse-finding, mtest, scode, osint, xdev]
 ---
 
 # Penetration Testing Framework
@@ -1731,33 +1731,9 @@ If auth is app-level (not mesh-level), document that:
 - **Phase 1 OSINT Completeness** — before declaring Phase 1 complete, verify ALL of these were attempted: (1) WHOIS/DNS/TXT, (2) subdomain enum (multi-source), (3) Wayback Machine, (4) GitHub/GitLab code search, (5) Google dorking, (6) Shodan/Censys on discovered IPs, (7) JS bundle analysis from accessible apps, (8) Mobile app identification (package names, APK endpoints), (9) Docker Hub/container registry check, (10) dark web & breach data OSINT (see `references/dark-web-breach-osint.md` for full methodology: HIBP, DeHashed, IntelX, Ahmia, ransomware leak sites, DeepDarkCTI). Missing any of these is a gap that should be filled before advancing. Never SUGGEST skipping phases either — even for bug bounties where "time to bounty" feels urgent. The user has explicitly stated: "never skip the phase. because it's a fundamental thing." Each phase builds on the previous; shortcuts produce blind spots.
 - **Scope Enforcement** — never test targets outside defined scope. Re-read `scope.md` before each technique.
 
-### Source Code Review Integration (scode skill)
+### Cross-Skill Triggers
 
-When source code becomes available during an engagement (via source maps, git exposure, debug endpoints, CTF challenge, or client-provided code), invoke the `scode` skill for structured review. This can happen at any phase:
-
-**Trigger conditions:**
-- Phase 1: Source map (`.js.map`) discovered → extract and review
-- Phase 3: Git repository exposed (`.git/`) → clone and review
-- Phase 3: Debug endpoint leaks source (stack traces, Laravel debug, Spring actuator)
-- Phase 5: Client provides source for white-box assessment
-- Phase 6: Decompiled mobile app code (from `mtest` skill)
-- Any phase: CTF/Dojo challenge with source code provided
-
-**Integration workflow:**
-1. **Trigger:** Source code obtained → note in current phase checklist
-2. **Invoke:** Load `scode` skill, run steps 1-5 (inventory → threat model → trace → findings → report)
-3. **Feed back:** Any findings from code review feed into the ptest findings-log with source: "code review"
-4. **Priority:** Code review findings that reveal exploitable endpoints get fast-tracked to Phase 6 exploitation
-5. **Document:** Add `source-code-review.md` to the current phase's output directory
-
-**What scode adds that ptest alone misses:**
-- Logic flaws not detectable via black-box (auth bypass in middleware ordering)
-- Hardcoded secrets in non-deployed code paths
-- Unsafe deserialization in internal APIs
-- Race conditions in transaction handling
-- Crypto misuse (weak PRNG, ECB mode, static IV)
-
-**Key rule:** Code review does NOT replace black-box testing. A function that looks secure in source may be exploitable due to deployment configuration, library version differences, or environment-specific behavior. Always verify code review findings with actual exploitation.
+See `references/cross-skill-triggers.md` for full table and chains. Cloud→`ctest`; APIs→`atest`; mobile→`mtest`; Web3→`w3hunt`; source→`scode`; geo-block→`references/geo-restriction-bypass.md`.
 - **Bug Bounty Related-Domain Scope Risk** — when you discover findings on domains that are clearly the same company/product but use a DIFFERENT root domain than what's listed in scope (e.g., `go-pay.co.id` vs scoped `gopay.co.id`), treat these as borderline. Strategy: (1) submit clear-scope findings first to establish credibility, (2) submit borderline-scope findings LAST with a "Scope note" explaining why the asset relates to in-scope targets, (3) frame impact in terms of how it affects the explicitly-scoped assets (e.g., "ArgoCD manages the K8s cluster serving *.gopayapi.com"). Worst case: reduced bounty tier. Best case: accepted at full severity because the triager recognizes it's the same infrastructure.
 - **Bug Bounty Scope Type Interpretation** — when a program lists an asset as "Web application" (e.g., `mokapos.com`) vs "Wildcard" (e.g., `*.gopayapi.com`), treat them differently. A "Web application" scope means ONLY that specific domain (and www), NOT all subdomains. Subdomains may be accepted at program discretion but at reduced bounty. Always check the scope type column before starting subdomain enumeration. If the operator wants to test broadly anyway, document the risk of rejection in scope.md.
 - **Evidence Required** — every finding must have reproducible proof.

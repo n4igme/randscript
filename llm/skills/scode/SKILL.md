@@ -34,6 +34,7 @@ sc1-recon → sc2-threat-model → sc3-scan (23 sub-scanners) → sc4-validate �
 | `report` | Step 5: Generate final bug bounty / security review report |
 | `status` | Show current step, progress, findings count |
 | `resume` | Resume interrupted review from last checkpoint |
+| `cleanup` | Archive assessment output, remove temporary scan artifacts |
 
 ## Output Structure
 

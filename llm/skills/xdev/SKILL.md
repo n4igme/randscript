@@ -30,6 +30,7 @@ Phase 1: Vuln Analysis → Phase 2: Primitive Dev → Phase 3: Mitigation Bypass
 | `resume` | Resume interrupted engagement from last checkpoint |
 | `next` | Advance to next phase (runs exit criteria check) |
 | `report` | Generate final exploit write-up |
+| `cleanup` | Archive engagement output, remove temporary exploit artifacts |
 
 If no command is given, show current status and suggest next action.
 

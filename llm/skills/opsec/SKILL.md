@@ -26,12 +26,15 @@ $ARGUMENTS
 | Command | Action |
 |---------|--------|
 | `start` | Initialize self-assessment — collect all known handles, emails, domains, real identity |
+| `status` | Show current progress — phases completed, findings count, severity breakdown |
+| `resume` | Resume interrupted assessment — reload state and continue from last checkpoint |
 | `assess` | Run full exposure assessment across all platforms and data sources |
 | `score` | Rate findings by severity (Critical/High/Medium/Low) |
 | `chain` | Map identity cross-reference chains and single points of failure |
 | `remediate` | Generate remediation plan with prioritized actions |
 | `audit` | Periodic audit checklist — run quarterly to catch new exposure |
 | `report` | Compile full OPSEC assessment report |
+| `cleanup` | Archive assessment output, sanitize any sensitive data collected |
 
 ## Phase 1: Identity Inventory
 

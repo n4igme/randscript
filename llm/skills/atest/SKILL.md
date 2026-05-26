@@ -30,6 +30,7 @@ Phase 1: Scope & Recon → Phase 2: AuthN/AuthZ → Phase 3: Injection & Logic �
 | `resume` | Resume interrupted engagement from last checkpoint |
 | `next` | Advance to next phase (runs exit criteria check) |
 | `report` | Generate final report |
+| `cleanup` | Archive engagement output, remove temporary files |
 
 If no command is given, show current status and suggest next action.
 
@@ -194,6 +195,19 @@ config:
 **Reference:** `references/api-auth-bypass.md`
 
 **Cross-reference:** ptest `references/jwt-attack-techniques.md`, `references/oauth-sso-attack-chains.md`
+
+**Cross-skill triggers from atest:**
+- SSRF found → invoke `ctest` Phase 3 (cloud metadata, internal services)
+- Cloud storage URLs in responses → invoke `ctest` Phase 3 (S3/GCS/Blob misconfig)
+- API serves mobile app → invoke `mtest` if app not yet tested
+- Smart contract interaction via API → invoke `w3hunt`
+- Source code leaked via error/debug → invoke `scode`
+- Geo-blocked endpoints → see ptest `references/geo-restriction-bypass.md`
+
+**OpenAPI/Swagger discovery (MANDATORY in Phase 1):**
+- Check standard paths: `/docs`, `/swagger`, `/openapi.json`, `/api-docs`, `/swagger.json`
+- **JS bundle extraction:** Modern SPAs often embed the full OpenAPI spec in JS bundles. Search for `openapi` in JS filenames: `curl -s https://target/ | grep -oE '/static/js/openapi[^"]+\.js'` — then extract all `url:"..."` patterns. This revealed 494 endpoints on Wallet on Telegram in seconds.
+- Telegram Mini Apps: see ptest `references/telegram-webapp-auth.md` for auth patterns
 
 ---
 
