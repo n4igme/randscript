@@ -119,9 +119,15 @@ time_tracking:
 
 3. **Service Discovery:**
    ```bash
-   # S3/GCS/Blob enumeration
+   # Multi-cloud resource enumeration (S3, Azure Blobs, GCS in one pass)
+   # https://github.com/initstring/cloud_enum
+   cloud_enum -k <keyword> -k <company> -k <product> --disable-gcp  # or --disable-aws, --disable-azure
+   # Discovers: open buckets, Azure apps, GCP projects, storage containers
+
+   # S3/GCS/Blob enumeration (manual)
    aws s3 ls s3://<bucket> --no-sign-request
    gsutil ls gs://<bucket>
+
    # Cloud metadata from SSRF (if web app in scope)
    curl http://169.254.169.254/latest/meta-data/
    curl -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/
@@ -386,7 +392,7 @@ time_tracking:
 
 | Phase | Mandatory | Recommended |
 |-------|-----------|-------------|
-| 1 — Discovery | aws-cli/gcloud/az, dig, curl | ScoutSuite, Prowler, cloudfox |
+| 1 — Discovery | aws-cli/gcloud/az, dig, curl | ScoutSuite, Prowler, cloudfox, cloud_enum |
 | 2 — IAM | aws-cli/gcloud/az, enumerate-iam | Pacu, ROADtools, gcpbucketbrute |
 | 3 — Services | aws-cli/gcloud/az, nmap | s3scanner, CloudMapper, Cartography |
 | 4 — Containers | kubectl, docker/crictl | kubeaudit, kube-hunter, trivy |
