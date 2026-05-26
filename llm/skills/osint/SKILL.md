@@ -143,6 +143,98 @@ If domain known:
 - Check SPF: `dig +short {domain} TXT`
 - Common patterns: `{first}@`, `{first}.{last}@`, `{f}{last}@`, `{first}{l}@`
 
+## Phase 3.5: Wayback Machine & Archived Content
+
+**Critical source — deleted content persists in archives.**
+
+### Technique: CDX API Search
+
+```bash
+# Find all archived URLs for a domain
+curl -s "https://web.archive.org/cdx/search/cdx?url={domain}/*&output=json&limit=50"
+
+# Check specific page history
+curl -s "https://web.archive.org/cdx/search/cdx?url={url}&output=json"
+```
+
+### Technique: Retrieve Archived Pages
+
+```bash
+# Get archived version of a page (use timestamp from CDX results)
+curl -s "https://web.archive.org/web/{timestamp}/{url}"
+
+# Extract text content from archived HTML
+curl -s "https://web.archive.org/web/{timestamp}/{url}" | python3 -c "
+import sys, re
+html = sys.stdin.read()
+html = re.sub(r'<script[^>]*>[\s\S]*?</script>', '', html, flags=re.IGNORECASE)
+html = re.sub(r'<style[^>]*>[\s\S]*?</style>', '', html, flags=re.IGNORECASE)
+html = re.sub(r'<[^>]+>', ' ', html)
+lines = [l.strip() for l in html.split('\n') if l.strip() and len(l.strip()) > 20]
+for line in lines:
+    if not any(x in line for x in ['function(', 'var ', '{', '}', 'margin', 'padding']):
+        print(line)
+"
+```
+
+### What to look for:
+- Old "About Us" / team pages with real names, photos, roles
+- Contact pages with emails, phone numbers, addresses
+- Blog posts with personal details
+- Removed repos/pages that once had sensitive content
+- Old company websites linked to the target
+
+## Phase 3.6: Timezone & Activity Pattern Analysis
+
+### Technique: Commit Timestamp Analysis
+
+```bash
+# Extract commit timestamps from a repo
+curl -s "https://api.github.com/repos/{user}/{repo}/commits?per_page=100" | python3 -c "
+import json, sys
+from datetime import datetime, timedelta
+data = json.load(sys.stdin)
+hours = []
+for commit in data:
+    date_str = commit['commit']['author']['date']
+    dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+    # Adjust for suspected timezone (e.g., UTC+7 for WIB)
+    local = dt + timedelta(hours=7)
+    hours.append(local.hour)
+from collections import Counter
+print('Hour distribution (UTC+7):')
+for h, c in sorted(Counter(hours).items()):
+    print(f'  {h:02d}:00 | {\"█\" * c} ({c})')
+"
+```
+
+### What this reveals:
+- Timezone (narrows location to region)
+- Work schedule (9-5 vs freelancer vs night owl)
+- Weekend vs weekday patterns (employment indicator)
+
+## Phase 3.7: Certificate Transparency
+
+```bash
+# Find all certificates issued for a domain
+curl -s "https://crt.sh/?q=%25.{domain}&output=json" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+seen = set()
+for cert in data:
+    name = cert.get('name_value', '')
+    not_before = cert.get('not_before', '')
+    if name not in seen:
+        seen.add(name)
+        print(f'{name} | issued: {not_before}')
+"
+```
+
+### What this reveals:
+- Subdomains (staging, dev, internal tools)
+- Domain ownership timeline (when certs were first/last issued)
+- Whether domain is still actively maintained
+
 ## Phase 4: Domain Recon
 
 ```bash
@@ -245,15 +337,75 @@ Build a graph showing how identities connect:
 [for offensive: next steps / for defensive: exposure risks]
 ```
 
+## Principles
+
+### Data Source Separation
+
+**Critical:** Always distinguish between:
+- **Publicly derived** — found through OSINT techniques from public sources
+- **Prior knowledge** — information you already knew (from conversations, internal docs, etc.)
+- **Inferred** — logical deductions that aren't confirmed
+
+Mark each finding with its source. Contaminating a report with prior knowledge makes it unreliable for assessing what an actual adversary could discover.
+
+### Search Engine Reality (2024+)
+
+Automated search is largely dead for OSINT:
+- Google, Bing, DuckDuckGo, Brave, Startpage — all CAPTCHA-block headless browsers
+- Nitter instances are dead (X/Twitter proxy)
+- Most useful data comes from **direct platform APIs** and **archived content**
+
+**Effective sources that still work without auth:**
+- GitHub API (60 req/hr unauthenticated)
+- Wayback Machine CDX API (unlimited)
+- crt.sh (certificate transparency, unlimited)
+- DNS/WHOIS (direct queries)
+- YouTube (public channel data)
+- TikTok (public profiles)
+- HackerOne/Bugcrowd (public profiles)
+
 ## Pitfalls
 
 1. **Rate limiting** — GitHub API: 60 req/hr unauthenticated, search engines block automated queries
 2. **False positives** — common names/handles match multiple people; always verify with 2+ data points
 3. **Auth walls** — LinkedIn, X/Twitter, Facebook require login for full data
-4. **CAPTCHA** — Google, DuckDuckGo, Bing, Brave, Startpage all block headless browsers
+4. **CAPTCHA** — Google, DuckDuckGo, Bing, Brave, Startpage all block headless browsers — don't waste time
 5. **Nitter/proxies** — most Nitter instances are dead as of 2024+
 6. **Legal** — stay within scope, don't access private data, respect platform ToS for authorized engagements
 7. **Temporal** — profiles get deleted, usernames get recycled; timestamp all findings
+8. **Wayback persistence** — deleted content lives forever in archives; always check web.archive.org
+9. **Prior knowledge contamination** — if you already know things about the target, separate that from what you discovered through OSINT
+10. **Reverse image search** — profile photos can link accounts; check if target uses same photo across platforms
+8. **Common names** — "M. Habib Indonesia" returns thousands of results. Always demand at least one unique identifier (handle, email, domain, specific location) before starting.
+
+## What Actually Works (Browser Automation)
+
+Platforms that DON'T block headless browsers:
+- **GitHub** (API + web) — best source for developers. Commits, profiles, repos, orgs all accessible.
+- **YouTube** — channel pages, about info, video listings all render fine.
+- **TikTok** — public profiles render with follower counts and display names.
+- **HackerOne** — public profiles accessible without auth.
+- **Bugcrowd** — returns 404 for non-existent, loads for existing (even if empty).
+- **Wayback Machine** — CDX API + archived pages work perfectly.
+- **crt.sh** — certificate transparency JSON API, no blocks.
+- **Instagram** — shows page title with display name even without login (e.g., "name (@handle) • Instagram photos and videos"), but full content requires auth.
+
+Platforms that BLOCK:
+- All search engines (Google, Bing, DuckDuckGo, Brave, Startpage)
+- LinkedIn (auth wall, but "not found" vs redirect distinguishes existence)
+- X/Twitter (login required for search/profiles)
+- Medium (Cloudflare challenge)
+- Facebook (login required)
+
+## Effective Workflow Order
+
+1. Start with GitHub API (richest unauthenticated data source for tech targets)
+2. Mine git commits for emails/names across ALL repos
+3. Check Wayback Machine for archived versions of discovered domains/sites
+4. Enumerate handles on bot-friendly platforms (TikTok, YouTube, HackerOne, TryHackMe)
+5. Use crt.sh + DNS for domain intelligence
+6. LinkedIn/X existence check via redirect behavior (can't see content but confirms existence)
+7. Save search engine queries for manual follow-up by the user
 
 ## Tools (if available)
 
