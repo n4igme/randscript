@@ -41,8 +41,8 @@ Collect before development:
 
 1. **Target Platform** — Linux, Windows, macOS, Android, iOS, firmware/embedded
 2. **Architecture** — x86_64, ARM64, ARM32, MIPS, RISC-V
-3. **Vulnerability Class** — UAF, OOB R/W, type confusion, integer overflow, race condition, format string, logic bug
-4. **Trigger** — PoC crash, fuzzer output, code audit finding, CVE without public exploit
+3. **Vulnerability Class** — UAF, OOB R/W, type confusion, integer overflow, race condition, format string, logic bug, JIT/engine bug (JSC/V8)
+4. **Trigger** — PoC crash, fuzzer output, code audit finding, CVE without public exploit, captured in-the-wild sample
 5. **Target Version** — exact kernel/OS/binary version, compile flags, patch level
 6. **Mitigations Known** — ASLR, DEP, CFI, CET, PAC, MTE, SMEP/SMAP, sandbox, SELinux
 7. **Goal** — LPE, RCE, sandbox escape, kernel code exec, info leak chain
@@ -176,7 +176,7 @@ current_phase: 1
    # 4. Adjacent object is now your target for corruption
    ```
 
-**Reference:** `references/linux-userland.md`, `references/linux-kernel.md`, `references/arm64-exploitation.md`
+**Reference:** `references/linux-userland.md`, `references/linux-kernel.md`, `references/arm64-exploitation.md`, `references/ios-webkit-chain.md`
 
 ---
 
@@ -211,9 +211,9 @@ current_phase: 1
    | CFI | Counterfeit objects (COOP), valid-but-wrong targets, JIT |
    | CET (shadow stack) | Overwrite non-return control flow, signal frame abuse |
    | SMEP/SMAP | Kernel ROP, physmap spray, ret2dir |
-   | PAC (ARM64) | PAC oracle, signing gadgets, PAC-less code paths |
+   | PAC (ARM64) | PAC oracle, signing gadgets, PAC-less code paths, dyld interposing abuse |
    | MTE (ARM64) | Brute force (16 tags), use-before-tag-check, speculative bypass |
-   | Sandbox | Escape via IPC, shared memory, permitted syscalls |
+   | Sandbox | Escape via IPC, shared memory, permitted syscalls, GPU process pivot |
    | SELinux | Transition to permissive domain, exploit allowed operations |
 
 3. **Gadget Discovery:**
@@ -227,7 +227,7 @@ current_phase: 1
    ROPgadget --binary vmlinux --ropchain
    ```
 
-**Reference:** `references/mitigation-bypass.md`, `references/arm64-exploitation.md`
+**Reference:** `references/mitigation-bypass.md`, `references/arm64-exploitation.md`, `references/ios-webkit-chain.md`
 
 ---
 
@@ -264,7 +264,7 @@ current_phase: 1
    }
    ```
 
-**Reference:** `references/shellcode-dev.md`, `references/linux-kernel.md`, `references/windows-kernel.md`
+**Reference:** `references/shellcode-dev.md`, `references/linux-kernel.md`, `references/windows-kernel.md`, `references/ios-webkit-chain.md`
 
 ---
 

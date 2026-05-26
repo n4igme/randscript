@@ -135,6 +135,14 @@ msg.msgh_bits = MACH_MSGH_BITS_COMPLEX | MACH_MSGH_BITS(MACH_MSG_TYPE_MAKE_SEND,
 // 5. PACMAN (speculative): speculative execution ignores PAC failure
 //    Side-channel to determine correct PAC value
 //    Requires specific microarchitectural conditions
+
+// 6. dyld interposing abuse (real-world, iOS 18.x):
+//    - Force dlopen of framework via corrupted ImageBitmap class pointer
+//    - Inject interpose tuples into dyld RuntimeState
+//    - dyld signs replacement pointers with PACIA during interposing
+//    - Harvest signed pointers from softLink tables after dlopen completes
+//    - Get signed dlopen/dlsym/signPointer → forge any pointer
+//    See: references/ios-webkit-chain.md (Stage 2)
 ```
 
 ## PPL (Page Protection Layer) Bypass
@@ -181,6 +189,8 @@ msg.msgh_bits = MACH_MSGH_BITS_COMPLEX | MACH_MSGH_BITS(MACH_MSG_TYPE_MAKE_SEND,
 ```
 
 ## Jailbreak Chain (iOS)
+
+**See also:** `references/ios-webkit-chain.md` for a complete real-world Safari RCE → sandbox escape → LPE chain with code patterns.
 
 ```
 # Modern jailbreak requires multiple bugs chained:
