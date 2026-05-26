@@ -9,7 +9,7 @@ Quick lookup for which reference file to load based on what you're working on.
 | Deep links routing to WebViews | `deeplink-webview-hijack.md`, `deeplink-webview-bridge-attacks.md` |
 | Deep link with path/file parameters | `deep-link-path-traversal.md` |
 | WebView with `addJavascriptInterface` | `webview-js-bridge-attacks.md` |
-| DexGuard / AppFence / root detection | `dexguard-appfence-bypass.md` |
+| DexGuard / AppFence / root detection | `dexguard-appfence-bypass.md`, `ghidra-mcp-workflow.md` |
 | Native .so libraries with JNI | `native-re-mcp.md`, `native-buffer-overflow.md` |
 | `System.load()` from writable path | `android-path-traversal-rce.md` |
 | SnakeYAML `yaml.load()` | `yaml-deserialization-rce.md` |
@@ -18,7 +18,8 @@ Quick lookup for which reference file to load based on what you're working on.
 | Hardcoded encryption keys / small keyspace | `crypto-key-cracking.md` |
 | Banking/fintech app patterns | `banking-app-patterns.md` |
 | API endpoints extracted | `api-testing.md` |
-| SSL pinning / proxy setup needed | `traffic-analysis.md`, `dynamic-setup.md` |
+| SSL pinning / proxy setup needed | `traffic-analysis.md`, `dynamic-setup.md`, `flutter-ssl-bypass.md` |
+| Eversafe SDK / device attestation | `eversafe-attestation.md` |
 | Need Frida hook templates | `frida-scripts.md` |
 | OWASP classification needed | `owasp-mobile-top10.md` |
 
@@ -47,9 +48,12 @@ Quick lookup for which reference file to load based on what you're working on.
 | `deeplink-webview-bridge-attacks.md` | Chaining deep links → WebView → JavaScript bridge for RCE |
 | `deeplink-webview-hijack.md` | Deep link handlers that pass unvalidated URLs to WebViews |
 | `deserialization-attacks.md` | Java/Android deserialization exploitation (ObjectInputStream, XMLDecoder, Jackson) |
-| `dexguard-appfence-bypass.md` | Bypassing DexGuard/AppFence root and Frida detection |
+| `dexguard-appfence-bypass.md` | Bypassing DexGuard/AppFence root and Frida detection (includes RE methodology) |
 | `dynamic-setup.md` | Device setup, proxy config, CA installation, and bypass preparation |
+| `eversafe-attestation.md` | Eversafe SDK token architecture, replay technique, staging vs production behavior |
+| `flutter-ssl-bypass.md` | Flutter BoringSSL pinning bypass via pattern scanning in libflutter.so |
 | `frida-scripts.md` | Reusable Frida script templates for common hooks |
+| `ghidra-mcp-workflow.md` | Ghidra MCP workflow for AppFence native library RE |
 | `native-buffer-overflow.md` | Buffer overflow exploitation in Android native libraries |
 | `native-re-mcp.md` | Native library reverse engineering using Ghidra/r2 MCP integration |
 | `owasp-mobile-top10.md` | OWASP Mobile Top 10 mapping and classification guidance |

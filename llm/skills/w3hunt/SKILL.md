@@ -161,7 +161,7 @@ Key findings pattern:
 When SC oracle/harvest pattern doesn't apply, pivot to web scope IMMEDIATELY. This phase takes 30 minutes max and identifies quick-win web vectors.
 
 **Quick kill checklist (in order):**
-1. **CORS on ALL API subdomains** — `curl -sI -H "Origin: https://evil.com" https://api.{domain}/ | grep -i access-control` — if origin reflected + credentials=true → HIGH finding immediately. Test mainnet-api, gnosis-api, etc. separately. (StakeWise: 2x High from this alone)
+1. **CORS on ALL API subdomains** — `curl -sI -H "Origin: https://evil.com" https://api.{domain}/ | grep -i access-control` — if origin reflected + credentials=true → POTENTIAL finding but MUST VALIDATE IMPACT. Test: (a) same query WITHOUT origin/cookies returns same data? → public data, no impact. (b) Find endpoint returning DIFFERENT data with auth → real impact. (c) Web3 wallet-signature auth is NOT vulnerable to CORS (can't steal signatures cross-origin). Only report if authenticated-only data is exposed cross-origin.
 2. **GraphQL introspection** — `curl -s https://api.{domain}/graphql -H "Content-Type: application/json" -d '{"query":"{ __schema { mutationType { fields { name } } } }"}'` — if mutations exist, test WITHOUT auth. Unauth write = High.
 3. **CSP headers** — `curl -sI https://app.{domain}/ | grep -i content-security` — no CSP = XSS potential
 4. **Source maps** — check `https://app.{domain}/static/js/*.js.map` or `/_next/static/chunks/*.js.map`
@@ -369,30 +369,97 @@ Before assigning severity, answer these honestly:
 3. Use the in-scope contract as "Impacted Asset" in the submission form, explain the full call chain in the report
 4. If no in-scope entry point exists: DO NOT SUBMIT — find one or move to next target
 
+### Title Format
+Use vulnerability class + impact. After reading the title, the program should understand the basics.
+Examples:
+- "Missing replay protection and timestamp expiry in updateProfile mutation leads to permanent unauthorized modification of user registration information"
+- "Reentrancy in the withdraw function leads to total loss of funds"
+- "Lack of access control in uploadMetadata mutation leads to stored XSS and resource abuse"
+
+### Submission Template (Immunefi's actual form structure)
+
+```markdown
+## Brief/Intro
+One paragraph: what the problem is + consequences if exploited in production.
+Keep it concise — triager reads 50+ reports/day.
+
+## Vulnerability Details
+Detailed explanation of the vulnerability. Code snippets where helpful.
+Must make it obvious you understand the bug AND that it exists.
+Include: affected function/endpoint, root cause, why current validation fails.
+PoC goes here as a self-contained Python script with actual output in comments.
+
+## Impact Details
+Detailed breakdown of possible losses. Map to the program's EXACT impact category.
+State the selected impact explicitly: "Selected impact: Taking state-modifying
+authenticated actions on behalf of other users without any interaction by that user."
+If funds at risk, estimate the amount or describe the loss path.
+
+## References
+- Frontend code references (bundle URLs proving scope)
+- Relevant EIPs, CWEs, OWASP references
+- Documentation links
 ```
-Title: [Severity] Short description
 
-## Bug Description
-What the vulnerability is, where it exists.
+**DO NOT include:** CVSS scores (Immunefi uses their own classification), remediation section (optional, add only if program requires "fix suggestion"), severity label in title (selected via dropdown on form).
 
-## Impact
-What an attacker can achieve. Map to program's "Impacts in Scope" table.
+### Web/App Severity Decision Tree (Immunefi v2.3)
 
-## Risk Breakdown
-Difficulty: {Easy/Medium/Hard}
-CVSS: {vector string}
+Use this to select the correct severity BEFORE writing the report:
 
-## Recommendation
-How to fix (REQUIRED by most programs).
-
-## Proof of Concept
-Step-by-step reproduction with code/scripts.
 ```
+Q1: Can attacker execute system commands or read sensitive server files?
+    YES → Critical (RCE / sensitive data retrieval)
+
+Q2: Can attacker take down the application/website?
+    YES → Critical (app takedown)
+
+Q3: Can attacker perform STATE-MODIFYING actions on behalf of OTHER users
+    WITHOUT any interaction by that user at exploitation time?
+    (e.g., change email, make trades, withdraw, vote, comment)
+    YES → Critical ("Taking state-modifying authenticated actions...")
+    
+    Key test: Does the victim need to DO anything for the exploit to work
+    RIGHT NOW? If attacker just sends a request and victim's state changes → Critical.
+    If victim must click/sign/visit something → downgrade based on interaction level.
+
+Q4: Can attacker interact with victim's ALREADY-CONNECTED wallet?
+    (modify tx args, substitute addresses, submit malicious tx)
+    YES → Critical (malicious wallet interaction)
+
+Q5: Can attacker inject persistent HTML/XSS through metadata/NFT?
+    YES → Critical (injection through NFT/metadata)
+
+Q6: Can attacker steal/modify SENSITIVE user details (email, password)?
+    (requires some user interaction like visiting a page)
+    YES → High (changing sensitive user details)
+
+Q7: Can attacker disclose confidential user info (email, phone, address)?
+    YES → High (PII disclosure)
+
+Q8: Subdomain takeover?
+    With wallet interaction → Critical
+    Without wallet interaction → High
+
+Q9: Can attacker change NON-SENSITIVE user details?
+    YES → Medium
+
+Q10: Redirect users to malicious websites?
+    YES → Medium
+
+Q11: Non-state-modifying actions on behalf of users?
+    YES → Low
+```
+
+**Critical trap to avoid:** "Requires elevated privileges or uncommon user interaction" can DOWNGRADE any finding. Pre-empt this in your report by explaining why the prerequisite is realistic (e.g., cross-protocol signature reuse doesn't require phishing — it's a passive interception).
 
 ## Pitfalls
 
 - **Cloudflare blocks automated browsing** — Immunefi uses aggressive bot detection. Manual scope verification may be needed. Use combobox interaction (click dropdown → select option) not button clicks for scope category switching.
-- **PoC required for ALL web/app bugs** — don't submit without working PoC
+- **PoC required for ALL web/app bugs** — don't submit without working PoC. Write PoCs EXCLUSIVELY in Python (`requests` + `eth_account`), NEVER curl. User explicitly said "STOP USE CURL" — this is a hard rule. Single self-contained `#!/usr/bin/env python3` script covering all steps with actual output in comments. Include `Origin` header matching the in-scope app URL. Use the exact mutation/endpoint format the app's frontend uses (with variables, not inline). For recon/probing during hunting, also prefer Python `requests` over curl commands.
+- **NEVER claim impact you haven't proven end-to-end** — "no rate limiting" ≠ "brute-forceable". "Config leak" ≠ "access gained". "Token exposed" ≠ "data compromised". You MUST prove the FULL exploitation chain: (1) exploit the vulnerability, (2) demonstrate the ACTUAL impact (account takeover, data access, fund loss). If you can't complete the chain, downgrade severity honestly. Theoretical findings get rejected or closed as Informational. OTP brute-force lesson: without proving a successful login, you only have "missing rate limiting" (Low/Medium), not "authentication bypass" (High).
+- **Fully exploit EVERY leaked token/key before dismissing** — Don't say "public by design" without testing ALL API endpoints the token could access. For each leaked credential: (1) identify the service it belongs to, (2) test read access (list/get endpoints), (3) test write access (create/modify/delete), (4) test cross-service reuse, (5) only THEN conclude "no impact" with evidence (specific 401/403 responses). Lazy dismissal = missed findings. Session lesson: DataDog pub tokens, Leanplum dev keys, LaunchDarkly client IDs — all tested exhaustively, all confirmed dead ends with proof.
+- **VERIFY EXPLOIT OUTPUT BEFORE WRITING REPORT (HARD RULE)** — Run the FULL exploit chain end-to-end and confirm the output matches your claimed impact. Two StakeWise findings were initially written with inflated severity because verification was skipped: (1) CORS claimed "PII theft" but all data was public — downgraded to Informational. (2) Dojo #51 PoC read from wrong flag location — rejected by triager. **Verification steps:** (a) Run exact PoC curl — does it return claimed data? (b) For "auth data theft" — query WITHOUT auth, if same data returns it's public (no impact). (c) For mutations — verify state actually changed with follow-up query. (d) Use REAL keys/wallets, not placeholders. (e) For Web3 CORS — wallet signatures can't be stolen cross-origin, so CORS on wallet-auth apps has no impact unless cookie-based sessions exist.
 - **Fix suggestion required** — many programs reject without remediation advice
 - **Primacy of Rules — ASSET SCOPE IS STRICTLY ENFORCED** — if the vulnerable contract is not explicitly listed in the program's "Assets in Scope" section, the report WILL be rejected regardless of impact validity. Immunefi triagers check asset scope BEFORE forwarding to the project. Our Beefy SC-1 (valid zero-price oracle bug with working PoC) was rejected because BeefyOracleChainlink/BeefySwapper weren't in the 2022 asset list. The project never even saw the report. **Pre-submission checklist:** (1) Is the vulnerable contract address in the scope list? (2) If not, is it directly called by an in-scope contract during normal operation? (3) If neither, DO NOT SUBMIT — find an in-scope contract that triggers the same vulnerable code path and use THAT as the primary asset.
 - **Immunefi rate limits submissions** — new accounts are limited to 1 report/day. Plan submission order carefully: strongest finding first (sets triager impression), weakest last. If you have 3 findings, that's 3 days of submissions. Don't sit on findings — duplicates can appear while you wait.
@@ -407,9 +474,12 @@ Step-by-step reproduction with code/scripts.
 - **DeFi frontends are often well-hardened** — no dangerouslySetInnerHTML, no eval, vault addresses bundled at build time (not from API). Don't assume web layer is easy pickings.
 - **GraphQL on DeFi = high ROI target** — introspection almost always enabled, mutations often lack auth (devs assume "wallet signature = auth" but forget server-side mutations). Test pattern: introspection → list mutations → call each without auth. Alias batching (`{ a: mut(...) b: mut(...) }`) amplifies any unauth mutation. StakeWise `uploadMetadata` was fully unauth with no rate limit.
 - **EIP-191 signature validation on DeFi is often incomplete** — devs implement `ecrecover` correctly (wrong signer rejected) but skip temporal/replay/binding checks. Test pattern: (1) sign with old timestamp → accepted? (no expiry), (2) replay same sig with different params → accepted? (no nonce), (3) is the action parameter (email, amount, etc.) included in the signed message? (no binding). If any of these fail, it's a High — single intercepted signature = permanent unauthorized access. StakeWise `updateProfile` had all three gaps. Compare against EIP-4361 (SIWE) which mandates domain, nonce, expiration, and statement binding.
-- **CORS on DeFi APIs is commonly misconfigured** — devs think "blockchain data is public anyway" so they set permissive CORS. But when combined with `Access-Control-Allow-Credentials: true` + origin reflection, it enables authenticated query theft. The key is finding a query that returns PII (email, phone) or session-specific data. Always test ALL API subdomains separately (mainnet-api, gnosis-api, etc.) — they often share the same misconfigured Caddy/nginx config.
+- **CORS on DeFi APIs — VALIDATE IMPACT BEFORE REPORTING** — CORS origin reflection + `Access-Control-Allow-Credentials: true` is common on DeFi APIs, but the misconfiguration alone is NOT a finding. You MUST prove that cross-origin access exposes data that is OTHERWISE INACCESSIBLE. Validation steps: (1) Query the same endpoint WITHOUT Origin header and WITHOUT cookies — if data returns identically, it's public data and CORS adds zero impact. (2) Find an endpoint that returns DIFFERENT data with vs without auth cookies/tokens. (3) Web3 apps typically use wallet signatures (not cookies) for auth — CORS can't steal wallet signatures cross-origin. (4) `uploadMetadata`-style mutations that are already unauthenticated are separate findings (unauth write), not CORS findings. **StakeWise lesson (2026-05-26):** CORS was technically misconfigured (origin reflection + credentials:true) but ALL data was publicly accessible without any auth. Profile emails returned null. Mutations required wallet signatures. Report would have been rejected as "informational/no impact" if submitted as-is. Always test ALL API subdomains separately (mainnet-api, gnosis-api, etc.) — they often share the same misconfigured Caddy/nginx config.
 - **Parallel recon with delegate_task is optimal for web3** — spawn 2-3 sub-agents: (1) scope verification, (2) passive recon (subdomains/headers/GitHub), (3) active testing (GraphQL/CORS/auth). Total wall-clock time ~10 min for full recon + confirmed findings.
 - **CORS wildcard on Supabase is NOT a finding by itself** — Supabase sets `Access-Control-Allow-Origin: *` by design because the client-side SDK needs cross-origin access. Security is enforced via RLS policies and API key scoping, not CORS. Only report if: (1) service_role key is leaked (bypasses RLS = Critical), (2) anon key + broken RLS exposes sensitive data, or (3) CORS * is on a CUSTOM backend (not Supabase's hosted endpoints). Don't waste time reporting CORS * on `*.supabase.co` — it will be closed as "by design."
+- **API endpoints not listed in scope — reframe via frontend bundle proof** — When Immunefi scope says only `https://app.example.io/` but your findings target the backend API (e.g., `api.example.io/graphql`), you MUST prove the API is the app's backend. Technique: (1) curl the app's JS bundles and grep for the API URL, (2) find the exact mutation/endpoint strings the app calls, (3) reframe report title to reference the in-scope app URL, (4) add a Scope justification section citing bundle filenames, (5) use `Origin: https://app.example.io` in all PoC curls, (6) use the app's exact mutation format (with variables, not inline). Without this reframing, triagers auto-reject as out of scope. StakeWise lesson: all 3 findings targeted `mainnet-api.stakewise.io` but scope was only `app.stakewise.io` — reframed by proving SDK bundle (`sdk-*.js`) hardcodes the API URL and layout bundle (`layout-*.js`) contains the exact mutation strings.
+- **Map findings to EXACT Immunefi impact categories** — Each program lists specific impacts (e.g., Loss of user funds, Freezing of unclaimed yield for at least 1 week). Your report MUST map to one of these EXACTLY. Profile takeover or resource abuse wont match any category and gets rejected. Reframe: signature replay to Freezing of unclaimed yield (operator misses exit notification), unauth upload to Loss of user funds (stored XSS then wallet drain). Check the program impact table BEFORE writing the report and build your impact narrative around their exact wording.
+- **Avoid phishing-required framing in reports** — Many programs explicitly exclude impacts requiring phishing or social engineering attacks. If your finding requires obtaining a signature/token, frame acquisition as interception from browser storage, network logs, or cross-protocol reuse — NOT phishing. The cross-protocol angle (signature from unrelated dApp reused against target) is particularly strong because it does not require any interaction with the target users.
 - **HackenProof programs page is Cloudflare-blocked** — can't access programmatically. Need user to browse manually and share target details. Platform is web3-focused with generally smaller payouts but less competition than Immunefi.
 - **"Requires external conditions" is the #1 rejection reason for oracle bugs** — if the attacker can't trigger the Chainlink malfunction themselves, the finding is borderline. Frame as "theft of yield WHEN condition occurs" not "attacker causes condition."
 - **Check Code4rena/Sherlock findings BEFORE writing a report** — many Immunefi programs had prior audit contests. If your finding was already reported (even as QA/Low), Immunefi will reject it as "known issue." Search `github.com/code-423n4/{year}-{month}-{protocol}-findings` and `github.com/sherlock-audit/{protocol}-judging`. Ethena's unstake blacklist bypass (valid bug) was already in C4 #707 — would have been wasted effort to submit.
@@ -432,6 +502,7 @@ Step-by-step reproduction with code/scripts.
 ## References
 
 - `references/immunefi-severity-v2.2.md` — Full severity classification with decision tree
+- `references/immunefi-severity-v2.3-webapps.md` — v2.3 Websites and Apps classification (Critical includes "state-modifying actions on behalf of users")
 - `references/immunefi-targets-research.md` — Target shortlist with strategy notes
 - `references/defi-frontend-attack-patterns.md` — DeFi-specific web attack patterns
 - `references/foundry-oracle-exploit-poc.md` — Proven Foundry fork test patterns for oracle exploits (vm.mockCall, attack chain verification, working RPCs)
@@ -441,7 +512,9 @@ Step-by-step reproduction with code/scripts.
 - `references/immunefi-targets-v2.md` — Updated target shortlist (2026-05-25): Origin Protocol as top pick, pattern-transferability strategy, confirmed active slugs, lessons from Gains/Olympus dead ends
 - `references/immunefi-targets-v3.md` — Post-exploration update: Origin/Ethena/Enzyme eliminated, prerequisite check formalized, Enzyme deep-review and Lombard/DeXe as next picks
 - `references/origin-protocol-recon.md` — Full recon: 30 in-scope assets, architecture analysis, why oracle pattern doesn't apply, remaining attack surface
-- `references/stakewise-engagement.md` — Successful engagement: 3x High findings (CORS + unauth GraphQL mutation + signature replay), recon approach, report format, lessons learned
+- `references/stakewise-engagement.md` — Successful engagement: signature replay (Critical, submitted 2026-05-26), unauth GraphQL mutation, CORS (downgraded). Recon approach, scope reframing technique, report format, severity selection lessons.
+- `references/grab-ovo-engagement.md` — HackerOne Grab/OVO: config.js leak chain, LaunchDarkly flag exposure (35 flags), OVO infrastructure mapping, reusable LD exploitation pattern.
 - `references/hacken-engagement.md` — HackenProof engagement: SSRF bypassing Cloudflare Access (CVSS 8.6), Supabase exposure, ABP Framework exploitation patterns, Next.js API route SSRF detection
 - `references/hackenproof-platform-notes.md` — HackenProof platform differences from Immunefi, Hacken's own bounty recon (*.hacken.io), Supabase testing methodology
 - `references/bug-bounty-platform-comparison.md` — Platform comparison (Immunefi vs HackerOne vs YesWeHack vs Intigriti vs Bugcrowd vs HackenProof) with strategy for n4igme's profile
+- `references/grab-engagement.md` — HackerOne Grab/OVO engagement: OTP brute-force (unproven), config leaks (no impact), food.grab.com runtimeConfig, infrastructure map, lessons on hardened targets

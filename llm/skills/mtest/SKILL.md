@@ -143,6 +143,19 @@ Anti-tampering bypass (root detection, Frida detection) is a MEANS to validate f
 2. Ask user confirmation: "Phase X complete. N findings. Advance to Phase Y?"
 3. Update `state.yaml`: mark current gateway PASSED (or N/A), unlock next, record timestamps
 
+### Publishing Walkthrough as Gist
+
+To upload an exploitation walkthrough to GitHub Gist with a custom filename:
+```bash
+cp mtest-output/exploitation-walkthrough.md /tmp/<desired-filename>.md
+gh gist create /tmp/<desired-filename>.md --public -d "<description>"
+```
+The `--filename` flag on `gh gist create` doesn't reliably rename — use a temp copy instead.
+
+### APKSec Blog Article Generation
+
+After completing an MHL challenge or real engagement, generate a DKatalis engineering blog article (`apksec-<topic>.md`) in the mtest-output directory. Format: Introduction → Background (vuln class explanation) → Target description → Code path trace → Gadget/exploit identification → Exploitation steps → Real-world scenario → Impact assessment → Remediation → Key takeaways → References. Style: technical depth for engineers, not CTF writeup format.
+
 ### Cleanup (`cleanup`)
 
 1. Archive `./mtest-output/` to `mtest-output-{app}-{date}.tar.gz`

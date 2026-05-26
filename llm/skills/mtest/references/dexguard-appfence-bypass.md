@@ -138,7 +138,8 @@ Combined approach (all layers needed simultaneously):
 4. **Libc safety nets** — `syscall()` redirect (94→39), `kill()` signal neutralize, `abort()`/`_exit()` no-ops
 5. **Java safety** — `System.exit()`, `Process.killProcess()` implementations blocked
 
-See `dexguard-native-re` skill for the full script template (`scripts/appfence-bypass-v24.js`).
+Full script templates: `appfence-bypass-v24.js`, `appfence-bypass-v30-complete.js`
+Ghidra RE workflow: `ghidra-mcp-workflow.md`
 
 ## APK Merge (Split APK Handling)
 
@@ -158,3 +159,127 @@ strings libaf-android.so | grep -i "hook_\|is_magisk\|su_binary\|HookChecker"
 # Check for ard module in Java
 grep -r "DexGuard\|dexguard\|ard.*Root\|AppFence" jadx_out/sources/
 ```
+
+## Native RE Methodology
+
+### Step 1: Identify the detection library
+
+```bash
+adb shell "pm path <package>" | grep base
+adb pull <path>/lib/arm64/
+
+# Identify detection lib (usually 1-3MB, single JNI_OnLoad export)
+readelf -s lib/arm64/libaf-android.so | grep -c FUNC
+# Typically 1 export (JNI_OnLoad), everything else registered dynamically
+```
+
+### Step 2: Find inline SVC instructions
+
+```python
+# Search for SVC #0 (0xd4000001) at 4-byte aligned addresses
+import struct
+data = open('libaf-android.so', 'rb').read()
+svc_bytes = struct.pack('<I', 0xd4000001)
+for i in range(0, len(data) - 3, 4):
+    if data[i:i+4] == svc_bytes:
+        for j in range(max(0, i-32), i, 4):
+            instr = struct.unpack('<I', data[j:j+4])[0]
+            if (instr & 0xFFE0001F) == 0xd2800008:  # MOVZ X8, #imm
+                imm = (instr >> 5) & 0xFFFF
+                print(f"  0x{i:06x}: SVC #0 (X8={imm}={'exit_group' if imm==94 else imm})")
+```
+
+### Step 3: Map kill functions via BL targets
+
+```python
+# Find all BL to syscall/abort/_exit PLT entries
+for i in range(0, len(data)-3, 4):
+    instr = struct.unpack('<I', data[i:i+4])[0]
+    if (instr & 0xFC000000) == 0x94000000:  # BL
+        offset_val = instr & 0x03FFFFFF
+        if offset_val & 0x02000000: offset_val -= 0x04000000
+        target = i + (offset_val * 4)
+        if target == SYSCALL_PLT:
+            print(f"  0x{i:06x}: BL syscall")
+```
+
+### Step 4: Find function boundaries
+
+```python
+# ARM64 function prologue: STP X29, X30, [SP, #-N]!
+for i in range(start, end, 4):
+    instr = struct.unpack('<I', data[i:i+4])[0]
+    if (instr & 0xFFC07FFF) == 0xa9807bfd:
+        print(f"  Function at 0x{i:06x}")
+```
+
+### Step 5: Ghidra MCP analysis
+
+```
+# Ghidra adds 0x100000 to file offsets (default ELF load base)
+# File offset 0xa9bd8 → Ghidra address 0x1a9bd8
+
+# Key functions to decompile:
+# - JNI_OnLoad (find via: search_functions_by_name("JNI_OnLoad"))
+# - Kill thread (contains SVC)
+# - Kill orchestrator (dlsym + syscall + kill + abort)
+# - Thread spawner (pthread_create with kill thread)
+# - Maps scanner (fopen + fgets loop with string comparisons)
+```
+
+See `ghidra-mcp-workflow.md` for detailed MCP tool commands and decompilation patterns.
+
+### Step 6: Identify detection trigger from Java
+
+From crash backtrace or Ghidra xrefs, find the Java class that calls native detection:
+- Typically: `com/<pkg>/f4/F4Initializer` or similar obfuscated name
+- Called during app initialization (coroutine/async)
+- Native method registered via `RegisterNatives` in `JNI_OnLoad`
+
+## Full Bypass Scripts
+
+### Maps Filter + Kill Thread Block (v24 — minimal, proven)
+
+Script: `appfence-bypass-v24.js`
+
+Combined approach (all layers needed simultaneously):
+1. `/proc/self/maps` filtering via `fopen`/`fgets` hooks — hides Frida from detection scanner
+2. Kill thread blocking via `pthread_create` hook — replace start routine with sleep-forever
+3. Inline SVC patch — NOP the `SVC #0` instruction after library loads via `android_dlopen_ext` hook
+4. Libc safety nets — `syscall()` redirect (94→39), `kill()` signal neutralize, `abort()`/`_exit()` no-ops
+5. Java safety — `System.exit()`, `Process.killProcess()` implementations blocked
+
+### Full Root Hiding + DexGuard Bypass (v30 — complete)
+
+Script: `appfence-bypass-v30-complete.js`
+
+Adds to v24: root path hiding (access/stat/fopen hooks), /proc/version spoof, Java PackageManager hook. Use when app detects both root AND Frida.
+
+## Critical Pitfalls
+
+1. **NativeCallback GC** — `new NativeCallback(...)` inside `onEnter` gets garbage-collected before thread runs → SEGV. Declare ALL NativeCallbacks as GLOBAL variables at script top level.
+2. **On-disk patching triggers integrity check** — library reads its own .text pages. Only runtime patching works.
+3. **`Interceptor.replace` writes trampolines** — integrity checker detects modified bytes. Use `Interceptor.attach` or patch AFTER integrity check.
+4. **`read()` hook fires for ALL fds** — must filter by fd number AND wrap in try/catch for binary data.
+5. **Maps filter must be comprehensive** — detection checks for: `frida`, `gadget`, `linjector`, `hluda`, `/data/local/tmp`, `re.frida`, `gum-js-loop`, `frida-agent`, rwxp+memfd, rwxp+deleted.
+6. **Multiple detection passes** — library scans maps repeatedly (10+ fopen calls). Filter must work consistently.
+7. **Kill thread return-immediately crashes** — parent function uses thread's arg struct after completion. Use sleep-forever pattern.
+
+## Device Compatibility Matrix
+
+| Kernel | KernelSU | Zygisk Next | Shamiko | Recommendation |
+|--------|----------|-------------|---------|----------------|
+| 4.4.x | 0.7.1 (max) | No | No | Switch to Magisk |
+| 5.4-5.9 | 0.8-0.9 | Maybe | Maybe | Try KSU update, fallback Magisk |
+| 5.10+ | 1.0+ | Yes | Yes | KernelSU + Zygisk Next + Shamiko |
+| Any | N/A (Magisk) | Built-in | Yes | Magisk + Zygisk + Shamiko (universal) |
+
+## Root Hiding vs Frida Bypass — Decision Tree
+
+| Goal | Solution | When |
+|------|----------|------|
+| **Log in** (get auth token) | Root hiding (Magisk+Zygisk+Shamiko) | App kills itself before login |
+| **Instrument** (hook functions) | Frida bypass (maps filter + kill block) | App runs but detects Frida |
+| **Both** | Root hiding FIRST, then Frida after login | Most common scenario |
+
+**If you can't log in, Frida instrumentation is useless.** Fix root hiding first.

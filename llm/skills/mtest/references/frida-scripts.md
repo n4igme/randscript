@@ -1009,6 +1009,169 @@ Java.perform(function() {
 
 ---
 
+## Flutter SSL Pinning Bypass (BoringSSL in libflutter.so)
+
+Flutter apps use their own HTTP stack (dart:io) with BoringSSL compiled into libflutter.so. Standard Android SSL hooks (TrustManager, OkHttp, etc.) do NOT work. You must hook the native verify function inside libflutter.so.
+
+**Key challenges:**
+- libflutter.so strips all symbols — no exports to hook by name
+- Module memory may have unmapped pages — scanning full range causes access violations
+- Must scan only `r-x` (executable) ranges within the module
+- The verify function pattern changes between Flutter versions
+
+```javascript
+// flutter_ssl_bypass.js — Proven for Flutter 3.19–3.24+ (ARM64)
+// Hooks ssl_crypto_x509_session_verify_cert_chain by byte pattern
+// Forces return value to 1 (success) on all candidates
+
+function bypassFlutterSSL() {
+    var m = Process.findModuleByName('libflutter.so');
+    if (!m) { setTimeout(bypassFlutterSSL, 500); return; }
+
+    // CRITICAL: scan only executable ranges to avoid access violations
+    var ranges = Process.enumerateRanges('r-x');
+    var flutterRanges = [];
+    var mEnd = m.base.add(m.size);
+    for (var i = 0; i < ranges.length; i++) {
+        if (ranges[i].base.compare(m.base) >= 0 && ranges[i].base.compare(mEnd) < 0) {
+            flutterRanges.push(ranges[i]);
+        }
+    }
+
+    // Patterns for ssl_crypto_x509_session_verify_cert_chain prologue (ARM64)
+    // Format: sub sp, sp, #N; stp x29, x30, [sp, #offset]
+    // The first 8 bytes are most stable across versions
+    var patterns = [
+        'FF 03 05 D1 FD 7B 0F A9',  // sub sp, #0x140 (Flutter 3.22-3.24+)
+        'FF 83 04 D1 FD 7B 0F A9',  // sub sp, #0x120 (Flutter 3.19-3.21)
+        'FF C3 03 D1 FD 7B 0E A9',  // sub sp, #0xF0 (Flutter 3.16-3.18)
+        'FF 43 03 D1 FD 7B 0C A9',  // sub sp, #0xD0 (Flutter 3.13-3.15)
+        'FF 03 04 D1 FD 7B 0F A9',  // sub sp, #0x100 (alternate)
+        'FF C3 04 D1 FD 7B 0F A9',  // sub sp, #0x130 (alternate)
+    ];
+
+    var hooked = false;
+    for (var p = 0; p < patterns.length && !hooked; p++) {
+        var allMatches = [];
+        for (var r = 0; r < flutterRanges.length; r++) {
+            try {
+                var matches = Memory.scanSync(flutterRanges[r].base, flutterRanges[r].size, patterns[p]);
+                for (var j = 0; j < matches.length; j++) {
+                    allMatches.push(matches[j].address);
+                }
+            } catch(e) {}
+        }
+        // Good candidate: 1-5 matches (too many = wrong pattern)
+        if (allMatches.length > 0 && allMatches.length <= 5) {
+            for (var i = 0; i < allMatches.length; i++) {
+                Interceptor.attach(allMatches[i], {
+                    onLeave: function(retval) { retval.replace(0x1); }
+                });
+            }
+            console.log('[+] Flutter SSL bypass: pattern ' + p + ', ' + allMatches.length + ' hooks');
+            hooked = true;
+        }
+    }
+
+    if (!hooked) {
+        console.log('[-] Flutter SSL bypass FAILED — manual analysis needed');
+        console.log('[*] Try: strings libflutter.so | grep CERTIFICATE_VERIFY_FAILED');
+        console.log('[*] Then xref that string to find the verify function');
+    }
+}
+
+setTimeout(bypassFlutterSSL, 500);
+```
+
+**Usage with spawn (Python — recommended for Flutter):**
+```python
+import frida, time
+device = frida.get_usb_device()
+pid = device.spawn(['com.example.flutter_app'])
+session = device.attach(pid)
+with open('flutter_ssl_bypass.js') as f:
+    script = session.create_script(f.read())
+script.load()
+device.resume(pid)
+import sys; sys.stdin.read()  # keep session alive
+```
+
+**Why Python over CLI:** Frida CLI detaches on script completion. For Flutter SSL bypass to persist, the session must stay alive. Python's `sys.stdin.read()` blocks indefinitely.
+
+**Combined with iptables (required for Flutter):**
+Flutter ignores Android system proxy settings. You MUST redirect traffic at the network level:
+```bash
+# Get app UID
+adb shell cat /data/system/packages.list | grep <package>
+# Redirect HTTPS to proxy (targeted by UID)
+adb shell "su -c 'iptables -t nat -A OUTPUT -p tcp -m owner --uid-owner <UID> --dport 443 -j DNAT --to <HOST_IP>:8080'"
+adb shell "su -c 'iptables -t nat -A OUTPUT -p tcp -m owner --uid-owner <UID> --dport 80 -j DNAT --to <HOST_IP>:8080'"
+# Cleanup after testing
+adb shell "su -c 'iptables -t nat -F OUTPUT'"
+```
+
+**Pitfalls:**
+- If `Memory.scanSync` on the full module throws access violations, you MUST use `Process.enumerateRanges('r-x')` and filter to the module's address range
+- Hook ALL matches (up to 5) — the real verify function may not be the first match
+- If no pattern matches, the Flutter version uses a different stack frame size. Extract libflutter.so and check with: `strings libflutter.so | grep "flutter/third_party/boringssl"` to confirm BoringSSL presence, then use r2/Ghidra to find the function manually
+- Staging/debug Flutter builds may have relaxed pinning — test without bypass first
+
+---
+
+## Flutter Deep Link Monitoring
+
+When testing Flutter apps that handle deep links via the Dart layer (not Java Activities), use this hook combination to trace the flow:
+
+```javascript
+// flutter_deeplink_monitor.js — Trace deep link handling in Flutter apps
+Java.perform(function() {
+    // Hook Activity.onNewIntent — catches deep links delivered to running app
+    var Activity = Java.use('android.app.Activity');
+    Activity.onNewIntent.implementation = function(intent) {
+        var uri = intent.getData();
+        if (uri) { send('[DEEPLINK] onNewIntent: ' + uri.toString()); }
+        this.onNewIntent(intent);
+    };
+
+    // Hook Intent.getData — catches all URI reads (Flutter reads multiple times)
+    var Intent = Java.use('android.content.Intent');
+    Intent.getData.implementation = function() {
+        var result = this.getData();
+        if (result) {
+            var str = result.toString();
+            if (str.indexOf('://') !== -1 && str.indexOf('content://') === -1) {
+                send('[DEEPLINK] getData: ' + str);
+            }
+        }
+        return result;
+    };
+
+    // Hook WebView.loadUrl — detect if deep link triggers WebView navigation
+    var WebView = Java.use('android.webkit.WebView');
+    WebView.loadUrl.overload('java.lang.String').implementation = function(url) {
+        send('[WEBVIEW] loadUrl: ' + url);
+        this.loadUrl(url);
+    };
+
+    send('[+] Flutter deep link monitor active');
+});
+```
+
+**Testing pattern for Flutter deep links:**
+```bash
+# Trigger deep link while Frida monitors
+adb shell am start -a android.intent.action.VIEW \
+  -d "scheme://host/path?param=value" \
+  <package_name>
+```
+
+**Key insight:** In Flutter apps, deep links are received by the Java Activity layer but routed to the Dart layer via a MethodChannel. If `WebView.loadUrl` is NOT called after a deep link with a URL parameter, the app either:
+1. Gates the route behind authentication (common in banking apps)
+2. Uses a Flutter WebView widget (still uses Android WebView under the hood — hook will fire)
+3. Validates/rejects the URL in Dart before loading
+
+---
+
 ## Usage Quick Reference
 
 ```bash
