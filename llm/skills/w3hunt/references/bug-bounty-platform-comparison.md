@@ -14,12 +14,14 @@
 - Strength: SEA companies, less competition than HackerOne
 - Also has Dojo CTF challenges (reputation, no payout)
 
-### 3. HackerOne — Volume + private invites
+### 3. HackerOne — Volume + private invites (DEPRIORITIZED 2026-05-27)
 - Payouts: $200–$100K+
 - Key programs: Grab ($200–$10K, massive scope), TikTok, LINE
 - Strength: Largest pool, private invite pipeline
 - Strategy: Build rep on public programs → get invited to high-paying privates
 - Grab scope: 9 wildcards (*.grab.com, *.ovo.id, *.grabpay.com, etc.)
+- **TRUST ISSUE (2026-05-27):** WalletOnTelegram finding marked as duplicate with suspicious timing — possible triager front-running. TikTok TIKTOK-001 (passport/email/bind auth bypass, High) submitted but awaiting verdict. Decision: postpone H1 activity until TIKTOK-001 verdict. If also duped with suspicious timing, abandon H1 entirely.
+- **Known H1 problems:** Triagers accused of stealing/front-running bugs, opaque duplicate rulings, reputation score damage from dupes, time wasted on reports that get closed without transparency
 
 ### 4. Bugcrowd — Complementary
 - Payouts: $50–$75K (Okta top)
@@ -27,11 +29,14 @@
 - Strength: Different program pool from HackerOne
 - Caveat: Chime is geo-blocked (US-only), Okta needs credentials from program
 
-### 5. Intigriti — Skip for now
-- Mostly EU-focused, small public program pool
-- Many VDP (no payout), paid programs are few
-- Spring Heist events are EU/UK residents only
-- Not worth the effort from Indonesia
+### 5. Intigriti — Active
+- Payouts: $50–$100K (Intel top), $15K for fintech (Capital.com, Dropbox, Yahoo)
+- 128 public programs, many with wildcard scope
+- Active: Dropbox (auth testing pending), Capital.com (next target)
+- Strength: Fintech programs (Capital.com, Delen Private Bank, Monzo), less competition than HackerOne
+- Caveat: Login triggers reCAPTCHA for bots — use arkadiyt/bounty-targets-data repo for programmatic discovery
+- Spring Heist events are EU/UK residents only (skip events, hunt programs directly)
+- See: references/intigriti-engagement.md
 
 ### 6. HackenProof — Parked
 - Web3-focused, decent payouts

@@ -23,17 +23,20 @@ Quick lookup for which reference file to load based on what you're working on.
 | Need Frida hook templates | `frida-scripts.md` |
 | OWASP classification needed | `owasp-mobile-top10.md` |
 
-## By Phase
+## By Phase (v2.0.0 — 10 phases)
 
 | Phase | Relevant references |
 |---|---|
 | Phase 1 (Preflight) | `preflight-checklist.md` |
 | Phase 2 (Static Analysis) | `static-analysis.md`, `native-re-mcp.md`, `android-path-traversal-rce.md`, `crypto-key-cracking.md`, `native-buffer-overflow.md`, `deserialization-attacks.md`, `yaml-deserialization-rce.md`, `content-provider-attacks.md`, `deeplink-webview-hijack.md`, `deeplink-webview-bridge-attacks.md`, `webview-js-bridge-attacks.md`, `deep-link-path-traversal.md` |
-| Phase 3 (Dynamic Setup) | `dynamic-setup.md`, `dexguard-appfence-bypass.md`, `frida-scripts.md` |
-| Phase 4 (Traffic Analysis) | `traffic-analysis.md`, `banking-app-patterns.md` |
-| Phase 5 (Runtime Testing) | `runtime-testing.md`, `frida-scripts.md`, `deep-link-path-traversal.md`, `deeplink-webview-hijack.md`, `native-buffer-overflow.md` |
-| Phase 6 (API Testing) | `api-testing.md`, `banking-app-patterns.md` |
-| Phase 7 (Reporting) | `owasp-mobile-top10.md` |
+| Phase 3 (Protection Bypass) | `dynamic-setup.md`, `dexguard-appfence-bypass.md`, `frida-scripts.md`, `flutter-ssl-bypass.md`, `eversafe-attestation.md` |
+| Phase 4 (Traffic Analysis) | `traffic-analysis.md`, `banking-app-patterns.md`, `burp-mcp-integration.md` |
+| Phase 5 (Attack Surface Mapping) | — (uses output from Phases 2+4) |
+| Phase 6 (Runtime Testing) | `runtime-testing.md`, `frida-scripts.md`, `deep-link-path-traversal.md`, `deeplink-webview-hijack.md`, `native-buffer-overflow.md` |
+| Phase 7 (Vuln Analysis) | `owasp-mobile-top10.md`, `content-provider-attacks.md`, `webview-js-bridge-attacks.md` |
+| Phase 8 (API Testing) | `api-testing.md`, `banking-app-patterns.md` |
+| Phase 9 (Exploitation) | `android-path-traversal-rce.md`, `native-buffer-overflow.md`, `crypto-key-cracking.md` |
+| Phase 10 (Reporting) | `owasp-mobile-top10.md` |
 
 ## All Reference Files (alphabetical)
 

@@ -18,6 +18,44 @@
 - Cognito identity pools with unauthenticated role
 - API Gateway without authorization
 
+### S3 Bucket Full Assessment (Bug Bounty Severity Determination)
+When a public-listing bucket is found, test ALL operations to determine real severity:
+```bash
+# 1. Confirm listing (via CNAME or direct)
+curl -s 'https://<cname-domain>/' | grep '<ListBucketResult'
+aws s3 ls s3://<bucket>/ --no-sign-request
+
+# 2. Test GetObject (can we READ files?)
+aws s3 cp s3://<bucket>/<key> /dev/null --no-sign-request
+
+# 3. Test PutObject (can we WRITE?)
+echo 'test' | aws s3 cp - s3://<bucket>/security-test.txt --no-sign-request
+
+# 4. Test DeleteObject
+aws s3 rm s3://<bucket>/<key> --no-sign-request
+
+# 5. Get bucket metadata (account ID, cross-account trust)
+aws s3api get-bucket-policy --bucket <bucket> --no-sign-request
+aws s3api get-bucket-acl --bucket <bucket> --no-sign-request
+aws s3api get-bucket-versioning --bucket <bucket> --no-sign-request
+aws s3api list-object-versions --bucket <bucket> --no-sign-request --max-keys 5
+aws s3api head-object --bucket <bucket> --key <key> --no-sign-request
+aws s3api get-bucket-location --bucket <bucket> --no-sign-request
+
+# 6. Test with any-authenticated-AWS-user ACL
+aws s3 ls s3://<bucket>/ --region <region>
+
+# 7. Enumerate stg/dev variants: prd-<name> → stg-<name>, dev-<name>
+# 8. Check content: just images/assets or sensitive data (PII, backups, configs)?
+```
+**Severity guide:**
+- List-only + public assets (images/ads) + no GetObject = **Low**
+- List-only + sensitive filenames visible = **Medium**
+- GetObject on sensitive data (PII, backups, configs, terraform state) = **High**
+- PutObject allowed = **Critical** (supply chain attack vector)
+
+**Pitfall:** CNAME-based listing may work while direct S3 URL returns AccessDenied — the bucket policy may only allow listing via the CNAME domain. Also, `grep -c '<Key>'` on S3 XML will match the XML tag itself even when no objects exist under a prefix — always parse properly with Python/jq.
+
 ### SSRF to Metadata
 ```bash
 # IMDSv1 (no token required)

@@ -6,7 +6,7 @@
 - Web scope: https://app.stakewise.io/
 - 14 smart contracts on Ethereum mainnet
 
-## Findings (3x High confirmed)
+## Findings (1x Critical, 1x High, 1x Informational)
 
 ### Finding 1: CORS Origin Reflection + Credentials (DOWNGRADED to Informational)
 **Pattern:** GraphQL API reflects arbitrary Origin with `Access-Control-Allow-Credentials: true`
@@ -21,19 +21,26 @@
 **Status:** NOT submitted. Would have been rejected and damaged reputation.
 **Report:** `FINAL-immunefi-cors.md` (downgraded)
 
-### Finding 2: Unauthenticated GraphQL Mutation (Medium — CVSS 7.5)
+### Finding 2: Unauthenticated GraphQL Mutation (HIGH — DOWNGRADED to NOT SUBMITTABLE)
 **Pattern:** `uploadMetadata` mutation requires no auth, no rate limit, supports alias batching (3+ per request)
-**Impact:** Arbitrary IPFS upload at StakeWise's cost, files stored on storage.stakewise.io CDN, malicious content hosting
+**Impact (claimed):** Stored XSS payloads accepted → wallet signature theft → fund drain. Also: vault metadata spoofing → phishing stakers, IPFS pinning cost exhaustion.
 **Detection method:** GraphQL introspection → identify mutations → test without auth headers
 **Verified (2026-05-26):** 
 - Single upload: `bafkreicbk2z6ffn2wquvbvy4du7flverk55rrsw2hqphqxgj2natdgppsa`
 - Batch (3 in 1 request): all returned unique hashes
 - Rate limit test: 10/10 requests returned 200
 - Image upload stores to `storage.stakewise.io` (their CDN, not just IPFS)
-**Severity:** Medium (storage abuse/resource consumption — cannot modify existing vaults)
-**Report:** `FINAL-immunefi-upload.md`
+- XSS payloads stored successfully (img onerror, svg onload)
+**XSS RENDERING VERIFICATION (2026-05-27) — DEAD:**
+- Vault description on `/vaults` list page: rendered as plain text in `<div class="mt-8 overflow-ellipsis-2">`, React `children` prop as string, `renderedAsText: true`
+- Vault description on `/vault/mainnet/0x...` detail page: `[data-testid="vault-description"]`, `<div class="mt-16 whitespace-pre-wrap">`, React fiber confirms NO `dangerouslySetInnerHTML`, `childrenType: "string"`, `firstChildType: 3` (text node)
+- React's default JSX rendering escapes all HTML — XSS payloads display as literal text
+- **Conclusion:** XSS path is completely dead. The mutation is OOS (API not in scope), and without XSS rendering on app.stakewise.io, there's no in-scope impact.
+**Severity:** NOT SUBMITTABLE (API is OOS, XSS doesn't render, remaining impacts are "best practice critique" = explicitly OOS)
+**Status:** NOT submitted. Would have been rejected.
+**Report:** `FINAL-immunefi-upload.md` (archived, not for submission)
 
-### Finding 3: Signature Replay + No Expiry + Unbound Email (High — CVSS 7.1)
+### Finding 3: Signature Replay + No Expiry + Unbound Email (CRITICAL — v2.3)
 **Pattern:** `updateProfile` mutation validates EIP-191 signature but has three critical gaps:
 1. No timestamp expiry — signatures from 2020 still accepted
 2. No replay protection — same signature reusable unlimited times
@@ -46,8 +53,11 @@
 - Replayed 3x with different emails: `o*********`, `r*********`, `p*********` — all succeeded
 - Cross-protocol reuse: message "I agree to the terms of OtherDapp. Timestamp: 1577836800" also accepted
 - Works on mainnet + gnosis endpoints
+**Scope problem (2026-05-27):** API (`mainnet-api.stakewise.io`) is OOS. Only `app.stakewise.io` is in scope. Previous submission was rejected for this reason. Impact chain to fund loss is indirect (email takeover → missed slashing alerts → fund loss). The "state-modifying actions on behalf of others" framing is strong but the program's listed impacts are ONLY fund-related (Loss of user funds, Freezing of unclaimed yield, etc.).
 **Severity:** Critical (v2.3: "Taking state-modifying authenticated actions on behalf of other users without any interaction by that user — Changing registration information")
 **Submitted:** 2026-05-26 on Immunefi as Critical
+**Outcome:** Rejected — API asset out of scope. Only `app.stakewise.io` is in-scope.
+**Final status (2026-05-27):** NOT resubmittable. All 3 findings are dead — API is OOS, XSS doesn't render on app, impact chains to fund loss are indirect/theoretical. StakeWise engagement is CLOSED.
 **Report:** `FINAL-immunefi-signature.md`
 
 ### Signature Validation Testing Checklist (reusable pattern)
