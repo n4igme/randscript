@@ -34,8 +34,8 @@ Quick lookup: what you found → which reference to load.
 | ArgoCD / Grafana / Prometheus / Vault / Harbor exposed | `kubernetes-management-tooling.md` |
 | Teleport remote access proxy exposed | `teleport-assessment.md` |
 | Signed URL (GCS/S3) in API response | `signed-url-exploitation.md` |
-| Callback / webhook / integration endpoint | Main SKILL.md (§ Unauthenticated Callback/Webhook Endpoint Testing) |
-| Alibaba Cloud WAF (Tengine, acw_tc cookie) | Main SKILL.md (§ Alibaba Cloud WAF Behavior Patterns) |
+| Callback / webhook / integration endpoint | `unauthenticated-callback-testing.md` |
+| Alibaba Cloud WAF (Tengine, acw_tc cookie) | `alibaba-cloud-infrastructure.md` |
 | Kubernetes / GKE / container environment | `kubernetes-container-attacks.md`, `microservice-architecture-mapping.md` |
 | Istio / Envoy headers | `kubernetes-container-attacks.md` §Istio, `operational-pitfalls.md` (Istio section) |
 | SFTP / SSH port open | `non-http-protocol-testing.md` §2 |
@@ -185,7 +185,8 @@ dark-web-breach-osint.md             — Breach databases, dark web search, thre
 data-classification-framework.md     — Data sensitivity classification
 depth-vs-breadth-decisions.md        — When to stop vs dig deeper
 dns-record-intelligence.md           — SPF/DMARC/MX/TXT analysis
-false-positive-detection.md          — SPA catch-alls, CORS crashes, 302-to-login
+file-upload-attacks.md              — File upload bypass techniques
+fix-verification.md                 — Redo/reassessment fix verification methodology
 framework-specific-attacks.md        — Next.js, Laravel, Django, WordPress, Rails, GraphQL, Spring Boot
 gateway-misconfiguration-patterns.md — Parallel gateway drift, CDN bypass, config inconsistency detection
 ghidra-extension-building.md         — Build Ghidra extensions from source for version mismatches
@@ -196,7 +197,8 @@ javascript-secret-scanning.md        — Bulk JS secret scanning patterns
 js-bundle-recon.md                   — Phase 1 JS bundle analysis for recon (URLs, configs, architecture)
 keycloak-assessment.md               — Keycloak realm/client enumeration
 keycloak-gateway-exploitation.md     — Keycloak behind API gateway
-kubernetes-management-tooling.md     — ArgoCD, Grafana, Prometheus, Vault, Harbor exposure testing
+kubernetes-container-attacks.md      — K8s API, kubelet, etcd, container escape, GKE metadata, Istio mesh
+laravel-debug-exploitation.md        — Laravel debug mode detection, Ignition RCE, .env exposure, log poisoning
 legacy-protocol-bypass.md            — Legacy auth endpoints that bypass SSO/MFA (20+ platforms)
 llm-ai-feature-testing.md            — Prompt injection, AI IDOR/SSRF, OWASP LLM Top 10
 lucy-security-assessment.md          — Lucy phishing platform testing
@@ -207,7 +209,8 @@ kubernetes-container-attacks.md      — K8s API, kubelet, etcd, container escap
 cicd-pipeline-exploitation.md        — Jenkins RCE, GitLab CI variables, GitHub Actions injection, ArgoCD
 multi-operator-coordination.md       — Team coordination for multi-person engagements
 nmap-cloud-targets.md                — Nmap behavior on GCP/AWS load balancers
-oauth-sso-attack-chains.md           — OAuth/OIDC attack chains, token analysis, Keycloak-specific attacks
+nmap-cloud-targets.md                — Nmap behavior on GCP/AWS load balancers
+nextjs-proxy-pattern.md              — Next.js SSR API route proxy exploitation, internal service access
 nodejs-library-attacks.md             — Node.js library-level vulns: path.join traversal, yauzl/adm-zip Zip Slip, require() RCE, prototype pollution, ReDoS
 non-http-protocol-testing.md         — SMTP, SFTP/SSH, OpenVPN, DNS
 operational-pitfalls.md              — 50+ battle-tested tool/target pitfalls

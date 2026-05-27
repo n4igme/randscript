@@ -1,5 +1,16 @@
 # Intigriti Engagement Notes
 
+## Immunefi Self-Bounty (Cross-Platform Reference)
+
+Immunefi's own program is a good web target:
+- **Web Assets:** immunefi.com, bugs.immunefi.com, shieldmybags.immunefi.com + Primacy of Impact
+- **Web Rewards:** Critical $5K-$10K, High $2K-$5K, Medium $2K, Low $1K
+- **Critical impacts:** RCE, sensitive data, app takedown, state-modifying actions on behalf of users, wallet manipulation, subdomain takeover w/ wallet, direct fund theft
+- **High impacts:** Persistent HTML injection, changing sensitive user details (≤1 click), PII disclosure, subdomain takeover w/o wallet
+- **Requirements:** PoC required, KYC required, triaged (9hr median resolution)
+- **Vault:** ~$4.6K (small — SC bounty capped at $50K)
+- **Best vectors:** IDOR on reports/profiles, auth bypass on bugs.immunefi.com, CSRF on wallet connection, SSRF via URL inputs, broken access control between researcher/project roles
+
 ## Account
 - Login: sinaubib@gmail.com
 - Platform rules: @intigriti.me email, UA "Intigriti - <user> - <ua>", X-Intigriti-Username header, 5 req/sec max
@@ -74,10 +85,31 @@ Avoid:
 - VDP programs ($0 bounty) — waste of time
 - Heavily hunted (Yahoo) — unless you have a specific angle
 
+## Intigriti Public Programs (No Login Required) — 2026-05-27
+
+Paid bug bounty programs visible on public page:
+- **Coveo Public Bug Bounty** — $100–$5,500. AI search platform, crawlers, Python execution, GenAI. 2FA required.
+- **Randstad.be** — €25–€5,000. New W-One deployment, recently migrated. Application required.
+- **Nutaku / Pornhub / Brazzers / TrafficJunky / Probiller** — MindGeek family, adult platforms.
+
+VDPs (no bounty): Grafana Labs, Wärtsilä, University of Basel, Atolls, Anaconda, Storebrand, DIGI, Voi, Toast.
+
+Monthly CTF: Challenge 0526 (live).
+
+## intigriti.me Domain (Recon 2026-05-27)
+
+- `intigriti.me` → 307 redirect to `www.intigriti.com`
+- NS: Route53 (AWS), MX: SES, SPF: amazonses.com -all
+- 1Password site verification present
+- 5 subdomains (subfinder) — all dead (no A/CNAME records)
+- No live HTTP services on any subdomain
+- Mail-only domain with redirect — no web apps to test
+
 ## Directory Structure
 ```
 ~/PenTest/Hunting/Intigriti/
 ├── Dropbox/          (auth testing pending)
 ├── Capital.com/      (next target)
+├── intigriti-me/     (closed — no attack surface)
 └── ...
 ```

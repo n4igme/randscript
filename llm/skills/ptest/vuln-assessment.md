@@ -83,9 +83,43 @@ For each high-priority asset (from Phase 4 asset inventory), build an attack tre
 
 ## 5B: Vulnerability Assessment
 
-### 1. Automated Vulnerability Scanning (MANDATORY: nuclei)
+### 0. CDN/WAF-Aware Pre-Check (MANDATORY before scanning)
 
-Run nuclei against ALL confirmed-live web targets.
+Before running automated scanners, determine if targets are behind CDN/WAF:
+```bash
+# Check for CDN indicators
+curl -sI https://target.com | grep -i "server\|cf-ray\|x-cache\|x-amz-cf\|cloudfront\|akamai"
+```
+
+**If behind Cloudflare/CloudFront/Akamai:**
+- Skip nuclei/nikto (they'll timeout or get blocked)
+- Use **manual targeted checks** instead (see below)
+- Focus on: CSP analysis, bucket misconfigs, config endpoints, header intelligence
+- Look for non-CDN subdomains (staging, internal, dev) that bypass WAF
+
+**CDN-Fronted Manual Checks (replace automated scanning):**
+```bash
+# 1. CSP header analysis → extract third-party keys
+curl -sI https://target.com | grep -i "content-security-policy" | tr ';' '\n'
+# Look for: Sentry DSN, analytics endpoints, internal domains, staging URLs
+
+# 2. Third-party key abuse (Sentry DSN example)
+# Extract from CSP: https://<key>@<org>.ingest.<region>.sentry.io/<project>
+# Test write access with event injection
+
+# 3. Config/settings endpoints (common patterns)
+for path in /api/config /api/settings /api/v0/config/settings /config.json /.well-known/; do
+  curl -s "https://target.com$path" -w "\n%{http_code}" | tail -5
+done
+
+# 4. Cloud storage enumeration
+# Check for S3/Spaces bucket listing on discovered subdomains
+curl -s "https://subdomain.target.com" | grep -i "ListBucket\|AccessDenied\|NoSuchBucket"
+```
+
+### 1. Automated Vulnerability Scanning (nuclei — skip if CDN-blocked)
+
+Run nuclei against ALL confirmed-live web targets. **Skip if targets are CDN-fronted and scans timeout.**
 ```bash
 # Full scan against all live hosts
 nuclei -l ./ptest-output/recon-passive/live-urls.txt -o ./ptest-output/vuln-assessment/nuclei-full.txt -severity info,low,medium,high,critical

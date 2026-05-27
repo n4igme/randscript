@@ -8,7 +8,7 @@ argument-hint: "<command: start|status|resume|next|report>"
 metadata:
   hermes:
     tags: [cloud, aws, gcp, azure, kubernetes, container, pentest]
-    related_skills: [ptest, scode]
+    related_skills: [ptest, atest, mtest]
 ---
 
 # Cloud & Container Penetration Testing Framework
@@ -97,9 +97,47 @@ time_tracking:
 
 ---
 
+## Scope-Type Decision Tree
+
+Your approach fundamentally changes based on access level. Before starting Phase 1, determine which path you're on:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ EXTERNAL (black-box, no creds)                                      │
+│ Priority: leaked creds → public resources → SSRF to metadata        │
+│ Phase 1: heavy (credential hunting, public resource enum)           │
+│ Phase 2: skip unless creds found                                    │
+│ Phase 3: limited to public-facing services                          │
+│ Phase 4: only if registry/K8s API exposed externally                │
+├─────────────────────────────────────────────────────────────────────┤
+│ AUTHENTICATED (grey-box, limited creds/role)                        │
+│ Priority: policy analysis → escalation → lateral movement           │
+│ Phase 1: light (you already have access, map what you can reach)    │
+│ Phase 2: heavy (this is where critical findings live)               │
+│ Phase 3: test everything your role can touch                        │
+│ Phase 4: if EKS/GKE/AKS in scope                                   │
+├─────────────────────────────────────────────────────────────────────┤
+│ INTERNAL (white-box, console access)                                │
+│ Priority: misconfigurations → blast radius → data exposure          │
+│ Phase 1: minimal (you have full visibility)                         │
+│ Phase 2: audit all roles/policies systematically                    │
+│ Phase 3: comprehensive — test every service category                │
+│ Phase 4: full cluster assessment                                    │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Bug bounty note:** Most bug bounty cloud targets are EXTERNAL. You're hunting for public resources and leaked credentials. If you find creds, you shift to AUTHENTICATED path mid-engagement.
+
+---
+
 ## Phase 1: Scope & Discovery
 
 ### Gate: cloud provider confirmed, account/project enumerated, external attack surface mapped
+
+**Prioritization by scope type:**
+- **External:** Credential Discovery (#5) first → then Service Discovery (#3) → then External Attack Surface (#4). You need creds or public resources before anything else matters.
+- **Authenticated:** Account/Project Enumeration (#2) first → then Service Discovery (#3). You already have access, map what's reachable.
+- **Internal:** All techniques in parallel — you have visibility, be systematic.
 
 **Techniques:**
 
@@ -222,6 +260,11 @@ time_tracking:
    roadrecon gather
    ```
 
+**Prioritization by access level:**
+- **Leaked keys (AKIA/ASIA):** Identity Enumeration (#1) → Policy Analysis (#2) → Escalation (#3). Determine what the key can do before trying to escalate.
+- **Compromised user:** Federation & SSO (#4) first (can you pivot to other accounts?) → then Policy Analysis (#2) → Escalation (#3).
+- **Service account:** Skip user enumeration. Go straight to Policy Analysis (#2) → check what services the SA can access → Escalation (#3).
+
 **Reference:** `references/iam-escalation-patterns.md`
 
 **Cross-reference:** ptest `references/cloud-privilege-escalation.md` for post-compromise escalation.
@@ -232,6 +275,11 @@ time_tracking:
 
 ### Gate: at least 3 service categories tested, storage/compute/network assessed
 
+**Prioritization by what you have:**
+- **Read-only access:** Storage first (S3/GCS/Blob enumeration, public snapshots) → Database (RDS snapshots, Firestore rules) → Secrets Manager/Parameter Store. You're looking for data exposure.
+- **Limited write access:** Serverless first (Lambda env vars, event injection, layer poisoning) → Compute (user data scripts, instance profiles) → Network. You're looking for code execution.
+- **Broad access:** Network first (VPC peering, security groups, private endpoints) → then sweep all categories. You're mapping blast radius.
+
 **Techniques:**
 
 1. **Storage Misconfigurations:**
@@ -240,6 +288,15 @@ time_tracking:
    - Versioning enabled with deleted secrets recoverable
    - Cross-account access via bucket policies
    - Signed URL generation with long expiry
+   ```bash
+   # S3 policy and ACL check
+   aws s3api get-bucket-policy --bucket <name> 2>/dev/null
+   aws s3api get-bucket-acl --bucket <name>
+   # List with no auth (public bucket)
+   aws s3 ls s3://<name> --no-sign-request
+   # Recover deleted secrets via versioning
+   aws s3api list-object-versions --bucket <name> --prefix "secrets"
+   ```
 
 2. **Compute Exploitation:**
    - EC2/VM metadata SSRF (IMDSv1 vs v2)
@@ -247,6 +304,14 @@ time_tracking:
    - User data scripts with secrets
    - SSM command execution on managed instances
    - Snapshot access (public AMIs/images with secrets)
+   ```bash
+   # Public snapshots with your account's data
+   aws ec2 describe-snapshots --restorable-by-user-ids all --owner-ids <account_id>
+   # User data (often contains bootstrap secrets)
+   aws ec2 describe-instance-attribute --instance-id <id> --attribute userData | jq -r '.UserData.Value' | base64 -d
+   # SSM command execution
+   aws ssm send-command --instance-ids <id> --document-name "AWS-RunShellScript" --parameters 'commands=["id"]'
+   ```
 
 3. **Serverless Abuse:**
    - Lambda/Cloud Function environment variable extraction
@@ -254,12 +319,27 @@ time_tracking:
    - Layer poisoning
    - Timeout/memory abuse for crypto mining
    - Cold start credential caching
+   ```bash
+   # Lambda env vars (often contain DB creds, API keys)
+   aws lambda get-function --function-name <name> | jq '.Configuration.Environment'
+   aws lambda list-functions | jq '.Functions[].FunctionName'
+   # GCP Cloud Function source
+   gcloud functions describe <name> --format='value(sourceArchiveUrl)'
+   ```
 
 4. **Database & Secrets:**
    - RDS/CloudSQL public snapshots
    - Secrets Manager/Parameter Store enumeration
    - DynamoDB/Firestore without fine-grained access
    - Redis/Memcached exposed without auth
+   ```bash
+   # Secrets Manager enumeration
+   aws secretsmanager list-secrets
+   aws ssm describe-parameters
+   aws ssm get-parameters-by-path --path "/" --recursive --with-decryption
+   # RDS public access check
+   aws rds describe-db-instances | jq '.DBInstances[] | select(.PubliclyAccessible==true) | .Endpoint'
+   ```
 
 5. **Network:**
    - VPC peering misconfigurations
@@ -268,13 +348,22 @@ time_tracking:
    - Private link/endpoint exposure
    - DNS exfiltration via Route53/Cloud DNS
 
-**Reference:** `references/serverless-abuse.md`
+**Reference:** `references/serverless-abuse.md`, `references/cicd-pipeline-attacks.md`
 
 ---
 
 ## Phase 4: Container & Orchestration
 
 ### Gate: container runtime assessed, K8s API tested (if present), registry access checked
+
+**Skip criteria:** If the target has no containers/K8s (pure serverless, VM-only, or PaaS-only), skip this phase entirely. Indicators that Phase 4 applies:
+- EKS/GKE/AKS clusters found in Phase 1 or Phase 3
+- Container registry (ECR/GCR/ACR) discovered
+- Kubernetes-related subdomains or ports (6443, 10250, 2379)
+- Docker/containerd references in instance metadata or user data
+- Istio/Envoy headers in HTTP responses
+
+**If skipping:** Move directly to Phase 5. Document "No container/orchestration infrastructure identified" in the report.
 
 **Techniques:**
 
@@ -321,7 +410,23 @@ time_tracking:
    etcdctl get / --prefix --keys-only
    ```
 
-6. **Supply Chain:**
+6. **RBAC Escalation & Token Theft:**
+   ```bash
+   # Check what current SA can do
+   kubectl auth can-i --list
+   kubectl auth can-i create pods
+   kubectl auth can-i create clusterrolebindings
+   # Escalate via pod creation (mount privileged SA)
+   kubectl run pwn --image=alpine --overrides='{"spec":{"serviceAccountName":"admin-sa","containers":[{"name":"pwn","image":"alpine","command":["sleep","3600"]}]}}'
+   # EKS IRSA token theft (from inside pod)
+   cat /var/run/secrets/eks.amazonaws.com/serviceaccount/token
+   # GKE Workload Identity token
+   curl -s -H "Metadata-Flavor: Google" http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token
+   # Azure Managed Identity
+   curl -s -H "Metadata: true" "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/"
+   ```
+
+7. **Supply Chain:**
    - Image provenance (unsigned images, no admission controller)
    - Helm chart values with secrets
    - CI/CD pipeline credentials in cluster
@@ -330,6 +435,50 @@ time_tracking:
 **Reference:** `references/container-escape.md`, `references/k8s-cluster-attacks.md`
 
 **Cross-reference:** ptest `references/kubernetes-container-attacks.md`, `references/kubernetes-management-tooling.md`
+
+---
+
+## Attack Path Chaining
+
+Findings in isolation are often Low/Medium. Chained together, they become Critical. After each phase, ask: "Can I combine this with something I already found?"
+
+### Common Cloud Attack Chains
+
+```
+Chain 1: Public Bucket → Account Compromise
+  Public S3 listing (Low) → terraform.tfstate found (Medium) → 
+  AWS keys in state file (High) → iam:CreatePolicyVersion (Critical)
+
+Chain 2: SSRF → Cloud Takeover
+  SSRF in web app (Medium) → IMDSv1 metadata access (High) → 
+  Instance role credentials → iam:PassRole + Lambda (Critical)
+
+Chain 3: GitHub Leak → Data Exfiltration
+  Leaked service account key on GitHub (Medium) → 
+  SA has storage.objects.list (Low alone) → 
+  Bucket contains PII/backups (Critical)
+
+Chain 4: Container → Cloud Account
+  Unauthenticated kubelet (High) → pod exec → 
+  SA token with cloud IAM permissions → 
+  Cloud metadata → account-level access (Critical)
+
+Chain 5: CI/CD → Supply Chain
+  Public repo with GitHub Actions (Info) → 
+  OIDC federation to AWS with broad subject (Medium) → 
+  Workflow injection → assume production role (Critical)
+```
+
+### Chaining Checklist (run after each phase)
+
+After finding something, check if it unlocks:
+- [ ] **Credentials** — does this give me keys/tokens for another service?
+- [ ] **Network access** — does this let me reach internal services?
+- [ ] **Identity** — does this let me become a more privileged principal?
+- [ ] **Data** — does this expose secrets that chain to other systems?
+- [ ] **Code execution** — does this let me run code in a trusted context?
+
+**Cross-reference:** ptest `references/chain-and-escalate-phase.md` for general chaining methodology.
 
 ---
 
@@ -437,5 +586,6 @@ time_tracking:
 - **No Persistence** — document persistence techniques but do NOT deploy backdoors without explicit authorization.
 - **Evidence Preservation** — screenshot/log everything before remediation discussions. Cloud resources can be deleted quickly.
 - **Geo-blocking** — SEA companies (Grab, Gojek, Tokopedia, OVO) commonly geo-restrict API gateways. All endpoints return 502 from outside the region. If you hit consistent 502s across all API paths, test from a regional VPN before concluding the service is down. Static assets (CDN, S3 via CNAME) often remain accessible globally even when APIs are blocked.
+- **Cost Awareness** — cloud pentesting can accidentally generate costs (ScoutSuite scanning all regions, large S3 sync, spinning up compute for PoC). If using client credentials, monitor billing. Prefer `--dry-run` flags and `--max-keys`/`--limit` on enumeration. Never run crypto mining PoCs on client accounts.
 - **S3 ListBucket via CNAME** — some buckets allow ListBucket only through their CNAME (e.g., `subdomain.target.com` → bucket) but deny direct `bucket.s3.amazonaws.com` access. Always test both paths. A 200 on listing doesn't mean GetObject works — test read/write separately.
 - **cloud_enum on macOS** — the pip-installed `cloud_enum` may fail with "Cannot access mutations file" because it looks for `fuzz.txt` relative to the binary, not the package. Fix: find the package dir (`pip3 show cloud_enum | grep Location`) and run from there, or symlink the enum_tools directory.

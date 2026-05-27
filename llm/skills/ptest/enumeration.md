@@ -282,10 +282,65 @@ Write `./ptest-output/enumeration/checklist.md`:
 
 Mark each technique as `DONE`, `SKIPPED (reason)`, or `FAILED (reason)` after execution.
 
+## 13. Cloud Misconfiguration Checks
+
+Systematic checks for cloud-specific misconfigurations on all discovered subdomains.
+
+### Storage Bucket Enumeration
+```bash
+# Check all subdomains for open S3/Spaces bucket listing
+for url in $(cat live-urls.txt); do
+  resp=$(curl -s "$url" | head -5)
+  if echo "$resp" | grep -qi "ListBucket\|<Key>\|<Contents>"; then
+    echo "OPEN BUCKET: $url"
+    # Check write access
+    curl -s -X PUT "$url/test-write-check" -d "test" -w "%{http_code}"
+  fi
+done
+
+# Check for non-package files in open buckets (internal tools, scripts, keys)
+# Look for: install scripts, GPG keys, config files, internal binaries NOT on GitHub
+```
+
+### Exposed Monitoring/Observability
+```bash
+# Sentry DSN extraction from CSP headers
+curl -sI https://target.com | grep -i "content-security-policy" | grep -oP 'https://[a-f0-9]+@[^/]+\.sentry\.io/\d+'
+
+# Prometheus metrics endpoints
+for path in /metrics /api/v1/metrics /actuator/prometheus; do
+  curl -s "https://target.com$path" -w "\n%{http_code}" | tail -3
+done
+
+# Health/readiness endpoints (may leak versions, dependencies)
+for path in /health /healthz /readyz /status /api/health; do
+  curl -s "https://target.com$path" -w "\n%{http_code}" | tail -3
+done
+```
+
+### Exposed API Documentation
+```bash
+# OpenAPI/Swagger specs
+for path in /openapi.json /swagger.json /api-docs /docs /api/docs /swagger-ui /redoc; do
+  code=$(curl -s -o /dev/null -w "%{http_code}" "https://target.com$path")
+  [ "$code" != "404" ] && [ "$code" != "000" ] && echo "$path -> $code"
+done
+```
+
+### Container Registry Exposure
+```bash
+# Docker Registry V2 API
+curl -s "https://registry.target.com/v2/" -w "\n%{http_code}"
+curl -s "https://registry.target.com/v2/_catalog" -w "\n%{http_code}"
+# Check www-authenticate header for auth realm
+curl -sI "https://registry.target.com/v2/" | grep -i "www-authenticate"
+```
+
 ## Exit Criteria
 - [ ] All live web applications have directory/file enumeration completed.
 - [ ] API endpoints mapped with methods and parameters.
 - [ ] Authentication mechanisms identified per application.
 - [ ] Hidden content and functionality discovered.
+- [ ] Cloud misconfiguration checks completed (buckets, monitoring, API docs, registries).
 - [ ] Mandatory tools (gobuster/feroxbuster, ffuf) executed — or gap documented.
 - [ ] Checklist shows all applicable techniques executed.

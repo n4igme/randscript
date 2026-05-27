@@ -6,10 +6,12 @@ Quick lookup for which reference file to load based on what you're working on.
 
 | What you found | Load reference |
 |---|---|
+| Starting a new engagement / app type unknown | `app-type-decision-tree.md` |
+| Bug bounty (not internal pentest) | `bug-bounty-fast-path.md` |
 | Deep links routing to WebViews | `deeplink-webview-hijack.md`, `deeplink-webview-bridge-attacks.md` |
 | Deep link with path/file parameters | `deep-link-path-traversal.md` |
 | WebView with `addJavascriptInterface` | `webview-js-bridge-attacks.md` |
-| DexGuard / AppFence / root detection | `dexguard-appfence-bypass.md`, `ghidra-mcp-workflow.md` |
+| DexGuard / AppFence / root detection | `dexguard-appfence-bypass.md`, `ghidra-mcp-workflow.md`, `operational-notes.md` |
 | Native .so libraries with JNI | `native-re-mcp.md`, `native-buffer-overflow.md` |
 | `System.load()` from writable path | `android-path-traversal-rce.md` |
 | SnakeYAML `yaml.load()` | `yaml-deserialization-rce.md` |
@@ -44,7 +46,9 @@ Quick lookup for which reference file to load based on what you're working on.
 |---|---|
 | `android-path-traversal-rce.md` | Path traversal via deep links leading to native library hijack and RCE |
 | `api-testing.md` | Server-side API testing techniques for mobile backends |
+| `app-type-decision-tree.md` | App categorization (banking/social/utility/game/Flutter) with per-type testing priorities |
 | `banking-app-patterns.md` | Common patterns in banking/fintech apps (auth, pinning, attestation) |
+| `bug-bounty-fast-path.md` | Speed-run workflow for finding one Critical/High fast (4-8 hour budget) |
 | `content-provider-attacks.md` | Exported ContentProvider exploitation (SQL injection, path traversal, brute-force) |
 | `crypto-key-cracking.md` | Offline cracking of hardcoded/weak encryption keys and small keyspaces |
 | `deep-link-path-traversal.md` | Path traversal via deep link parameters to read/write arbitrary files |
@@ -59,6 +63,7 @@ Quick lookup for which reference file to load based on what you're working on.
 | `ghidra-mcp-workflow.md` | Ghidra MCP workflow for AppFence native library RE |
 | `native-buffer-overflow.md` | Buffer overflow exploitation in Android native libraries |
 | `native-re-mcp.md` | Native library reverse engineering using Ghidra/r2 MCP integration |
+| `operational-notes.md` | Battle-tested patterns: DexGuard, Eversafe, Flutter SSL, hluda, Frida pitfalls, device connectivity, attack patterns, Unity/IL2CPP |
 | `owasp-mobile-top10.md` | OWASP Mobile Top 10 mapping and classification guidance |
 | `preflight-checklist.md` | Tool verification and environment setup checklist |
 | `runtime-testing.md` | Dynamic runtime testing techniques (data storage, IPC, biometrics) |
