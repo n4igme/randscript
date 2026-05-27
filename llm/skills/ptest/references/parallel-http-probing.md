@@ -80,4 +80,58 @@ subdomain.example.com|IP_ADDRESS
 
 - 270 hosts with 25 concurrency: ~50-70 seconds
 - 500 hosts with 30 concurrency: ~90-120 seconds
+- 1100 hosts with 60 concurrency (Python): ~90 seconds
+- 3000 hosts with 80 concurrency (Python): ~180 seconds
 - Adjust `--max-time` (curl timeout) based on target geography. 4s works for most; increase to 6s for high-latency targets.
+
+## Alternative: Python ThreadPoolExecutor (for 500+ hosts)
+
+For large-scale probing (1000+ hosts), the Python approach is more reliable than bash backgrounding — better error handling, progress reporting, and output capture:
+
+```python
+import subprocess, concurrent.futures
+
+with open('public-subdomains.txt') as f:
+    subs = [l.strip() for l in f if l.strip()]
+
+def probe(host):
+    for scheme in ['https', 'http']:
+        try:
+            r = subprocess.run(
+                ['curl', '-s', '-o', '/dev/null',
+                 '-w', '%{http_code}|%{size_download}|%{content_type}',
+                 '--max-time', '7', '-k', f'{scheme}://{host}'],
+                capture_output=True, text=True, timeout=10)
+            parts = r.stdout.split('|')
+            code = parts[0] if parts else '000'
+            size = parts[1] if len(parts) > 1 else '0'
+            ctype = parts[2] if len(parts) > 2 else ''
+            if code and code != '000':
+                return f'{code} {scheme}://{host} [{size}b] [{ctype}]'
+        except:
+            pass
+    return None
+
+results = []
+with concurrent.futures.ThreadPoolExecutor(max_workers=60) as ex:
+    futures = {ex.submit(probe, h): h for h in subs}
+    done = 0
+    for future in concurrent.futures.as_completed(futures):
+        done += 1
+        if done % 200 == 0:
+            print(f'  Progress: {done}/{len(subs)}')
+        result = future.result()
+        if result:
+            results.append(result)
+
+results.sort()
+with open('live-hosts.txt', 'w') as f:
+    f.write('\n'.join(results))
+```
+
+### When to use Python vs Bash
+- **Bash script**: <500 hosts, simple alive/dead check, no progress needed
+- **Python ThreadPoolExecutor**: 500+ hosts, need status codes + response size + content-type, want progress reporting
+
+### Pitfall: httpx on this system
+The `httpx` binary at `/opt/homebrew/bin/httpx` is **Python httpx CLI** (not ProjectDiscovery httpx). It does NOT support `--status-code`, `--tech-detect`, `--threads`, or pipe-from-stdin subdomain probing. Use `dnsx` for DNS resolution and the Python/bash probing patterns above for HTTP.

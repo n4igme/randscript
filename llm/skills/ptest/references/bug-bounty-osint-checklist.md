@@ -91,6 +91,26 @@ Before declaring "unauthenticated testing exhausted," always check these endpoin
 
 See `references/otp-endpoint-testing.md` for the full OTP testing playbook.
 
+## Google VRP Target Selection (Lessons Learned)
+
+Google's standard web apps (Pitchfork framework) are extremely hardened. Traditional web vulns (CSRF, IDOR, XSS, clickjacking) are systematically prevented at the framework level. Before investing time:
+
+**Low-ROI targets (avoid unless you have a specific lead):**
+- Any `*.google.com` Pitchfork app (ESF server, `/_/AppName/` pattern) — CSRF solid, IDOR user-scoped, XSS blocked by Trusted Types + nonces
+- Sandbox/staging subdomains — behind ÜberProxy/corp auth, unreachable externally
+- API keys in page source — referer-restricted by design, not vulns
+- `nflpzd` Basic Auth tokens — intentional feed polling credentials, not leaks
+- Internal URLs/codenames in page source — informational only, rarely pays bounty
+
+**Higher-ROI targets on Google:**
+- **Non-Pitchfork infra** — e.g., `colab.research.google.com` (TornadoServer), anything not on ESF
+- **AI/agent layer attacks** — prompt injection, system prompt leakage, sandbox escape, tool permission abuse (Jules, Gemini, NotebookLM)
+- **OAuth/GitHub integration flows** — state parameter validation, token scope abuse, cross-tenant access
+- **Newer products with less testing** — Gemini Data Analytics, Illuminate (older builds = less patched)
+- **Mobile apps** — often have weaker auth patterns than web
+
+**Key insight:** On AI coding agents (Jules), the web layer is a dead end. The real attack surface is the agent's code execution sandbox, its GitHub App permissions, and prompt injection to leak system instructions or access unauthorized repos. These require interactive UI testing, not curl.
+
 ## Pace Adjustment for Bug Bounties
 
 - Phase 1-2 combined should take 30-60 minutes max

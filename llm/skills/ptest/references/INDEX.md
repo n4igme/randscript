@@ -28,7 +28,8 @@ Quick lookup: what you found → which reference to load.
 | File upload functionality | `file-upload-attacks.md` |
 | Node.js / Express / Next.js backend | `prototype-pollution.md` |
 | GCP IAP redirect | `cloud-infrastructure-enumeration.md` §1 |
-| AWS CNAME (S3, Transfer, CloudFront) | `cloud-infrastructure-enumeration.md` §2 |
+| AWS CNAME (S3, Transfer, CloudFront) | `cloud-infrastructure-enumeration.md` §2, `s3-bucket-enumeration.md` |
+| S3 bucket listing (ListBucketResult XML, application/xml large response) | `s3-bucket-enumeration.md` |
 | CI/CD tool (ArgoCD, Atlantis, Airflow, n8n, Jenkins) | `cicd-pipeline-exploitation.md`, `cicd-devops-assessment.md`, `kubernetes-management-tooling.md` |
 | ArgoCD / Grafana / Prometheus / Vault / Harbor exposed | `kubernetes-management-tooling.md` |
 | Teleport remote access proxy exposed | `teleport-assessment.md` |
@@ -62,6 +63,9 @@ Quick lookup: what you found → which reference to load.
 | NTLM relay / Responder | `internal-ad-attacks.md` (LLMNR/NBT-NS poisoning, relay) |
 | Windows privilege escalation | `internal-ad-attacks.md` (token impersonation, CVEs) |
 | Cloud credentials found (AWS/GCP/Azure keys, tokens) | `cloud-privilege-escalation.md`, `credential-chaining.md` |
+| Person / researcher / employee OSINT | `person-osint.md` |
+| Google product (*.google.com SPA) | `google-spa-recon.md` |
+| ByteDance / TikTok product (TLB, Goofy Deploy, Garfish, Arco Design) | `bytedance-tiktok-infrastructure.md` |
 | Source map (.js.map) accessible | `source-map-token-exploitation.md`, `js-bundle-recon.md` (Source Map section) |
 | Clickstream / telemetry token in JS | `source-map-token-exploitation.md` (Telemetry Token section) |
 | CORS `*` + Debug mode combined | `source-map-token-exploitation.md` (CORS + Debug section) |
@@ -70,9 +74,14 @@ Quick lookup: what you found → which reference to load.
 | Node.js library vuln (yauzl, adm-zip, require, path.join) | `nodejs-library-attacks.md` |
 | Zip upload / archive extraction | `nodejs-library-attacks.md` §2, `web-vuln-bypass-tables.md` (Zip Slip) |
 | Custom crypto / license key / proprietary validation | `proprietary-crypto-reversing.md` |
+| SPA returning 200 for all paths (false positives) | `spa-false-positive-detection.md` |
+| OAuth authorize endpoint / redirect_uri testing | `oauth-redirect-uri-testing.md`, `oauth-sso-attack-chains.md` |
+| Need session cookies from Burp browser (MCP not working) | `burp-cookie-extraction.md` |
 | Source code obtained (source map, git, debug, white-box) | **Invoke `scode` skill** (see main SKILL.md § Source Code Review Integration) |
 | CSP report-uri with internal app name (`/_/{AppName}/cspreport`) | `js-bundle-recon.md` (technology fingerprinting), `framework-specific-attacks.md` |
 | SPA / React / Angular / Vue frontend | `web-vuln-bypass-tables.md` (DOM XSS sources/sinks, postMessage, DOM clobbering) |
+| SPA returning 200 for all paths (enumeration false positives) | `spa-false-positive-detection.md`, `false-positive-detection.md` §1 |
+| CDN-fronted target (Akamai/Fastly/CF, port scan useless) | `cdn-fronted-js-recon.md`, `js-bundle-recon.md` |
 | Bug bounty submission / report writing | `bug-bounty-submission-guide.md` |
 | Multi-step attack chain (need to explain WHY) | `attack-chain-narrative-writing.md` |
 | Telemetry token found (Clickstream, Faro, NR, Sentry) | `source-map-token-exploitation.md` (Telemetry Token Severity Classification) |
@@ -103,7 +112,7 @@ Quick lookup: what you found → which reference to load.
 
 | Phase | Relevant References |
 |-------|-------------------|
-| 1 — Passive Recon | `dns-record-intelligence.md`, `js-bundle-recon.md`, `source-map-token-exploitation.md`, `operational-pitfalls.md` |
+| 1 — Passive Recon | `dns-record-intelligence.md`, `js-bundle-recon.md`, `source-map-token-exploitation.md`, `operational-pitfalls.md`, `person-osint.md` |
 | 2 — Active Recon | `pattern-subdomain-bruteforce.md`, `nmap-cloud-targets.md`, `source-map-token-exploitation.md`, `operational-pitfalls.md` |
 | 3 — Enumeration | `bulk-actuator-scanning.md`, `javascript-secret-scanning.md`, `source-map-token-exploitation.md`, `framework-specific-attacks.md`, `api-first-methodology.md` |
 | 4 — Attack Surface | `depth-vs-breadth-decisions.md`, `cloud-infrastructure-enumeration.md` |
@@ -162,6 +171,7 @@ bug-bounty-osint-checklist.md         — Bug bounty OSINT techniques
 browser-extension-security.md        — Chrome/Firefox extension static+dynamic analysis, message passing, CORS proxy, privesc chains
 bug-bounty-submission-guide.md       — Bug bounty report writing, disclosure policy, scope decisions, multi-finding strategy
 bulk-actuator-scanning.md            — Bulk /actuator check across all hosts
+bytedance-tiktok-infrastructure.md   — ByteDance/TikTok tech stack: TLB, Goofy Deploy, Garfish, Arco Design, domain ecosystem, recon tips
 camunda-bpm-assessment.md            — Camunda BPM web UI and API testing
 cicd-devops-assessment.md            — ArgoCD, Atlantis, Airflow, n8n, Jenkins, Vault, Grafana
 cloud-infrastructure-enumeration.md  — GCP/AWS/Azure project mapping, bucket enum
@@ -215,6 +225,9 @@ signal-hunting-table.md              — A→B→C finding signal lookup (30+ pa
 signed-url-exploitation.md           — GCS/S3 signed URL analysis, content-type bypass, service account drift, bucket enumeration
 snyk-token-enumeration.md            — Snyk API exploitation
 source-map-token-exploitation.md     — Source map → token extraction → verified write access chains, telemetry tokens, CORS+debug, Flutter/proto analysis
+cross-skill-triggers.md              — When to invoke ctest/atest/mtest/w3hunt/scode during ptest, integration chains, GitHub credential OSINT technique, scope trap detection, pitfalls
+geo-restriction-bypass.md            — Detect geo-blocked targets early, bypass via regional VPS/residential proxies/SSH tunnels
+telegram-webapp-auth.md              — Telegram Mini App initData auth: hash validation, IDOR, bot token leakage, session extraction
 ssrf-outbound-forcing.md             — Server-side callback forcing
 subdomain-takeover.md                — Dangling CNAME detection
 target-redirection-web-app.md        — GoPay target redirection web app analysis

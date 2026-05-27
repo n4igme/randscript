@@ -378,17 +378,156 @@
   - Infrastructure appears shut down or migrated elsewhere
 - **Not worth further investment** unless new intel surfaces
 
+## Findings (findaya.co.id, 2026-05-24)
+
+| ID | Title | Severity | Asset | Reportable? |
+|----|-------|----------|-------|-------------|
+| F-1 | Unauthenticated Spring Boot Actuator (metrics, health, info, route map) | High (7.5) | api.findaya.co.id | YES |
+| F-2 | Teleport Enterprise v17.7.21 exposed with full config disclosure | Medium (5.3) | teleport-proxy.apps.findaya.co.id | YES |
+| F-3 | Self-hosted Sentry exposed to internet | Low (3.7) | sentry.findaya.co.id | Borderline |
+| F-4 | **Unauthenticated KYC document access (production PII)** | **Critical (9.1)** | api.findaya.co.id | **YES — escalate** |
+| F-5 | Internal service discovery via error disclosure on callback | Medium (5.3) | api.findaya.co.id | YES |
+
+### Findaya Infrastructure (from recon, May 2026)
+
+- **Legal entity:** PT Mapan Global Reksa (OJK-registered P2P lending)
+- **DNS:** Alibaba Cloud DNS (vip7/vip8.alidns.com)
+- **Cloud:** Alibaba Cloud Jakarta (8.215.x.x, 147.139.x.x) + GCP (storage.googleapis.com for KYC docs)
+- **Service mesh:** Istio/Envoy on most services
+- **API gateway:** Spring Boot (Java 11) with Alibaba Cloud WAF (Tengine) on cashloans gateway
+- **Database:** PostgreSQL (HikariPool, 50 idle connections)
+- **Message broker:** Kafka (Spring Cloud Stream binder)
+- **Monitoring:** Grafana Faro (same `katulampa.gopay.sh` as GoPay), New Relic (accountID 1986505)
+- **Remote access:** Teleport Enterprise v17.7.21 (K8s + SSH + DB proxy, Google SSO + OTP)
+- **Error tracking:** Self-hosted Sentry (behind Istio)
+- **GCS bucket:** `prod_legal_entity_kyc_docs` (KYC documents)
+- **GCP project:** `ojk-compliant-launch`
+- **GCP service account:** `stg-kyc-docs-owner@ojk-compliant-launch.iam.gserviceaccount.com` (staging SA used for prod!)
+- **Products:** GoPay Pinjam Modal, GoModal, ModalToko, TokokKapital, CashLoans, PayLater
+- **Migration:** Kredit Pintar → Findaya (ongoing, visible in i18n strings)
+- **Internal domains:** `api.kyc.loanplatform.findaya.com` (K8s service: `kyc-service`)
+- **S3 bucket:** `p-go-finance-paylater-asset-s3.s3-ap-southeast-1.amazonaws.com` (access denied)
+- **Subdomains:** 252 discovered, most internal. Key live hosts on 8.215.152.172 (API cluster) and 8.215.43.91 (web cluster)
+- **Pre-auth endpoints:** `/v1/otp` (phoneNumber + countryCode), `/v2/login` (otpToken + otp), `/v1/login/token` (code), `/v1/login/sso/gopay` (code + redirectUrl)
+
+### Findaya Lessons Learned
+
+1. **Actuator metrics = API route map** — `/actuator/metrics/http.server.requests` URI tags revealed all endpoints including the Critical KYC one
+2. **Callback endpoints bypass auth** — `/integration/*` and `/legalEntityKYC/*` paths had no authentication
+3. **Staging service account on production** — `stg-kyc-docs-owner` SA name suggests config drift from staging to prod
+4. **Alibaba WAF blocks /prometheus but not /metrics** — keyword-based rule, easily bypassed
+5. **Shared monitoring infra** — same Grafana Faro key (`C100BB73...`) across GoPay and Findaya
+6. **RBAC blocks most services** — lender-dashboard, funding, payment, communicate, mlflow all return Istio 403
+7. **Multiple product lines on same API** — cashloans, gomodal, modaltoko, tokokapital all route through same gateway
+
+## Findings (go-pay.co.id, 2026-05-24)
+
+| ID | Title | Severity | Asset | Reportable? |
+|----|-------|----------|-------|-------------|
+| F-9 | Production ArgoCD exposed + device code flow + execEnabled | High (7.3) | argocd-ui.go-pay.co.id | YES |
+
+### go-pay.co.id Infrastructure (from recon, May 2026)
+
+- **DNS:** Alibaba Cloud DNS (vip7/vip8.alidns.com)
+- **Cloud:** Alibaba Cloud (149.129.x.x) + GCP (34.96.114.176 for apex)
+- **ArgoCD:** v2.14.13 (prod, 149.129.250.140), v3.0.2 (stg, 149.129.243.113)
+- **Service mesh:** Istio/Envoy (global-portal returns RBAC 403)
+- **Auth:** Google SSO via Dex on ArgoCD
+- **Managed resources:** Elasticsearch, Kafka (Strimzi), Velero, cert-manager, Argo Rollouts, ClusterRoleBindings
+- **Most subdomains:** internal IPs or non-resolving (portal, dashboard, vpn, gitlab, passport)
+- **Staging subdomains:** argocd-ui-stg, gopaysh-stg, stg.exchange, stg.imali, portal.stg
+
+## gofin.io — Engagement Results (May 2026)
+
+**Result:** 0 findings. Infrastructure appears decommissioned.
+- 73 subdomains discovered, only 4 resolve externally
+- All resolving hosts (13.214.67.72, 18.141.102.62) have no open HTTP ports
+- AWS NLBs for staging don't respond either
+- Services: cashloans, paylater, deduction-engine, kafka, northstar, yggdrasil (all dead)
+- **Lesson:** `gofin.io` was the internal/labs domain; active services migrated to `findaya.co.id`
+
+## Findings (findaya.co.id, 2026-05-24)
+
+| ID | Title | Severity | Asset | Reportable? |
+|----|-------|----------|-------|-------------|
+| F-1 | Unauthenticated Spring Boot Actuator (metrics, health, info, full API route map) | High (7.5) | api.findaya.co.id | YES |
+| F-2 | Teleport Enterprise v17.7.21 config disclosure (K8s/SSH/DB proxy) | Medium (5.3) | teleport-proxy.apps.findaya.co.id | YES |
+| F-3 | Self-hosted Sentry exposed to internet | Low (3.7) | sentry.findaya.co.id | Borderline |
+| F-4 | Unauthenticated KYC document access (production PII — KTP, NPWP, akta) | Critical (9.1) | api.findaya.co.id | YES — CRITICAL |
+| F-5 | Internal service discovery via error disclosure on callback endpoint | Medium (5.3) | api.findaya.co.id | YES |
+
+### findaya.co.id Infrastructure (from recon, May 2026)
+
+- **DNS:** Alibaba Cloud DNS (vip7/vip8.alidns.com)
+- **Cloud:** Alibaba Cloud Jakarta (8.215.x.x, 147.139.x.x)
+- **NLB:** nlb-sn7t24s1zxb50xxrf0.ap-southeast-5.nlb.aliyuncsslbintl.com
+- **WAF:** Alibaba Cloud WAF (Tengine, acw_tc cookie)
+- **Service Mesh:** Istio/Envoy on cluster gateways (al-mg-id-p, al-mg-id-s)
+- **Main API IP:** 8.215.152.172 (15+ ports open: etcd, PostgreSQL, Redis, ES, Kibana, Prometheus, Kubelet — TCP open but app-layer filtered)
+- **Web cluster IP:** 8.215.43.91 (443 only)
+- **Teleport IP:** 147.139.202.38 (443 only)
+- **MLflow IP:** 8.215.87.224 (443 only)
+- **Backend:** Spring Boot (Java 11), PostgreSQL, Kafka, HikariCP
+- **Frontend:** Next.js (app.cashloans), React SPA (app.findaya.co.id)
+- **Monitoring:** Grafana Faro (same katulampa.gopay.sh as GoPay), New Relic, Sentry
+- **Remote access:** Teleport Enterprise v17.7.21 (Google SSO + OTP)
+- **GCS bucket:** prod_legal_entity_kyc_docs (KYC documents)
+- **GCP project:** ojk-compliant-launch
+- **Service account:** stg-kyc-docs-owner@ojk-compliant-launch.iam.gserviceaccount.com (STG account on PROD!)
+- **Products:** GoPay Pinjam Modal (cash loans), GoModal, ModalToko, TokokKapital, GoPayPinjamModal
+- **Legal entity:** PT Mapan Global Reksa (Findaya's registered company)
+- **Migration:** Kredit Pintar → Findaya (ongoing, users must accept new T&C)
+
+### findaya.co.id Key Technique: Actuator Metrics → Route Discovery → Auth Bypass
+
+The Critical finding was discovered via this chain:
+1. `/actuator/metrics/http.server.requests` exposed all API routes in `uri` tags
+2. Routes included `/legalEntityKYC/v1/onboarding-doc` and `/integration/gopay/kyc/v1/{id}/callback`
+3. Testing these paths with POST + empty body revealed they skip authentication
+4. The KYC endpoint returned signed GCS URLs to production documents
+
+**Lesson:** Always check actuator metrics `uri` tags for routes not discoverable via brute-force. Callback/integration paths are the highest-priority targets because they often skip auth.
+
+### findaya.co.id Lessons Learned
+
+1. **Actuator metrics expose the full route map** — even when swagger/api-docs require auth, `/actuator/metrics/http.server.requests` lists every URI the app has ever served
+2. **Callback endpoints skip auth** — `/integration/*` and `*/callback` paths are designed for partner services and often have no auth
+3. **Alibaba WAF is partial** — blocks `/actuator/prometheus` but not `/actuator/metrics` (incomplete rule)
+4. **Istio RBAC only on direct cluster gateways** — the public NLB (api.findaya.co.id) bypasses mesh RBAC for certain paths
+5. **STG service account on PROD bucket** — `stg-kyc-docs-owner` signing URLs for `prod_legal_entity_kyc_docs` = environment drift
+6. **Shared monitoring infra** — same Faro API key (C100BB73...) across GoPay and Findaya = shared observability platform
+7. **Port exposure ≠ exploitability** — 15+ ports open on 8.215.152.172 but all filtered at app layer (security group allows TCP SYN, services bound to internal interfaces)
+
+## Findings (go-pay.co.id, 2026-05-24)
+
+| ID | Title | Severity | Asset | Reportable? |
+|----|-------|----------|-------|-------------|
+| F-9 | Production ArgoCD exposed + device code flow (execEnabled, K8s management) | High (7.3) | argocd-ui.go-pay.co.id | YES |
+
+### go-pay.co.id Infrastructure (from recon, May 2026)
+
+- **DNS:** Alibaba Cloud DNS (vip7/vip8.alidns.com)
+- **Cloud:** Alibaba Cloud (149.129.x.x) + GCP (some hosts)
+- **ArgoCD prod:** v2.14.13 on 149.129.250.140 (argocd-ui.go-pay.co.id)
+- **ArgoCD stg:** v3.0.2 on 149.129.243.113 (argocd-ui-stg.go-pay.co.id)
+- **Auth:** Google SSO via Dex, userLoginsDisabled=true, execEnabled=true
+- **Device code flow:** Works on both prod and staging (social engineering vector)
+- **Managed resources:** Elasticsearch, Kafka (Strimzi), Velero, cert-manager, ClusterRoleBindings, CRDs
+- **Kustomize:** --load-restrictor LoadRestrictionsNone (path traversal risk in GitOps)
+- **Other hosts:** global-portal (Istio RBAC), most subdomains internal IPs or non-resolving
+- **Main site:** go-pay.co.id (34.96.114.176, GCP) — no HTTP response
+
 ## Recommended Next Targets
 
 Priority order for future sessions:
-1. **findaya.co.id Phase 2+** — complete recon, test OTP endpoint rate limiting, probe more actuator metrics, check other app hosts for source maps
-2. **gojekapi.com Phase 2** — port scan (8080 on api IP, MQTT ports, SSH on partners), active DNS brute-force
-3. **GoPay mobile app** — decompile APK, find hardcoded tokens/endpoints, test API with extracted auth
-4. ***.findaya.com** — separate domain, may have different infra than findaya.co.id
-5. ***.gtflabs.io** — GoTo Financial labs/experiments (CDN domain seen: gopay-website.al-gp-id-p.cdn.gtflabs.io)
-6. **gopaymerchant.midtrans.com** — High value, merchant-facing
-7. **gofood.co.id (authenticated)** — Obtain Gojek consumer token via mobile app
-8. ~~***.go-pay.co.id**~~ — Mostly exhausted (ArgoCD found, rest is RBAC/internal)
+1. **findaya.co.id Phase 3+** — enumerate more unauthenticated endpoints on api.findaya.co.id, test other /integration/* paths, probe app hosts for source maps
+2. **Submit findings** — F-4 Critical (KYC leak) immediately, F-1+F-5 bundled, F-9 (ArgoCD) separately
+3. **gojekapi.com Phase 2** — port scan (8080 on api IP, MQTT ports, SSH on partners), active DNS brute-force
+4. **GoPay mobile app** — decompile APK, find hardcoded tokens/endpoints, test API with extracted auth
+5. ***.findaya.com** — separate domain, may share infra with findaya.co.id
+6. ***.gtflabs.io** — GoTo Financial labs/experiments
+7. **gopaymerchant.midtrans.com** — High value, merchant-facing
+8. ~~***.go-pay.co.id**~~ — ArgoCD found (F-9), rest is RBAC-blocked or internal
 9. ~~***.gofin.io**~~ — Decommissioned, no live services
 
 ---

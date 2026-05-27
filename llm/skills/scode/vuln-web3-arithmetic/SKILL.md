@@ -1,10 +1,3 @@
----
-name: vuln-web3-arithmetic
-description: "Step 3n-ii of bug bounty workflow. Scan for integer overflow/underflow and precision loss vulnerabilities in smart contracts. Appends to vulnerabilities.md."
-allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Write
-argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
----
-
 # Bug Bounty — Step 3n: Integer Overflow/Underflow & Precision Loss
 
 Scan for numeric safety issues — overflow, underflow, truncation, and precision loss in arithmetic operations.
@@ -56,6 +49,23 @@ $ARGUMENTS
 - Should use `mulDiv(a, b, c)` pattern
 
 **Grep patterns**: `* `, `/ `, `mulDiv`, `FullMath.mulDiv`
+
+### ERC-4626 Vault Inflation Attack (First Depositor)
+- First depositor mints 1 share, then donates large amount to inflate share price
+- Second depositor's deposit rounds down to 0 shares (funds stolen by first depositor)
+- Missing minimum deposit or dead shares (virtual offset) protection
+- `convertToShares` returning 0 for non-trivial deposit amounts
+- Vault with no `_decimalsOffset()` override (OpenZeppelin 4.9+ mitigation)
+- Share price manipulation via direct token transfer (donation) to vault
+
+**Grep patterns**: `ERC4626`, `convertToShares`, `convertToAssets`, `totalAssets`, `_decimalsOffset`, `deposit(`, `mint(`, `previewDeposit`, `previewMint`, `virtualAssets`, `virtualShares`, `10 ** _decimalsOffset`
+
+**Checklist:**
+1. Is there a minimum first deposit enforced?
+2. Does the vault use virtual assets/shares (dead shares pattern)?
+3. Can `convertToShares(deposit_amount)` return 0 for reasonable amounts?
+4. Is direct token transfer to vault address handled (sync vs donation)?
+5. Does `totalAssets()` use internal accounting or `balanceOf(address(this))`?
 
 ### Accumulator/Index Overflow
 - Reward-per-token accumulators that can overflow over time

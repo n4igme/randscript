@@ -18,6 +18,50 @@ This is distinct from Phase 3 secret scanning (finding API keys/tokens). Phase 1
 
 ---
 
+## SPA False-Positive Detection (CRITICAL — Check FIRST)
+
+Modern SPAs (React, Vue, Angular, Garfish micro-frontends) return HTTP 200 with the same HTML shell for ALL paths due to client-side routing. This causes massive false positives when brute-forcing directories, actuator endpoints, .git, swagger, etc.
+
+**Detection method:** Before running any directory/endpoint enumeration, establish a baseline:
+
+```bash
+# Get baseline response size for a known-nonexistent path
+BASELINE=$(curl -sk "https://target.com/nonexistent-xyz-baseline-12345" 2>/dev/null | wc -c)
+echo "SPA baseline: $BASELINE bytes"
+
+# Only flag responses that DIFFER from baseline
+# Same size = SPA catch-all (false positive)
+# Different size = real server-side endpoint
+```
+
+**Indicators of SPA catch-all:**
+- ALL paths return 200 OK with identical response size
+- Response is HTML containing `<div id="root"></div>` or similar mount point
+- Response contains framework bootstrap (React, Vue, Garfish, Goofy Deploy)
+- `/nonexistent-random-path` returns same size as `/actuator/health`
+
+**Real endpoint indicators (different from baseline):**
+- Different response size (even a few bytes difference matters)
+- JSON response instead of HTML
+- Different HTTP status code (403, 401, 301 = real server-side routing)
+- Different Content-Type header
+- 0 bytes (blocked but exists)
+
+**ByteDance/TikTok Goofy Deploy pattern (discovered May 2026):**
+- Server: TLB + X-Powered-By: Goofy Deploy/Node
+- SPA shell contains `gfdatav1` JSON with full module architecture
+- SPA shell contains `scmconfigv1` JSON with API keys, region config
+- SPA shell contains `pumbaa-rule` JSON with privacy/network interception rules
+- Real APIs are at `/api/v1/*` paths and return JSON (different size from shell)
+- POST requests to API paths return structured JSON errors even without auth
+- GET to same API paths may return 404 (nginx) while POST returns JSON
+
+**Garfish micro-frontend detection:**
+- Look for `garrModules` in page source — lists ALL micro-app names and CDN URLs
+- Each module has `source_url` (CDN JS) and `gfurl` (origin fallback)
+- Module names map to frontend routes AND backend API prefixes
+- `garfishModuleInfo` contains VMOK federation metadata with shared dependencies
+
 ## Finding Bundles
 
 ### View Source — Script Tags
@@ -475,10 +519,45 @@ grep -rhoP 'window\.__[A-Z_]+__' *.js | sort -u
 grep -rhoP 'window\.(config|CONFIG|env|ENV|settings|SETTINGS)' *.js
 
 # Check for config endpoints
-grep -rhoP '["\x27`](/config|/env|/settings|/app-config)[^"\x27`]*["\x27`]' *.js
+grep -rhoP '["\\x27`](/config|/env|/settings|/app-config)[^"\\x27`]*["\\x27`]' *.js
 curl -s https://target.com/config.json
 curl -s https://target.com/env.js
 ```
+
+### config.json Systematic Sweep (HIGH YIELD)
+
+Many SPAs load runtime config from `/config.json`. This is a **first-class recon check** — run it on EVERY live web app discovered. Unlike source maps (which may be stripped), config.json is required for the app to function and is rarely protected.
+
+```bash
+# Sweep all live hosts for config.json
+for host in $(cat live-200-hosts.txt | sed 's|https\?://||'); do
+  resp=$(curl -s --max-time 5 "https://${host}/config.json" 2>/dev/null)
+  if echo "$resp" | grep -q '"' 2>/dev/null && ! echo "$resp" | grep -q '<!DOCTYPE\|<html' 2>/dev/null; then
+    echo "--- ${host}/config.json ---"
+    echo "$resp" | head -c 500
+    echo ""
+  fi
+done
+```
+
+**What config.json typically exposes:**
+- Sentry DSNs (confirmed active = can inject fake errors)
+- Google OAuth client IDs (enables OAuth flow testing)
+- Internal IAM client IDs (Concedo, GrabID, etc.)
+- Partner/service UIDs (production identifiers)
+- Internal API gateways (`api-restricted.*`, `*.internal.*`)
+- RUM/APM tokens (Datadog, Grafana Faro)
+- Hedwig/notification template IDs
+- Environment indicators (prd/stg)
+- Segmentation platform URIs
+
+**Real-world example (Grab, May 2026):**
+- `omega-rtc.grab.com/config.json` → Sentry DSN, 6 production Partner UIDs, internal Hedwig API, Google OAuth client ID, Concedo IAM client ID, RUM token
+- `bolt.grab.com/config.json` → Sentry DSN + Google OAuth
+- `taxi.grab.com/config.json` → Sentry DSN + GrabID + VAPID key + map tiles server
+- `drishti.grab.com/config.json` → IAM client ID + gateway URI
+
+**Severity:** config.json with Sentry DSNs alone = Low. With production partner UIDs + internal service URLs = Medium. With actual API keys/secrets = High.
 
 ### Inline $_ENV in HTML Body (Module Federation Pattern)
 
@@ -815,6 +894,58 @@ curl -sk "https://target.com/flutter_service_worker.js" | grep -oiE 'https?://[^
 - Deep link schemes reveal mobile app integration points
 - `findaya.co.id`, `app.jago.com` type URLs reveal partner integrations
 - Config JSON paths like `/mm_fe_configs/...` may be accessible on the same host
+
+---
+
+## OpenAPI Schema in JS Bundles (HIGH YIELD)
+
+Modern SPAs that use code-generated API clients (openapi-typescript, orval, swagger-codegen) often bundle the **complete OpenAPI schema** as a JS module. This is distinct from source maps — it's the actual API specification compiled into the client code.
+
+**Detection:**
+```bash
+# Check for openapi-named JS files in page source
+curl -s https://target.com/ | grep -oE 'src="[^"]*openapi[^"]*\.js"'
+
+# Also check for api-client, swagger, schema named chunks
+curl -s https://target.com/ | grep -oiE 'src="[^"]*(openapi|swagger|api-client|api-schema)[^"]*\.js"'
+```
+
+**Extraction:**
+```bash
+# Download and extract all URL patterns (contains full endpoint definitions)
+curl -s 'https://target.com/static/js/openapi.*.js' > /tmp/openapi_bundle.js
+
+# Extract all API endpoints
+grep -oE 'url:"[^"]+"' /tmp/openapi_bundle.js | sed 's/url:"//;s/"//' | sort -u
+
+# Extract HTTP methods paired with URLs
+grep -oE '(method:"(get|post|put|patch|delete)".*?url:"[^"]+"|url:"[^"]+".*?method:"[^"]+")' /tmp/openapi_bundle.js
+```
+
+**What this reveals (beyond source maps):**
+- Complete list of ALL API endpoints (including internal/admin paths)
+- Request/response schemas with field names and types
+- Enum values (error codes, status values, user roles)
+- Path parameters and their types
+- Media types accepted per endpoint
+
+**Real-world example (Wallet on Telegram, May 2026):**
+- `https://walletbot.me/static/js/openapi.3a40364718.js` (97KB)
+- Contained 494 API endpoints across 15+ microservices
+- Revealed internal admin paths (`/internal/orgs`, `/internal/users/{id}/tokens`)
+- Exposed transaction-scanner retool-api (admin panel)
+- Revealed full P2P trading flow (escrow, appeals, merchant API keys)
+- Exposed auth mechanism details (Telegram initData fields required)
+- Contained enum values for error codes, order states, appeal reasons
+
+**Severity assessment:**
+- OpenAPI bundle with only public endpoints → Low (architecture disclosure)
+- OpenAPI bundle revealing internal/admin endpoints → Medium
+- OpenAPI bundle with hardcoded tokens or secrets in default values → High
+
+**Key difference from config.json:** Config.json exposes runtime secrets (DSNs, API keys). OpenAPI bundles expose the complete API surface map — every endpoint, every parameter, every enum value. Combined, they give an attacker a complete blueprint.
+
+**Pitfall:** The endpoints in the OpenAPI bundle may be served on different hosts than where the JS is loaded from. Check the SPA's network requests or CSP `connect-src` directive to identify which backend hosts serve which API paths.
 
 ---
 

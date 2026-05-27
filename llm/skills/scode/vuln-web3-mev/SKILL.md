@@ -1,10 +1,3 @@
----
-name: vuln-web3-mev
-description: "Step 3n-iv of bug bounty workflow. Scan for front-running/MEV and flash loan/oracle manipulation vulnerabilities in smart contracts. Appends to vulnerabilities.md."
-allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Write
-argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
----
-
 # Bug Bounty — Step 3n: Front-Running/MEV & Flash Loan/Oracle Manipulation
 
 Scan for transaction ordering exploits and economic manipulation via flash loans and oracle attacks.
@@ -81,7 +74,11 @@ $ARGUMENTS
 3. **Audit oracle usage** — is price from TWAP or spot? Is freshness validated?
 4. **Test flash loan vectors** — can any state be manipulated and exploited atomically?
 5. **Check commit-reveal** — are outcomes predictable from mempool observation?
-6. **Assess profitability** — is the MEV extraction profitable after gas + flash loan fees?
+6. **Check permissionless triggers (FORCE MULTIPLIER)** — can the attacker call the vulnerable function themselves?
+   - `harvest()`, `liquidate()`, `claim()` without access modifiers = attacker controls timing
+   - This upgrades severity: a sandwich attack on a keeper-only function is Medium (requires timing luck), but on a permissionless function is High (attacker triggers at will)
+   - Grep: look for `external` or `public` functions with NO `onlyOwner`, `onlyKeeper`, `onlyManager`, `onlyRole` modifier
+7. **Assess profitability** — is the MEV extraction profitable after gas + flash loan fees?
 
 ## Output
 

@@ -36,6 +36,7 @@ This step is split into focused sub-scanners. Run them in order (or pick specifi
 | 3q | `vuln-web3-defi` | AMM exploits, lending flaws, bridge attacks, governance |
 | 3r | `vuln-web3-nft` | Metadata manipulation, randomness, royalty bypass, minting |
 | 3s | `vuln-web3-evm` | Storage slots, returnbomb, dirty bits, phantom functions, gas griefing |
+| 3s-ii | `vuln-web3-modern` | Restaking, Account Abstraction (ERC-4337), L2/Rollup, Intent-based protocols |
 | 3t | `vuln-infra` | Terraform, Dockerfile, K8s manifests, CI/CD pipelines, Helm charts |
 
 ## Usage
@@ -65,7 +66,8 @@ Run all sub-scanners sequentially:
 /skill vuln-web3-defi
 /skill vuln-web3-nft
 /skill vuln-web3-evm
-vuln-infra
+/skill vuln-web3-modern
+/skill vuln-infra
 ```
 
 Or run only the ones relevant to your threat model's priority targets.
@@ -207,6 +209,7 @@ Before running scanners, create `./assessment/scan-progress.md` (or update if it
 | 3q | vuln-web3-defi | PENDING | — | |
 | 3r | vuln-web3-nft | PENDING | — | |
 | 3s | vuln-web3-evm | PENDING | — | |
+| 3s-ii | vuln-web3-modern | PENDING | — | |
 | 3t | vuln-infra | PENDING | — | |
 ```
 

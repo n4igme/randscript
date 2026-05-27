@@ -1,10 +1,3 @@
----
-name: vuln-web3-evm
-description: "Step 3s of bug bounty workflow. Scan for low-level EVM/assembly vulnerabilities (storage slots, returnbomb, dirty bits, phantom functions). Appends to vulnerabilities.md."
-allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Write
-argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
----
-
 # Bug Bounty — Step 3s: Low-Level EVM & Assembly Vulnerabilities
 
 Scan for vulnerabilities in inline assembly, raw storage manipulation, and EVM-specific edge cases.
@@ -70,6 +63,17 @@ If no assembly or low-level EVM code is present, report "No low-level EVM code f
 - Stack too deep workarounds creating memory corruption
 
 **Grep patterns**: `mstore(0x40`, `mload(0x40)`, `mstore(`, `mload(`, `add(ptr`, `calldatacopy`, `codecopy`, `extcodecopy`
+
+### Transient Storage (EIP-1153, Cancun+)
+- `TSTORE`/`TLOAD` used for reentrancy guards that reset at end of transaction
+- Transient storage not persisting across transactions (developer assumes persistence)
+- Reentrancy guard via transient storage bypassed in cross-transaction attack
+- `TSTORE` slot collision between different contracts in same transaction (delegatecall)
+- Transient storage used for access control that resets (lock valid only within tx)
+- Missing `TLOAD` check before `TSTORE` (overwriting mid-transaction state)
+- Callback-based attacks where transient guard is set but attacker re-enters via different path not checking same slot
+
+**Grep patterns**: `tstore`, `tload`, `TSTORE`, `TLOAD`, `transient`, `assembly.*tstore`, `assembly.*tload`, `EIP1153`, `ReentrancyGuardTransient`
 
 ### EVM Version Incompatibilities
 - `PUSH0` opcode used on chains not supporting it (pre-Shanghai)

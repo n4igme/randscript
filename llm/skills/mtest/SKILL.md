@@ -495,6 +495,10 @@ This phase assesses and bypasses client-side protections (RASP, root detection, 
 
 **Script:** `scripts/flutter_ssl_bypass.js` — ready-to-use Flutter BoringSSL bypass for ARM64 (supports Flutter 3.10-3.24+). Use with: `frida -U -f <package> -l scripts/flutter_ssl_bypass.js`
 
+**Script:** `scripts/ssl_pinning_bypass.js` — universal SSL pinning bypass for native Android apps (OkHttp3, TrustManagerImpl, Conscrypt, WebViewClient, Apache HTTP). Use with: `frida -U -f <package> -l scripts/ssl_pinning_bypass.js`
+
+**Script:** `scripts/root_bypass.js` — universal root/jailbreak detection bypass (File.exists, Runtime.exec, RootBeer, native access(), /proc/self/maps filtering). Use with: `frida -U -f <package> -l scripts/root_bypass.js`
+
 **Cross-reference:** For DexGuard/AppFence protected apps, load the `dexguard-native-re` skill for full RE methodology and bypass scripts.
 
 ---
@@ -1035,6 +1039,7 @@ This phase separates "finding a bug" from "proving exploitability." Every Critic
 **Platform:** Android|iOS|Both
 **Component:** Client|Server|Both
 **OWASP Mobile:** M1-M10 mapping
+**MASVS v2:** MASVS-STORAGE|MASVS-CRYPTO|MASVS-AUTH|MASVS-NETWORK|MASVS-PLATFORM|MASVS-CODE|MASVS-RESILIENCE|MASVS-PRIVACY
 **Feature:** [Which feature from attack surface map]
 
 ## Description

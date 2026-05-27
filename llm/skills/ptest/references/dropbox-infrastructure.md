@@ -1,5 +1,11 @@
 # Dropbox Infrastructure & Program Intel
 
+> **⚠️ HISTORICAL CONTEXT — NOT CURRENT STATE**
+> This file documents observations from 2026-05-27. Infrastructure changes constantly.
+> Always run fresh recon and compare against this baseline. Differences from what's
+> documented here are investigation-worthy — they indicate changes worth exploring.
+> Do NOT skip recon steps because "we already know the stack."
+
 ## Program Details
 - **Platform:** Intigriti
 - **URL:** https://app.intigriti.com/researcher/programs/dropbox/dropbox/detail

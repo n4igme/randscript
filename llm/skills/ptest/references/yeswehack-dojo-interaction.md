@@ -84,28 +84,67 @@ curl -sk "https://dojo-yeswehack.com/api/challenge-of-the-month/dojo-{N}" | pyth
 
 This avoids fighting with the Vue/Nuxt DOM for source code extraction (Monaco editor is virtualized and hard to scrape).
 
-## Local Validation (MANDATORY before submission)
+## Local Validation (HARD GATE — DO NOT SUBMIT WITHOUT THIS)
 
-Always simulate the challenge locally before submitting. This catches interface mismatches that aren't obvious from reading code:
+**We submitted Dojo #51 without local validation and got rejected.** The exploit read from a file path that didn't exist because the flag was in `process.env.FLAG`. This is a mandatory gate — no exceptions.
+
+### Validation Steps (ALL must pass before submission)
 
 ```bash
-# 1. Install challenge dependencies locally
+# STEP 1: Read .runner.opts.setup — WHERE IS THE FLAG?
+# Parse the API response and find every line mentioning "flag"
+curl -sk "https://dojo-yeswehack.com/api/challenge-of-the-month/dojo-{N}" | \
+  python3 -c "import json,sys; d=json.load(sys.stdin); setup=d['runner']['opts']['setup']; [print(l) for l in setup.split('\n') if 'flag' in l.lower() or 'FLAG' in l]"
+
+# Common patterns:
+#   process.env['FLAG'] = flag;     → read via process.env.FLAG
+#   fs.writeFileSync('/tmp/flag.txt', flag) → read via fs.readFileSync
+#   global.flag = flag;             → read via global.flag
+#   return {flag, ...}              → flag is in scope as local var (runner injects it)
+
+# STEP 2: Write your exploit payload using the CORRECT exfiltration method
+# Match the injection mechanism EXACTLY. If env var → process.env.FLAG. If file → readFileSync.
+
+# STEP 3: Install challenge dependencies locally
 npm install yauzl  # or whatever the challenge uses
 
-# 2. Write a simulation script that:
-#    - Sets up the filesystem structure the challenge expects
-#    - Runs the exact validation/execution logic from .template
-#    - Uses YOUR exploit inputs
-#    - Verifies the full chain produces output
+# STEP 4: Write a FULL simulation script that:
+#   - Replicates the runner setup (mkdir, writeFile, env vars, etc.)
+#   - Sets a FAKE flag via the SAME mechanism (e.g., process.env.FLAG = "TEST_FLAG_12345")
+#   - Runs the exact validation/execution logic from .template
+#   - Uses YOUR exploit inputs
+#   - Captures stdout/output
 
-# 3. Confirm: key validates, zip extracts correctly, plugin loads, flag reads
+# STEP 5: Run and verify — THE FAKE FLAG MUST APPEAR IN OUTPUT
+#   If it doesn't appear → your exfiltration is WRONG → fix before submitting
+#   If it appears → you're good to submit on the Dojo UI
 ```
 
+### Failure Mode That Burned Us (Dojo #51, May 2026)
+
+```
+WRONG:  fs.readFileSync("/tmp/app/flag.txt")  ← file doesn't exist
+RIGHT:  process.env.FLAG                       ← flag is in env var
+
+Runner setup clearly showed: process.env['FLAG'] = flag;
+We didn't read it. We assumed file-based. Report was rejected.
+YesWeHack asked: "Could you please provide a working payload and the correct flag?"
+```
+
+**Rule: If you haven't seen your fake flag printed in local output, you DO NOT have a working exploit. Period.**
+
 **Common pitfalls (Dojo #51 DEADBOLT, May 2026):**
+- **FLAG LOCATION — READ THE RUNNER SETUP, NOT JUST THE TEMPLATE.** The `.runner.opts.setup` field in the API response shows how the Dojo runtime injects the flag. In Dojo #51 it's `process.env['FLAG'] = flag;` — NOT a file on disk. Writing `fs.readFileSync("/tmp/app/flag.txt")` produces nothing. This caused a rejected submission. ALWAYS check the setup code for `flag` variable usage before writing your exfiltration payload.
 - Plugin interface requirements hidden in `loadPlugin()` — must export specific methods (e.g., `get()` as a function) to pass validation, PLUS `getName()` and `run()` for the execution loop
 - `validateKey()` constraints differ from description — always read the ACTUAL code, not the challenge description
 - `path.join(dest, "../file.js")` resolves traversal — yauzl `strictFileNames:true` does NOT block `../`
 - Inputs go through `decodeURIComponent()` — base64 with `+` chars may need attention (though standard base64 survives URL encoding in this case since the WAF only does partial encode)
+
+**Flag injection patterns seen in Dojo challenges:**
+- `process.env['FLAG'] = flag;` — read via `process.env.FLAG` (Dojo #51)
+- `fs.writeFileSync('/tmp/flag.txt', flag)` — read via `fs.readFileSync`
+- Passed as function argument or global variable — check `setup` code carefully
+- NEVER assume file-based flag without confirming in runner setup
 
 ## Brute Force Warning
 

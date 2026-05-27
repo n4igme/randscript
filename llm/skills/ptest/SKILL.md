@@ -362,7 +362,6 @@ If `state.yaml` cannot be read:
 | 3 | Enumeration | `enumeration.md` | Applications enumerated, APIs mapped, parameters discovered, Prometheus metrics mined for hidden services |
 | 4 | Attack Surface Mapping | `attack-surface.md` | Asset inventory confirmed with user, scope finalized, entry points mapped |
 
-### Phase 4: Dismissal Rules
 
 ### Env-Prefix Quick-Win Check (END of Phase 1, MANDATORY)
 

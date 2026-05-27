@@ -4,10 +4,13 @@
 
 **What:** Hardcoded credentials, insecure credential storage, improper use of biometrics.
 
+**MASVS v2:** MASVS-AUTH, MASVS-STORAGE
+
 **Test in mtest phases:**
 - Phase 2: Hardcoded secrets in source code
-- Phase 5: Token storage analysis (SharedPrefs vs Keystore)
-- Phase 5: Biometric bypass (client-side only auth)
+- Phase 6: Token storage analysis (SharedPrefs vs Keystore)
+- Phase 6: Biometric bypass (client-side only auth)
+- Phase 7: Per-feature credential handling tests
 
 **Finding examples:**
 - API key hardcoded in source → Critical
@@ -20,6 +23,8 @@
 ## M2: Inadequate Supply Chain Security
 
 **What:** Third-party libraries with known vulnerabilities, malicious SDKs.
+
+**MASVS v2:** MASVS-CODE
 
 **Test in mtest phases:**
 - Phase 2: Identify all third-party SDKs/frameworks
@@ -51,10 +56,13 @@ ls ipa_out/Payload/*.app/Frameworks/
 
 **What:** Weak auth mechanisms, missing server-side validation, bypassable client controls.
 
+**MASVS v2:** MASVS-AUTH
+
 **Test in mtest phases:**
 - Phase 4: Auth flow documentation
-- Phase 5: Biometric/PIN bypass
-- Phase 6: BOLA/IDOR, JWT attacks, OTP bypass
+- Phase 6: Biometric/PIN bypass
+- Phase 7: Per-feature auth/authz testing
+- Phase 8: BOLA/IDOR, JWT attacks, OTP bypass
 
 **Finding examples:**
 - No rate limiting on OTP verification → High
@@ -69,9 +77,12 @@ ls ipa_out/Payload/*.app/Frameworks/
 
 **What:** SQL injection, XSS in WebViews, path traversal, command injection.
 
+**MASVS v2:** MASVS-PLATFORM
+
 **Test in mtest phases:**
-- Phase 5: Deep link injection, WebView attacks
-- Phase 6: SQL/NoSQL injection, GraphQL attacks
+- Phase 6: Deep link injection, WebView attacks
+- Phase 7: Per-feature input validation testing
+- Phase 8: SQL/NoSQL injection, GraphQL attacks
 
 **Finding examples:**
 - SQL injection in search API → Critical
@@ -84,6 +95,8 @@ ls ipa_out/Payload/*.app/Frameworks/
 ## M5: Insecure Communication
 
 **What:** Missing SSL/TLS, weak cipher suites, no certificate pinning.
+
+**MASVS v2:** MASVS-NETWORK
 
 **Test in mtest phases:**
 - Phase 2: Network security config analysis, ATS exceptions
@@ -105,10 +118,13 @@ ls ipa_out/Payload/*.app/Frameworks/
 
 **What:** PII exposure, excessive data collection, missing data minimization.
 
+**MASVS v2:** MASVS-PRIVACY
+
 **Test in mtest phases:**
 - Phase 4: Excessive data in API responses
-- Phase 5: Data storage audit, clipboard, logs
-- Phase 6: Data exposure in error messages
+- Phase 6: Data storage audit, clipboard, logs
+- Phase 7: Per-feature privacy assessment
+- Phase 8: Data exposure in error messages
 
 **Finding examples:**
 - Full card number in API response (UI masks it) → High
@@ -122,6 +138,8 @@ ls ipa_out/Payload/*.app/Frameworks/
 ## M7: Insufficient Binary Protections
 
 **What:** Missing obfuscation, no anti-tampering, no anti-debugging.
+
+**MASVS v2:** MASVS-RESILIENCE
 
 **Test in mtest phases:**
 - Phase 2: Obfuscation assessment, binary protections
@@ -142,9 +160,12 @@ ls ipa_out/Payload/*.app/Frameworks/
 
 **What:** Debug flags, excessive permissions, insecure default settings.
 
+**MASVS v2:** MASVS-PLATFORM, MASVS-CODE
+
 **Test in mtest phases:**
 - Phase 2: Manifest analysis (debuggable, backup, exported components)
-- Phase 5: Intent injection on exported components
+- Phase 5: Attack surface mapping of exported components
+- Phase 6: Intent injection on exported components
 
 **Finding examples:**
 - android:debuggable="true" in production → Critical
@@ -159,8 +180,11 @@ ls ipa_out/Payload/*.app/Frameworks/
 
 **What:** Sensitive data stored insecurely on device.
 
+**MASVS v2:** MASVS-STORAGE
+
 **Test in mtest phases:**
-- Phase 5: SharedPreferences, SQLite, Keychain, NSUserDefaults audit
+- Phase 6: SharedPreferences, SQLite, Keychain, NSUserDefaults audit
+- Phase 7: Per-feature data storage assessment
 
 **Finding examples:**
 - Auth token in SharedPreferences (plaintext XML) → High
@@ -181,9 +205,12 @@ ls ipa_out/Payload/*.app/Frameworks/
 
 **What:** Weak algorithms, hardcoded keys, improper implementation.
 
+**MASVS v2:** MASVS-CRYPTO
+
 **Test in mtest phases:**
 - Phase 2: Identify crypto usage in source
-- Phase 5: Crypto key extraction via Frida
+- Phase 6: Crypto key extraction via Frida
+- Phase 7: Per-feature crypto assessment
 
 **Finding examples:**
 - Hardcoded AES key in source code → Critical
@@ -220,12 +247,26 @@ ls ipa_out/Payload/*.app/Frameworks/
 
 ## Report Mapping Template
 
-When writing findings, include OWASP Mobile mapping:
+When writing findings, include both OWASP Mobile Top 10 and MASVS v2 mapping:
 
 ```markdown
 # MTEST-001: JWT Stored in SharedPreferences
 
 **OWASP Mobile:** M1 (Improper Credential Usage), M9 (Insecure Data Storage)
+**MASVS v2:** MASVS-STORAGE, MASVS-AUTH
 **Severity:** High
 **CWE:** CWE-312 (Cleartext Storage of Sensitive Information)
 ```
+
+### MASVS v2 Categories Quick Reference
+
+| MASVS v2 Category | Scope | Maps to OWASP Mobile |
+|-------------------|-------|---------------------|
+| MASVS-STORAGE | Local data protection, logs, backups, clipboard | M1, M9 |
+| MASVS-CRYPTO | Key management, algorithms, implementation | M10 |
+| MASVS-AUTH | Authentication, session management, biometrics | M1, M3 |
+| MASVS-NETWORK | TLS, pinning, cleartext traffic | M5 |
+| MASVS-PLATFORM | IPC, deep links, WebViews, permissions, intents | M4, M8 |
+| MASVS-CODE | Binary protections, anti-tampering, supply chain | M2, M7 |
+| MASVS-RESILIENCE | Obfuscation, root detection, anti-debug | M7 |
+| MASVS-PRIVACY | Data minimization, consent, PII handling | M6 |

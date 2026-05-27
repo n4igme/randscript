@@ -49,6 +49,43 @@ echo ""
 echo "[*] Done. ${FOUND} exposed actuator endpoints found across ${TOTAL} hosts."
 ```
 
+## SPA False-Positive Detection (MANDATORY PRE-CHECK)
+
+Modern SPAs (React/Vue/Angular with client-side routing) return HTTP 200 with the same HTML shell for ALL paths — including /actuator, /swagger, /.git/HEAD, /admin, etc. This makes naive status-code-based scanning useless.
+
+**Detection method:** Before scanning, establish a baseline response size for a known-nonexistent path:
+
+```bash
+BASELINE=$(curl -sk --max-time 3 "https://${target}/nonexistent-xyz-baseline-12345" 2>/dev/null | wc -c)
+echo "Baseline for ${target}: ${BASELINE} bytes"
+```
+
+**Then filter results:** Only flag responses whose size DIFFERS from the baseline:
+
+```bash
+for path in /actuator /actuator/health /actuator/env /.git/HEAD /swagger-ui /admin; do
+  size=$(curl -sk --max-time 3 "https://${target}${path}" 2>/dev/null | wc -c)
+  if [ "$size" != "$BASELINE" ] && [ "$size" != "0" ] && [ "$size" -gt 5 ]; then
+    echo "[DIFF] ${target}${path} -> ${size} bytes (baseline: ${BASELINE})"
+  fi
+done
+```
+
+**Additional verification for .git:** Check if response contains `ref: refs/` (actual git HEAD content), not just HTML.
+
+**Real-world examples of SPA baseline sizes (TikTok, May 2026):**
+- scm-us.tiktok.com: 89,145 bytes (Garfish micro-frontend shell)
+- notes.tiktok.com: 35,588 bytes (Goofy Deploy shell)
+- seller-us.tiktok.com: varies by region (34K-90K) due to embedded gfdatav1 config
+
+**Indicators of REAL endpoints behind an SPA:**
+- Different response size from baseline
+- Different Content-Type (application/json vs text/html)
+- Specific error messages ("Not Found" in 9 bytes vs 35K HTML shell)
+- HTTP 403/401 with 0 bytes (server blocked before SPA routing)
+
+---
+
 ## Additional Paths to Check
 
 After actuator, also scan for:
@@ -186,7 +223,105 @@ On GoTo/Gojek targets:
 - Does NOT consistently block `/actuator/health` or `/actuator/info`
 - Server header: `stgw`, has `eo-log-uuid` header
 
-## Lesson Learned
+## Actuator Metrics as API Route Enumeration (Phase 1/3 Technique)
+
+When `/actuator/metrics/http.server.requests` is accessible, the `uri` tag contains the **complete API route map** — every endpoint the application has ever served. This is often MORE valuable than `/actuator/mappings` because it shows ACTUALLY-USED routes (not just registered ones).
+
+### Extraction Technique
+
+```bash
+# 1. Get the full route map from URI tags
+curl -sk "https://$TARGET/actuator/metrics/http.server.requests" | \
+  python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+for tag in d.get('availableTags', []):
+    if tag['tag'] == 'uri':
+        for uri in sorted(tag['values']):
+            print(uri)
+"
+
+# 2. Also extract other useful tags
+# - 'env' tag → confirms production/staging
+# - 'host' tag → internal hostname
+# - 'team' tag → owning team (org structure intel)
+# - 'status' tag → which HTTP codes are returned (429 = rate limiting exists)
+# - 'exception' tag → exception classes (reveals framework internals)
+# - 'method' tag → which HTTP methods are used (PATCH/DELETE = write operations)
+```
+
+### What to Do With Discovered Routes
+
+1. **Test each route for auth bypass** — callback/integration routes often lack auth
+2. **Look for path parameters** (`{id}`, `{gopay_account_id}`) — these accept user input
+3. **Identify pre-auth endpoints** — `/login`, `/otp`, `/register`, `/callback` paths
+4. **Map internal services** — routes like `/integration/gopay/kyc/v1/{id}/callback` reveal service-to-service communication
+5. **Check custom business metrics** — `findaya.login.failed`, `findaya.otp.*` reveal auth flow details
+
+### Real-World Example: Findaya (May 2026)
+
+`/actuator/metrics/http.server.requests` on `api.findaya.co.id` revealed:
+- 15+ API routes including `/v1/otp`, `/v2/login`, `/legalEntityKYC/v1/onboarding-doc`
+- Team: `gofin-loan-platform`, Host: `findaya-api`, Env: `production`
+- Testing the discovered `/legalEntityKYC/v1/onboarding-doc` endpoint → **Critical finding** (unauthenticated KYC document access)
+- Testing `/integration/gopay/kyc/v1/{id}/callback` → unauthenticated, leaked internal service names via 500 error
+
+---
+
+## Unauthenticated Callback/Integration Endpoints (MANDATORY Check)
+
+**Pattern:** APIs that receive webhooks from partner services (payment callbacks, KYC callbacks, notification webhooks) are often left WITHOUT authentication because the developers assume "only the partner will call this."
+
+### Detection
+
+Look for these path patterns in actuator metrics, swagger docs, or JS bundles:
+```
+/integration/*
+/callback/*
+/webhook/*
+/v1/*/callback
+/notify/*
+/ipn/*
+```
+
+### Testing
+
+```bash
+# 1. Try POST with empty body (reveals required fields)
+curl -sk -X POST "https://$TARGET/integration/partner/v1/callback" \
+  -H "Content-Type: application/json" -d '{}'
+
+# 2. Interpret responses:
+# - 400 with field validation → endpoint processes requests WITHOUT auth
+# - 401 → auth required (safe)
+# - 405 → wrong method, try GET/PUT
+# - 500 with stack trace → unauthenticated AND leaks internals
+# - 200 with data → CRITICAL (unauthenticated data access)
+
+# 3. If 500 with DNS/connection error → the endpoint is unauthenticated
+#    but the backend service is down. Still a finding (auth bypass + info disclosure)
+```
+
+### Why This Matters
+
+Callback endpoints often:
+- Return signed URLs to stored documents (KYC docs, invoices, contracts)
+- Accept status updates that change application state (approve/reject flows)
+- Leak internal service names and architecture in error messages
+- Have no rate limiting (designed for machine-to-machine calls)
+
+### Severity
+
+| Scenario | Severity |
+|----------|----------|
+| Callback returns production PII/documents | Critical |
+| Callback accepts state-changing input (approve/reject) | Critical |
+| Callback leaks internal service names via errors | Medium |
+| Callback exists but backend is unreachable | Low-Medium |
+
+---
+
+## Lessons Learned
 
 > "Testing a few API endpoints and seeing 401 does NOT mean the host is secure.
 > Framework endpoints (actuator, swagger, console) operate independently of
@@ -195,3 +330,7 @@ On GoTo/Gojek targets:
 > "When a WAF blocks /actuator/prometheus, try /actuator/metrics instead.
 > WAF rules are often keyword-based ('/prometheus') not function-based.
 > The metrics endpoint returns the same data in JSON format."
+
+> "After discovering API routes via actuator metrics, ALWAYS test /integration/*
+> and /callback/* paths — these are the most commonly unauthenticated endpoints
+> on otherwise-hardened APIs. The Findaya Critical (KYC doc leak) was found this way."
