@@ -1,10 +1,10 @@
 ---
 name: mtest
-version: 1.2.0
-description: "Structured mobile application penetration testing framework with gated phases for Android and iOS"
+version: 2.0.0
+description: "Structured mobile application penetration testing framework with 10 gated phases for Android and iOS"
 tags: [mobile, pentest, android, ios, frida, security]
 trigger: "mobile pentest, mobile app test, APK test, IPA test, android security, ios security, dexguard bypass, appfence bypass, libaf-android, native root detection, inline svc bypass"
-argument-hint: "<command: start|status|next|report>"
+argument-hint: "<command: start|status|next|report|resume|cleanup>"
 metadata:
   hermes:
     tags: [mobile, pentest, android, ios, frida, security]
@@ -15,7 +15,7 @@ metadata:
 
 ## Overview
 
-Gated linear workflow for mobile application security testing. Each phase must complete before advancing. Covers both Android and iOS with static analysis, dynamic instrumentation, and API testing.
+10-phase gated linear workflow for mobile application security testing. Each phase must complete before advancing. Features a **feature-driven vulnerability analysis** methodology — testing is organized by app feature (login, payment, profile, etc.), not by vulnerability class. Covers both Android and iOS with static analysis, dynamic instrumentation, and API testing.
 
 ## Commands
 
@@ -25,7 +25,7 @@ Gated linear workflow for mobile application security testing. Each phase must c
 | `status` | Show current phase, progress, findings count |
 | `resume` | Resume interrupted engagement — read state and continue |
 | `next` | Advance to next phase (requires current phase gate satisfied) |
-| `report` | Generate findings report (available from Phase 5+) |
+| `report` | Generate findings report (available from Phase 7+) |
 | `cleanup` | Archive output, sanitize sensitive data |
 
 ## Output Structure
@@ -38,13 +38,21 @@ Gated linear workflow for mobile application security testing. Each phase must c
 ├── phase2-static/            # Decompilation, secrets, endpoints
 │   ├── android/
 │   └── ios/
-├── phase3-dynamic-setup/     # Bypass scripts, proxy config
-│   └── scripts/              # Frida scripts used
-├── phase4-traffic/           # Intercepted requests, API map
-├── phase5-runtime/           # Frida hooks, data storage, deep links
+├── phase3-protection/        # RASP assessment, bypass scripts
+│   └── scripts/              # Frida bypass scripts
+├── phase4-traffic/           # Proxy setup, intercepted requests, API map
+├── phase5-attack-surface/    # Feature map, entry points
+│   └── attack-surface-map.md
+├── phase6-runtime/           # Frida hooks, data storage, deep links
 │   ├── screenshots/
 │   └── frida-output/
-├── phase6-api/               # Server-side API testing
+├── phase7-vuln-analysis/     # Feature-driven vulnerability testing
+│   └── per-feature/          # One file per feature tested
+├── phase8-api/               # Server-side API testing
+├── phase9-exploitation/      # PoC scripts, exploit chains, validation
+│   ├── poc/
+│   └── evidence/
+├── phase10-reporting/        # Final report artifacts
 ├── findings/                 # Individual finding files
 │   ├── MTEST-001.md
 │   └── ...
@@ -67,11 +75,14 @@ engagement:
 gateways:
   1_preflight: OPEN
   2_static_analysis: LOCKED
-  3_dynamic_setup: LOCKED
+  3_protection_bypass: LOCKED
   4_traffic_analysis: LOCKED
-  5_runtime_testing: LOCKED
-  6_api_testing: LOCKED
-  7_reporting: LOCKED
+  5_attack_surface: LOCKED
+  6_runtime_testing: LOCKED
+  7_vulnerability_analysis: LOCKED
+  8_api_testing: LOCKED
+  9_exploitation: LOCKED
+  10_reporting: LOCKED
 
 findings_count: 0
 current_phase: 1
@@ -91,6 +102,12 @@ time_tracking:
   phase_6_end: ""
   phase_7_start: ""
   phase_7_end: ""
+  phase_8_start: ""
+  phase_8_end: ""
+  phase_9_start: ""
+  phase_9_end: ""
+  phase_10_start: ""
+  phase_10_end: ""
 
 notes: ""
 ```
@@ -111,21 +128,22 @@ notes: ""
 
 ### N/A Phases
 
-If a phase is genuinely not applicable (e.g., no API backend for Phase 6, no pinning/root detection for Phase 3), document the justification in the phase summary file and mark the gateway as `N/A` in state.yaml. Do NOT skip silently — always write a summary explaining why the phase doesn't apply. This counts as satisfying the gate.
+If a phase is genuinely not applicable (e.g., no API backend for Phase 8, no pinning/root detection for Phase 3), document the justification in the phase summary file and mark the gateway as `N/A` in state.yaml. Do NOT skip silently — always write a summary explaining why the phase doesn't apply. This counts as satisfying the gate.
 
 ### Offline/No-Network App Fast-Path
 
 When the app has **no internet permission** and no HTTP URLs in source (purely local/offline app):
-- Phase 3 (Dynamic Setup): Mark proxy/SSL pinning as N/A. Root/jailbreak bypass may still apply.
+- Phase 3 (Protection Bypass): Root/jailbreak bypass may still apply. SSL pinning N/A.
 - Phase 4 (Traffic Analysis): Mark as N/A entirely — no network traffic to intercept.
-- Phase 6 (API Testing): Mark as N/A entirely — no server-side API exists.
-- Phase 5 (Runtime Testing): Still required — focus on broadcast injection, intent manipulation, data storage extraction, and Frida-based bypass validation.
+- Phase 5 (Attack Surface): Still required — focus on local features, intents, content providers.
+- Phase 8 (API Testing): Mark as N/A entirely — no server-side API exists.
+- Phase 6 (Runtime Testing): Still required — focus on broadcast injection, intent manipulation, data storage.
 
 Detect this early in Phase 2 by checking: (1) no `android.permission.INTERNET` in manifest, (2) no HTTP/HTTPS URLs in decompiled source, (3) no network security config. If all three: flag as offline app and pre-mark N/A phases at end of Phase 2.
 
 ### Exploit Validation
 
-Critical and High findings discovered during static analysis (Phase 2) MUST be validated dynamically before advancing to Phase 7 (Reporting). Write exploitation evidence (logcat, proof files, screenshots) to the findings directory. If dynamic validation is not possible (no device, no account), document the limitation explicitly.
+Critical and High findings discovered during any phase MUST be validated dynamically in Phase 9 (Exploitation & Validation) before final reporting. Write exploitation evidence (logcat, proof files, screenshots) to the phase9-exploitation directory. If dynamic validation is not possible (no device, no account), document the limitation explicitly.
 
 ### When to Stop Chasing a Bypass
 
@@ -228,7 +246,7 @@ After completing an MHL challenge or real engagement, generate a DKatalis engine
 
 ## Phase 2: Static Analysis
 
-### Gate: decompilation complete, secrets scan done, endpoints extracted
+### Gate: decompilation complete, secrets scan done, endpoints extracted, framework identified
 
 **Steps:**
 
@@ -415,9 +433,75 @@ After completing an MHL challenge or real engagement, generate a DKatalis engine
 
 ---
 
-## Phase 3: Dynamic Setup
+## Phase 3: Protection Assessment & Bypass
 
-### Gate: proxy intercepting traffic OR documented as unnecessary; bypass scripts working OR documented as not needed; app launches normally
+### Gate: protection mechanisms identified and bypassed (or documented as not needed/not bypassable); app launches with instrumentation capability
+
+This phase assesses and bypasses client-side protections (RASP, root detection, SSL pinning, anti-tampering) BEFORE traffic analysis. Without bypasses working, Phases 4-9 are blocked.
+
+**Steps:**
+
+1. Identify protection mechanisms:
+   - Root/jailbreak detection (su binary, Magisk, KernelSU, Cydia)
+   - Frida/instrumentation detection (port 27042, /proc/self/maps, frida-agent strings)
+   - SSL certificate pinning (OkHttp, TrustManager, network_security_config)
+   - Anti-tampering / integrity checks (signature verification, DEX checksum)
+   - Emulator detection (Build properties, sensors, telephony)
+   - Debug detection (debuggable flag, TracerPid, JDWP)
+   - Commercial SDKs: DexGuard/AppFence, Eversafe, Promon, Arxan
+
+2. SSL pinning bypass:
+   ```bash
+   # Frida (comprehensive — native Android apps)
+   frida -U -f <package> -l ssl_pinning_bypass.js
+
+   # Flutter apps — MUST use flutter_ssl_bypass.js (standard hooks don't work)
+   # Flutter uses BoringSSL in libflutter.so, ignores system proxy + CA store
+   # See frida-scripts.md → "Flutter SSL Pinning Bypass" for full script
+   # Key: scan only r-x ranges, hook by byte pattern, use Python to keep session alive
+   # Also requires iptables redirect (Flutter ignores system proxy):
+   #   iptables -t nat -A OUTPUT -p tcp -m owner --uid-owner <UID> --dport 443 -j DNAT --to <HOST>:8080
+
+   # Objection (quick — native apps only, NOT Flutter)
+   objection -g <package> explore
+   android sslpinning disable   # or: ios sslpinning disable
+
+   # APK patching (persistent, no Frida needed)
+   # Inject network_security_config.xml trusting user CAs
+   # Rebuild + re-sign APK
+   ```
+
+3. Root/jailbreak detection bypass:
+   ```bash
+   # Frida (comprehensive)
+   frida -U -f <package> -l root_bypass.js
+
+   # Objection (quick)
+   objection -g <package> explore
+   android root disable   # or: ios jailbreak disable
+
+   # Combined launch
+   frida -U -f <package> -l root_bypass.js -l ssl_pinning_bypass.js
+   ```
+
+4. Anti-tampering bypass (DexGuard/AppFence/Eversafe):
+   - See Operational Notes → DexGuard section for full methodology
+   - Priority order: Shamiko+Zygisk > hluda-server > Frida Gadget > non-rooted device > static evidence only
+   - Apply "When to Stop Chasing a Bypass" decision tree
+
+5. Verify: app launches, Frida attaches successfully, no detection popups/crashes
+
+**Reference:** `dynamic-setup.md`, `frida-scripts.md`, `dexguard-appfence-bypass.md`
+
+**Script:** `scripts/flutter_ssl_bypass.js` — ready-to-use Flutter BoringSSL bypass for ARM64 (supports Flutter 3.10-3.24+). Use with: `frida -U -f <package> -l scripts/flutter_ssl_bypass.js`
+
+**Cross-reference:** For DexGuard/AppFence protected apps, load the `dexguard-native-re` skill for full RE methodology and bypass scripts.
+
+---
+
+## Phase 4: Traffic Analysis
+
+### Gate: proxy intercepting traffic, API endpoints mapped, auth flow documented, at least one full user journey captured (OR documented N/A with justification if app has no network communication)
 
 **Steps:**
 
@@ -447,76 +531,26 @@ After completing an MHL challenge or real engagement, generate a DKatalis engine
    adb shell iptables -t nat -A OUTPUT -p tcp --dport 80 -j DNAT --to <host_ip>:8080
    ```
 
-3. SSL pinning bypass:
-   ```bash
-   # Frida (comprehensive — native Android apps)
-   frida -U -f <package> -l ssl_pinning_bypass.js
-
-   # Flutter apps — MUST use flutter_ssl_bypass.js (standard hooks don't work)
-   # Flutter uses BoringSSL in libflutter.so, ignores system proxy + CA store
-   # See frida-scripts.md → "Flutter SSL Pinning Bypass" for full script
-   # Key: scan only r-x ranges, hook by byte pattern, use Python to keep session alive
-   # Also requires iptables redirect (Flutter ignores system proxy):
-   #   iptables -t nat -A OUTPUT -p tcp -m owner --uid-owner <UID> --dport 443 -j DNAT --to <HOST>:8080
-
-   # Objection (quick — native apps only, NOT Flutter)
-   objection -g <package> explore
-   android sslpinning disable   # or: ios sslpinning disable
-
-   # APK patching (persistent, no Frida needed)
-   # Inject network_security_config.xml trusting user CAs
-   # Rebuild + re-sign APK
-   ```
-
-4. Root/jailbreak detection bypass:
-   ```bash
-   # Frida (comprehensive)
-   frida -U -f <package> -l root_bypass.js
-
-   # Objection (quick)
-   objection -g <package> explore
-   android root disable   # or: ios jailbreak disable
-
-   # Combined launch
-   frida -U -f <package> -l root_bypass.js -l ssl_pinning_bypass.js
-   ```
-
-5. Verify: app launches, traffic visible in proxy, no detection popups
-
-**Reference:** `dynamic-setup.md`, `frida-scripts.md`
-
-**Script:** `scripts/flutter_ssl_bypass.js` — ready-to-use Flutter BoringSSL bypass for ARM64 (supports Flutter 3.10-3.24+). Use with: `frida -U -f <package> -l scripts/flutter_ssl_bypass.js`
-
-**Cross-reference:** For DexGuard/AppFence protected apps, load the `dexguard-native-re` skill for full RE methodology and bypass scripts.
-
----
-
-## Phase 4: Traffic Analysis
-
-### Gate: API endpoints mapped, auth flow documented, at least one full user journey captured (OR documented N/A with justification if app has no network communication)
-
-**Steps:**
-
-1. Capture baseline traffic:
+3. Capture baseline traffic:
    - Launch app, complete registration/login flow
    - Navigate all major features
    - Trigger push notifications, background sync
    - Export all requests from proxy
 
-2. Map API surface:
+4. Map API surface:
    - Base URLs and versioning
    - Authentication mechanism (JWT, OAuth, session, API key)
    - Request/response patterns
    - File upload/download endpoints
    - WebSocket connections
 
-3. Document auth flow:
+5. Document auth flow:
    - Login sequence (OTP, biometric, PIN)
    - Token lifecycle (access token, refresh token, expiry)
    - Session management
    - Multi-factor authentication steps
 
-4. Identify interesting patterns:
+6. Identify interesting patterns:
    - Sequential/predictable IDs (IDOR candidates)
    - Sensitive data in responses (PII, financial data)
    - Missing security headers
@@ -528,9 +562,79 @@ After completing an MHL challenge or real engagement, generate a DKatalis engine
 
 ---
 
-## Phase 5: Runtime Testing
+## Phase 5: Attack Surface Mapping
 
-### Gate: at least 3 test categories completed from the checklist below; Critical/High findings from Phase 2 must be dynamically validated
+### Gate: Feature map documented with entry points per feature; prioritized by risk
+
+This phase creates the structured map that drives Phase 7 (Vulnerability Analysis). Every testable feature is catalogued with its entry points, data sensitivity, and applicable vulnerability classes.
+
+**Steps:**
+
+1. Enumerate all user-facing features from:
+   - App UI navigation (every screen, every action)
+   - Deep link routes (from Phase 2 static analysis)
+   - API endpoints (from Phase 4 traffic analysis)
+   - Exported components (from Phase 2 manifest analysis)
+   - WebView bridges (from Phase 2 JS interface analysis)
+   - Background services and receivers
+
+2. For each feature, document:
+   - Feature name and description
+   - Entry points (UI path, API endpoint, deep link, intent, broadcast)
+   - Data handled (PII, financial, auth tokens)
+   - Trust boundaries crossed (client→server, app→OS, app→other apps)
+   - Authentication/authorization requirements
+   - Third-party integrations (payment SDK, analytics, social login)
+
+3. Prioritize by risk:
+   - Financial transactions (transfer, payment, top-up) → Critical
+   - Authentication/session (login, OTP, biometric, token refresh) → Critical
+   - PII handling (profile, KYC, documents) → High
+   - File operations (upload, download, share) → High
+   - Communication (chat, notifications, deep links) → Medium
+   - Social features (feed, comments, likes) → Medium
+   - Settings/preferences (theme, language, notifications) → Low
+
+4. Output: `attack-surface-map.md` in `mtest-output/phase5-attack-surface/`
+
+**Attack Surface Map Template:**
+
+```markdown
+# Attack Surface Map — [App Name]
+
+## Feature Inventory
+
+| # | Feature | Risk | Entry Points | Data Sensitivity | Auth Required |
+|---|---------|------|-------------|-----------------|---------------|
+| 1 | Login/Auth | Critical | UI, POST /auth/login, deeplink://auth | Credentials, OTP, tokens | No (pre-auth) |
+| 2 | Money Transfer | Critical | UI, POST /transfer/*, deeplink://pay | Account numbers, amounts | Yes |
+| 3 | Profile | High | UI, GET/PUT /user/profile | PII, photos | Yes |
+| 4 | File Upload | High | UI, POST /upload, content://provider | Documents, images | Yes |
+| 5 | Chat/Messaging | Medium | UI, WebSocket /ws/chat | Messages, media | Yes |
+| ... | | | | | |
+
+## Per-Feature Detail
+
+### Feature 1: Login/Auth
+- **UI Path:** Launch → Login screen
+- **API Endpoints:** POST /auth/login, POST /auth/otp/verify, POST /auth/refresh
+- **Deep Links:** deeplink://auth/reset, deeplink://auth/verify
+- **Intents:** com.app.LOGIN_COMPLETE (broadcast)
+- **Data:** username, password, OTP, JWT, refresh token, device ID
+- **Trust Boundaries:** Client→Server (credentials), Server→Client (tokens)
+- **Third-party:** Firebase Auth, Google Sign-In
+- **Applicable Vuln Classes:** Brute force, credential stuffing, OTP bypass, session fixation, token leakage, biometric bypass
+
+[Repeat for each feature...]
+```
+
+**Cross-reference:** Feed this map directly into Phase 7 as the testing checklist.
+
+---
+
+## Phase 6: Runtime Testing
+
+### Gate: at least 3 test categories completed from the checklist below; data storage inspected; deep links tested
 
 **Production Validation Rule:** Before any finding can be rated Critical (Confirmed), it MUST be demonstrated on a non-rooted production device with a logged-in user account. Findings validated only on rooted/instrumented devices are capped at High (Probable) because:
 - Feature flags may behave differently on rooted vs non-rooted
@@ -630,7 +734,146 @@ If you cannot test on a non-rooted device, explicitly state this limitation and 
 
 ---
 
-## Phase 6: API Testing (Server-side)
+## Phase 7: Vulnerability Analysis (Feature-Driven)
+
+### Gate: All features from Phase 5 attack surface map tested; findings documented per feature
+
+### Methodology
+
+For EACH feature in the attack surface map (Phase 5):
+1. Identify entry points (UI, deep links, intents, API calls)
+2. Map applicable vulnerability classes (from OWASP Mobile Top 10 + custom)
+3. Execute test cases per vuln class
+4. Document findings immediately with evidence
+
+This is NOT a flat checklist of vulnerability types. You test **per feature** — the login flow gets auth-specific tests, the payment flow gets business-logic tests, the file upload gets path-traversal tests. Each feature has its own threat model.
+
+### Feature Testing Workflow
+
+```
+For each feature in attack-surface-map.md:
+  1. Open feature testing file: phase7-vuln-analysis/per-feature/<feature-name>.md
+  2. List all entry points for this feature
+  3. For each applicable vuln class:
+     a. Execute test case
+     b. Record result (vulnerable / not vulnerable / inconclusive)
+     c. If vulnerable → create finding immediately (MTEST-XXX)
+  4. Mark feature as TESTED in attack surface map
+```
+
+### Feature Testing Template
+
+Save one file per feature in `phase7-vuln-analysis/per-feature/`:
+
+```markdown
+# Feature: [Name] — Vulnerability Analysis
+
+**Risk Priority:** Critical|High|Medium|Low (from Phase 5)
+**Entry Points:**
+- UI: [path to screen]
+- API: [endpoints]
+- Deep Link: [scheme://path]
+- Intent: [action/component]
+
+## Test Matrix
+
+| Vuln Class | Test Case | Result | Finding |
+|-----------|-----------|--------|---------|
+| Brute Force | 100 login attempts, check lockout | Not Vuln | — |
+| OTP Bypass | Reuse OTP, expired OTP, null OTP | Vulnerable | MTEST-003 |
+| Session Fixation | Pre-set session token before auth | Not Vuln | — |
+| Token Leakage | Check logcat, analytics, clipboard | Vulnerable | MTEST-004 |
+| ... | | | |
+
+## Notes
+[Observations, partial findings, things to revisit in Phase 9]
+```
+
+### Vulnerability Classes Reference (apply per-feature)
+
+**Authentication & Session:**
+- Brute force / rate limiting bypass
+- Credential stuffing
+- Session fixation / session hijacking
+- Token leakage (logs, analytics, clipboard, URL params)
+- Biometric bypass (client-side only check)
+- OTP bypass (reuse, expiry, null, race condition)
+- Password reset flow abuse
+- Remember-me token weakness
+
+**Authorization:**
+- IDOR (swap user IDs, account numbers, resource IDs)
+- Privilege escalation (user → admin, free → premium)
+- Missing function-level access control
+- Insecure direct object reference via deep links
+
+**Input Validation:**
+- SQL injection (API params, content provider queries)
+- NoSQL injection (MongoDB operators in JSON)
+- Command injection (native libs, server-side)
+- YAML/XML deserialization (SnakeYAML, XMLDecoder)
+- Path traversal (file operations, content providers)
+- XSS via WebView (stored in fields, reflected via deep links)
+- Intent injection (exported components, parseUri)
+
+**Business Logic:**
+- Race conditions (double-spend, parallel requests)
+- Negative values (transfer negative amount)
+- Step skipping (skip OTP, skip terms acceptance)
+- Replay attacks (reuse transaction tokens)
+- Coupon/promo abuse (reuse, negative discount)
+- Time-of-check-time-of-use (TOCTOU)
+
+**Data Protection:**
+- Insecure local storage (plaintext tokens, PII in SharedPrefs)
+- Clipboard leakage (sensitive data copied)
+- Logging sensitive data (logcat, analytics)
+- Backup exposure (allowBackup, custom backup without encryption)
+- Screenshot/screen recording on sensitive screens
+- Cache/temp file exposure
+
+**Cryptography:**
+- Weak algorithms (MD5, SHA1 for security, DES, RC4)
+- Hardcoded keys/secrets
+- Small keyspace (4-digit PIN protecting data)
+- ECB mode usage
+- Missing integrity protection (encryption without MAC)
+- Predictable IV/nonce
+
+**Network:**
+- Cleartext traffic (HTTP, missing usesCleartextTraffic=false)
+- Missing/incomplete SSL pinning
+- Certificate validation bypass
+- WebSocket without TLS
+- DNS rebinding
+
+**Platform (Mobile-specific):**
+- Exported components without permission (activities, receivers, providers, services)
+- Deep link injection / hijacking
+- WebView JavaScript bridge attacks
+- Intent redirection / hijacking
+- Pending intent mutable flags
+- Task affinity hijacking
+- Tapjacking (overlay attacks)
+
+### Per-Feature Vuln Class Mapping (Quick Reference)
+
+| Feature Type | Primary Vuln Classes |
+|-------------|---------------------|
+| Login/Auth | Brute force, OTP bypass, biometric bypass, session fixation, credential stuffing |
+| Payment/Transfer | IDOR, race condition, negative amount, replay, step skipping |
+| Profile/Account | IDOR, PII exposure, file upload vulns, XSS via fields |
+| File Upload/Download | Path traversal, unrestricted type, size bypass, malware upload |
+| Chat/Messaging | XSS, injection, media handling, deep link abuse |
+| Search | Injection, information disclosure, enumeration |
+| Settings | Privilege escalation, insecure defaults, missing re-auth |
+| Deep Links (all) | Intent injection, WebView hijack, parameter tampering, open redirect |
+| Content Providers | SQL injection, path traversal, permission bypass |
+| Push Notifications | Spoofing, data leakage in payload, deep link injection |
+
+---
+
+## Phase 8: API Testing (Server-side)
 
 ### Gate: at least BOLA, auth bypass, and injection tests completed (OR documented N/A with justification if no server-side API exists)
 
@@ -656,7 +899,7 @@ When direct API replay is blocked by device attestation tokens (Eversafe, AppAtt
 4. **Automate capture-and-replay** if testing multiple endpoints — script the Burp MCP token extraction
 5. **Document the constraint** in the report: "API testing performed within 5-min JWT windows using replayed attestation tokens"
 
-If the attestation token itself expires before you can test (< 5 min validity), mark Phase 6 as N/A with justification. The token replay window is the practical limit of what's testable without RE of the native attestation library.
+If the attestation token itself expires before you can test (< 5 min validity), mark Phase 8 as N/A with justification. The token replay window is the practical limit of what's testable without RE of the native attestation library.
 
 **Steps:**
 
@@ -698,9 +941,61 @@ If the attestation token itself expires before you can test (< 5 min validity), 
 
 ---
 
-## Phase 7: Reporting
+## Phase 9: Exploitation & Validation
 
-### Steps:
+### Gate: All Critical/High findings have exploitation proof OR documented limitation why validation wasn't possible
+
+This phase separates "finding a bug" from "proving exploitability." Every Critical/High finding from Phases 6-8 must have a complete exploit chain demonstrated here.
+
+**Steps:**
+
+1. **Build exploit chains** — for each Critical/High finding:
+   - Write complete PoC script (Python, Frida, or adb commands)
+   - Demonstrate full impact (data exfil, account takeover, RCE, financial loss)
+   - Chain findings where applicable (e.g., deep link + WebView + JS bridge = RCE)
+   - Document prerequisites (rooted device, specific app state, user interaction)
+
+2. **Production validation:**
+   - Test on non-rooted production device where possible
+   - Confirm finding works without instrumentation (Frida, root)
+   - If can't validate on production: document limitation, cap at High (Probable)
+   - Test with real user account (not just static code evidence)
+
+3. **Chain analysis:**
+   - Look for combinations that escalate severity:
+     - Info leak + IDOR = account takeover
+     - Deep link injection + WebView + JS bridge = RCE
+     - Path traversal + native lib loading = code execution
+     - Backup manipulation + deserialization = RCE
+   - Document attack chains as separate findings with combined severity
+
+4. **Evidence collection:**
+   - Screenshots/screen recordings of exploitation
+   - Network captures (pcap/HAR) showing the attack
+   - Frida output logs proving code execution
+   - PoC scripts that reproduce from scratch (zero-knowledge)
+   - Before/after state comparison (e.g., balance change, data access)
+
+5. **PoC requirements:**
+   - Self-contained (runs without manual setup beyond stated prerequisites)
+   - Documented dependencies (Python packages, Frida version, device requirements)
+   - Clear success criteria (what output proves exploitation)
+   - Cleanup instructions (if PoC modifies state)
+
+**Output:** `phase9-exploitation/` directory with:
+- `poc/MTEST-XXX-poc.py` — PoC scripts per finding
+- `evidence/MTEST-XXX/` — screenshots, logs, captures per finding
+- `chains.md` — documented attack chains
+
+**Reference:** `android-path-traversal-rce.md`, `native-buffer-overflow.md`, `crypto-key-cracking.md`
+
+---
+
+## Phase 10: Reporting
+
+### Gate: All findings documented, severity validated, report generated
+
+**Steps:**
 
 1. Compile findings with:
    - Title and severity (Critical/High/Medium/Low/Info)
@@ -740,6 +1035,7 @@ If the attestation token itself expires before you can test (< 5 min validity), 
 **Platform:** Android|iOS|Both
 **Component:** Client|Server|Both
 **OWASP Mobile:** M1-M10 mapping
+**Feature:** [Which feature from attack surface map]
 
 ## Description
 [What the vulnerability is]
@@ -797,7 +1093,7 @@ If the attestation token itself expires before you can test (< 5 min validity), 
 - Always test on a **dedicated device/emulator** — never on a personal device with real accounts
 - Some apps detect emulators (check for `generic`, `sdk`, `genymotion` in Build properties) — prefer rooted physical device
 - iOS testing requires a **jailbroken device** for most dynamic tests — checkra1n (A11 and below) or palera1n (A11-A16)
-- Save all Frida scripts to `phase3-dynamic-setup/scripts/` for reproducibility
+- Save all Frida scripts to `phase3-protection/scripts/` for reproducibility
 - When app uses certificate transparency or multiple pinning layers, combine approaches (Frida + patched config + invisible proxy)
 - **Client-side only** findings (no server validation) are typically Medium unless they expose sensitive data
 - Cross-reference extracted API endpoints with ptest skill for comprehensive server-side testing
@@ -1000,21 +1296,11 @@ This two-step pattern is required for hooking deep link handlers. Use Python fri
 - **Device-to-host connectivity:** When the device can't reach the host IP (different subnet, firewall, VPN), use `adb reverse tcp:PORT tcp:PORT` to forward device localhost to host. Then use `http://127.0.0.1:PORT/` in exploit URIs. Always verify with `adb shell curl http://127.0.0.1:PORT/file` before triggering the exploit. This is more reliable than finding the correct network interface IP.
 - **App restart issues:** Use `adb shell am start -S -W` to force-stop then start. Pre-grant permissions with `pm grant` and `appops set` to avoid dialogs blocking the flow.
 
-### Phase Skipping Rules
-
-- **Offline/no-network apps:** When the app has no internet permission and no HTTP URLs in source, mark Phases 3 (Dynamic Setup), 4 (Traffic Analysis), and 6 (API Testing) as N/A immediately after Phase 2. Focus Phase 5 on broadcast exploitation, SharedPreferences validation, and data storage inspection.
-- **Client-side-only exploit chains (WebView RCE, broadcast injection):** When the exploit is entirely client-side (no server API involved), mark Phases 3/4/6 as N/A. Phase 5 validates the exploit dynamically.
-
-### Exploit Hosting & Delivery
-
-- **Exploit hosting pitfall:** Python's `http.server` decodes `%2F` in URL paths and resolves `../`, causing 404 for path traversal payloads. Use a custom server that serves the payload for any request path (see `android-path-traversal-rce.md`).
-- **Runtime.exec(String) splitting pitfall:** `Runtime.exec(String)` uses `StringTokenizer` to split on whitespace — shell features (pipes, redirects, semicolons) are NOT interpreted. `exec("sh -c id")` works (3 tokens: sh, -c, id) but `exec("sh -c id > /tmp/out")` fails (sh only executes "id", "> /tmp/out" becomes $0/$1). Workaround: push a script to an executable path first, then exec the script path. Or use `exec(String[])` if you control the call site.
-
 ### High-Value Attack Patterns
 
 - **WebView + @JavascriptInterface = high-value target:** When an app has JS enabled + addJavascriptInterface, map ALL exposed methods. If any method calls Runtime.exec(), ProcessBuilder, or shell commands — that's an RCE chain. XSS in the WebView (via deep links, intent data, or stored content) becomes the trigger.
 - **SecureWebView pattern (server-side domain allowlist):** Modern apps (Gojek, fintech) wrap WebView in a `SecureWebView` subclass that overrides `loadUrl()` with a server-fetched domain allowlist check. Even if the deep link handler passes unvalidated URLs, the WebView blocks loading non-allowlisted domains. Detection: look for `extends WebView` with `super.loadUrl()` gated behind a boolean check, and config keys like `DOMAIN_WHITELIST_BATCH_*` or `JS_BRIDGE_WHITELIST_BATCH_*`. This downgrades a "no validation in handler" finding from Critical to Medium unless you can bypass the allowlist. **Bypass vectors (in order):** (1) `data:` URI scheme — may bypass if allowlist only checks `http`/`https` schemes. **CAVEAT:** depends on feature flag state — always verify dynamically before rating as Confirmed. (2) Open redirect on an allowed domain. (3) Partner with `allowAllAccess=true`. (4) Empty allowlist fallback (fail-open when `DOMAIN_WHITELIST_BATCH_SIZE` returns 0). (5) Feature flag OFF (unlikely in production). See `deeplink-webview-hijack.md`.
-- **Deep link escape bypass patterns:** When the app escapes single quotes but NOT backslashes, inject `\\'` — after escape it becomes `\\\\'` which in JS is literal backslash + string terminator. Always check: does the escape cover `\`, `"`, `'`, backtick, `$`, and newlines?
+- **Deep link escape bypass patterns:** When the app escapes single quotes but NOT backslashes, inject `\\\'` — after escape it becomes `\\\\\'` which in JS is literal backslash + string terminator. Always check: does the escape cover `\\`, `"`, `'`, backtick, `$`, and newlines?
 - **Intent URI parsing (`Intent.parseUri`) is a high-value target:** When an app parses user-controlled strings as intent URIs (look for `Intent.parseUri(url, 1)` or `Intent.URI_INTENT_SCHEME`), it can launch ANY activity (including non-exported ones) with arbitrary extras. The attack surface is wherever the URL string originates: UI input, database, backup files, deep link parameters, QR codes. Even if the app "sanitizes" the intent before launching, check what the sanitizer ADDS (not just removes).
 - **Backup/restore bypasses input validation:** Apps that implement their own backup (JSON/XML to external storage) often skip the validation applied on the UI path. If `isValidUrl()` blocks `intent:` schemes on the add-entry UI, but `restoreEntries()` reads raw JSON without checking — inject via modified backup file. Check: (1) backup format (plaintext JSON? XML?), (2) restore validation (usually missing), (3) code paths that handle `intent:` scheme. Common in password managers, note apps, bookmark managers.
 - **Native "sanitizer" as enabler pattern:** When a native function strips extras/data from an intent but then ADDS a validation flag (e.g., `putExtra("VALID", true)`), the sanitizer IS the exploit enabler. The app assumes only sanitized intents reach the protected activity, but the sanitizer itself grants access. Reverse the native function to confirm: look for `removeExtra` loop followed by `putExtra` with a boolean `true` (mov w4, 1 in arm64).
@@ -1042,3 +1328,13 @@ This two-step pattern is required for hooking deep link handlers. Use Python fri
 - **Unity IL2CPP reverse engineering:** For Unity 2020.x IL2CPP apps, all C# class/method/field/string-literal names are in `global-metadata.dat`. Key patterns: (1) grep for `[ClassName]` log prefixes to find the relevant class, (2) grep for method names like `Handle*`, `check*`, `validate*`, `get*` to understand the flow, (3) look for field names like `domainRegex`, `updateHost` that reveal validation logic, (4) coroutine names like `<MethodName>d__N` reveal async operations. The actual game logic is NOT in `classes.dex` — it's in `libil2cpp.so` + metadata.
 - **Unity IL2CPP deep link parameter discovery:** Hardcoded URLs in `global-metadata.dat` may use DIFFERENT query parameter names than the deep link handler expects. Don't assume the parameter name from hardcoded strings — test systematically. Use `strings global-metadata.dat | grep -E "^(check|get|set|validate|parse)[A-Z]"` to find method names that hint at the actual parameter (e.g., `checkHost` → parameter is `host=`, not `patch=` from the hardcoded URL). When host extraction always returns empty despite correct URI format, the parameter name is likely wrong.
 - **Mono/Unity custom scheme URI parsing quirk:** In Unity 2020.x (Mono runtime), `System.Uri` does NOT reliably parse query parameters from custom scheme URIs (e.g., `customscheme://host?key=value`). The `Uri.Query` property may return empty. Apps work around this with manual string parsing or by using Android's Java-side `Uri.getQueryParameter()` via JNI. When testing deep links, if the app receives the full URI string (confirmed via logcat) but fails to extract parameters, try different parameter names — the extraction method may be parameter-name-specific.
+
+### Phase Skipping Rules
+
+- **Offline/no-network apps:** When the app has no internet permission and no HTTP URLs in source, mark Phases 4 (Traffic Analysis) and 8 (API Testing) as N/A immediately after Phase 2. Focus Phase 6 on broadcast exploitation, SharedPreferences validation, and data storage inspection.
+- **Client-side-only exploit chains (WebView RCE, broadcast injection):** When the exploit is entirely client-side (no server API involved), mark Phase 8 as N/A. Phase 9 validates the exploit dynamically.
+
+### Exploit Hosting & Delivery
+
+- **Exploit hosting pitfall:** Python's `http.server` decodes `%2F` in URL paths and resolves `../`, causing 404 for path traversal payloads. Use a custom server that serves the payload for any request path (see `android-path-traversal-rce.md`).
+- **Runtime.exec(String) splitting pitfall:** `Runtime.exec(String)` uses `StringTokenizer` to split on whitespace — shell features (pipes, redirects, semicolons) are NOT interpreted. `exec("sh -c id")` works (3 tokens: sh, -c, id) but `exec("sh -c id > /tmp/out")` fails (sh only executes "id", "> /tmp/out" becomes $0/$1). Workaround: push a script to an executable path first, then exec the script path. Or use `exec(String[])` if you control the call site.
