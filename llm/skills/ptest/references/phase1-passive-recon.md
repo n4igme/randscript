@@ -1,14 +1,15 @@
----
-name: recon-passive
-description: Passive reconnaissance — gather intelligence without touching the target directly.
-version: 3.0.0
-metadata:
-  category: reconnaissance
-  phase: 1
-  scope_types: [web, network, cloud, mobile, mixed]
----
+# Phase 1: Passive Reconnaissance
 
-# Skill: Passive Reconnaissance
+## Automated Setup
+
+Run first when entering this phase:
+
+```python
+from hermes_tools import read_file
+exec(read_file("~/.hermes/skills/security/ptest/scripts/phase1_passive.py")["content"])
+```
+
+---
 
 ## When to Use
 - First phase of any engagement (Gateway 1 is OPEN).
@@ -428,9 +429,28 @@ curl -s "https://api.github.com/repos/<org>/<tool-name>" | grep -q "Not Found" &
 - Internal-only tools (not on GitHub) are higher-value findings when exposed
 - Version history in open repos enables targeted CVE research
 
-## Exit Criteria
+## Env-Prefix Quick-Win Check (MANDATORY before Phase 2)
 
-> **Note:** The authoritative scope/technique matrix is in `SKILL.md` under "Scope-Aware Checklist Generation". The guidance below is supplementary.
+Before transitioning to Phase 2, scan ALL discovered subdomains for environment indicators and immediately generate prod equivalents. This is a 5-minute check that catches forgotten production assets.
+
+**Process:**
+1. Grep your merged subdomain list for env patterns: `grep -iE '\.(dev|staging|stg|sit|uat|mock|sandbox|test|qa|preprod|nonprod|demo|lab)\.' subdomains-merged.txt`
+2. For EACH match, generate the bare-domain equivalent (strip the env segment)
+3. Resolve the bare-domain equivalents with `dig +short`
+4. If any resolve — add to master list, flag as **HIGH PRIORITY** targets (forgotten prod assets)
+
+**Example (BFI, May 2026):**
+```
+Found in passive recon:  e-pmo2.dev.bfi.co.id → 172.22.32.94
+Quick-win derivation:    e-pmo2.bfi.co.id     → 34.111.225.150 ← LIVE PROD!
+Result:                  Forgotten PHP app with SQLi → 21 databases compromised
+```
+
+**Exit gate addition:** Document in Phase 1 output: "Env-prefix quick-win: X subdomains with env indicators found, Y bare-domain equivalents tested, Z new live hosts discovered."
+
+---
+
+## Exit Criteria
 
 - [ ] Attack surface is mapped (domains, IPs, subdomains).
 - [ ] Enumerated subdomains validated for liveness (DNS + HTTP probe).
@@ -439,4 +459,5 @@ curl -s "https://api.github.com/repos/<org>/<tool-name>" | grep -q "Not Found" &
 - [ ] Potential entry points listed (verified).
 - [ ] Open-source target software checked for security issues between versions.
 - [ ] Exposed binaries analyzed for internal endpoints and secrets (if available).
+- [ ] Env-prefix quick-win check completed.
 - [ ] Checklist shows all applicable techniques executed.

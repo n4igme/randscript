@@ -1,13 +1,4 @@
----
-name: escalate-finding
-description: Immediately escalate critical/P1 findings that require urgent client notification.
-version: 3.0.0
-metadata:
-  category: escalation
-  scope_types: [web, network, cloud, mobile, mixed]
----
-
-# Skill: Escalate Finding
+# Escalate Finding
 
 ## When to Use
 - Critical vulnerability discovered (RCE, auth bypass, data breach in progress).

@@ -1,14 +1,4 @@
----
-name: attack-surface
-description: Attack surface mapping — consolidate discoveries, confirm scope, and map entry points before exploitation.
-version: 3.0.0
-metadata:
-  category: planning
-  phase: 4
-  scope_types: [web, network, cloud, mobile, mixed]
----
-
-# Skill: Attack Surface Mapping
+# Phase 4: Attack Surface Mapping
 
 ## When to Use
 - After enumeration is complete (Gateway 3 PASSED).
@@ -90,7 +80,66 @@ Document all potential entry points for exploitation:
 | ... | | | | |
 ```
 
-### 4. Dismissed Assets
+### 4. Attack Surface Scoring Workflow
+
+Score each asset from the inventory using the prioritization matrix:
+
+**Step 1:** For each asset, assign scores (1-3) for each factor:
+
+| Factor | Score 3 (High) | Score 2 (Medium) | Score 1 (Low) |
+|--------|---------------|-----------------|--------------|
+| Auth Status | No auth required | Weak auth (Basic, default creds) | Strong auth (JWT, MFA, IAP) |
+| Data Sensitivity | PII, credentials, financial | Business logic, configs | Public/reference data |
+| Exposure Level | Internet-facing, no WAF | Internet-facing, behind WAF/CDN | Internal IP only |
+| Attack Surface Size | Multiple endpoints, accepts input | Few endpoints, limited input | Single static endpoint |
+| Environment | Production | UAT/Staging | Dev/Mock |
+
+**Step 2:** Sum scores → Priority tier:
+- 12-15: **Critical** — exploit first
+- 8-11: **High** — exploit if time permits
+- 5-7: **Medium** — quick checks only
+- 3-4: **Low** — skip unless nothing else works
+
+**Step 3:** Cross-check against program exclusions. Mark excluded vectors with score 0.
+
+#### Worked Example
+
+```markdown
+# Attack Surface Priority Matrix — BFI Finance (May 2026)
+
+| # | Asset | Auth | Data | Exposure | Surface | Env | Score | Tier |
+|---|-------|------|------|----------|---------|-----|-------|------|
+| 1 | microservices.prod.bfi.co.id/master/v1/* | 3 (none) | 3 (financial) | 2 (WAF) | 3 (many endpoints) | 3 (prod) | **14** | Critical |
+| 2 | e-pmo2.bfi.co.id | 2 (Basic) | 2 (business) | 3 (no WAF) | 2 (few endpoints) | 3 (prod) | **12** | Critical |
+| 3 | kiali.prod.bfi.co.id | 1 (IAP) | 2 (infra) | 1 (internal IP) | 2 (dashboard) | 3 (prod) | **9** | High |
+| 4 | *.mock.bfi.co.id | 3 (none) | 1 (test data) | 2 (WAF) | 2 (API) | 1 (mock) | **9** | High |
+| 5 | grafana.dev.bfi.co.id | 1 (strong) | 1 (metrics) | 1 (internal) | 1 (single) | 1 (dev) | **5** | Medium |
+
+**Decision:** Focus Phase 5-6 on assets #1 and #2. Quick-check #3-4. Skip #5.
+```
+
+### 5. Dismissal Verification Procedure
+
+**Before dismissing ANY subdomain group, verify:**
+
+1. ✅ Tested `/actuator`, `/actuator/env`, `/actuator/heapdump` on at least 5 hosts
+2. ✅ Tested `/swagger-ui.html`, `/api-docs`, `/v3/api-docs` on at least 3 hosts
+3. ✅ Tested `/admin`, `/console`, `/login`, `/graphql` on at least 3 hosts
+4. ✅ Baselined with random path to detect SPA catch-alls
+5. ✅ Documented what was tested in the dismissal entry
+
+**Dismissal format:**
+```markdown
+| # | Pattern | Reason | Verified Paths | Hosts Tested | Caveat |
+|---|---------|--------|---------------|--------------|--------|
+| 1 | *.mock.bfi.co.id | All return 401, shared IP | /actuator(5), /admin(3), /swagger(3) | 8/12 | None |
+| 2 | *.dev.bfi.co.id | Internal IPs, unreachable | dig shows 172.x.x.x | 15/15 | Can't verify — no route |
+| 3 | kiali-*.bfi.co.id | Private DNS only | N/A | 3/3 | Would need VPN access |
+```
+
+**NEVER dismiss without testing actuator/admin paths.** Application auth and framework endpoint auth are independent — a 401 on `/api/users` does NOT mean `/actuator/env` is also protected.
+
+### 6. Dismissed Assets
 
 Document assets that were discovered but are confirmed NOT exploitable or out-of-scope:
 

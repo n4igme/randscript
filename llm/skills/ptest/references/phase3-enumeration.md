@@ -1,14 +1,15 @@
----
-name: enumeration
-description: Application-layer enumeration — deep discovery of directories, APIs, parameters, and hidden content.
-version: 3.0.0
-metadata:
-  category: enumeration
-  phase: 3
-  scope_types: [web, network, cloud, mobile, mixed]
----
+# Phase 3: Enumeration
 
-# Skill: Enumeration
+## Automated Setup
+
+Run first when entering this phase:
+
+```python
+from hermes_tools import read_file
+exec(read_file("~/.hermes/skills/security/ptest/scripts/phase3_enumerate.py")["content"])
+```
+
+---
 
 ## When to Use
 - After active recon is complete (Gateway 2 PASSED).
@@ -239,8 +240,6 @@ done < live-subs.txt
 **Deep dive:** See `references/bulk-actuator-scanning.md` and `references/framework-specific-attacks.md` §7.
 
 ## Scope Type Adjustments
-
-> **Note:** The authoritative scope/technique matrix is in `SKILL.md` under "Scope-Aware Checklist Generation". The guidance below is supplementary.
 
 - **web/API:** All techniques apply. Focus on techniques 1, 2, 3, 6, 7.
 - **network:** Skip web-specific techniques. Focus on service-specific enumeration (SMB shares, SNMP walks, NFS exports).

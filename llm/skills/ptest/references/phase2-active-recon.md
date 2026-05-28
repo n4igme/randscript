@@ -1,14 +1,15 @@
----
-name: recon-active
-description: Active reconnaissance — network-layer discovery through direct probing of targets.
-version: 3.0.0
-metadata:
-  category: reconnaissance
-  phase: 2
-  scope_types: [web, network, cloud, mobile, mixed]
----
+# Phase 2: Active Reconnaissance
 
-# Skill: Active Reconnaissance
+## Automated Setup
+
+Run first when entering this phase:
+
+```python
+from hermes_tools import read_file
+exec(read_file("~/.hermes/skills/security/ptest/scripts/phase2_active.py")["content"])
+```
+
+---
 
 ## When to Use
 - After passive recon is complete (Gateway 1 PASSED).
@@ -421,8 +422,6 @@ traceroute target.com
 ```
 
 ## Scope Type Adjustments
-
-> **Note:** The authoritative scope/technique matrix is in `SKILL.md` under "Scope-Aware Checklist Generation". The guidance below is supplementary.
 
 - **web/API:** Focus on HTTP/HTTPS ports (80, 443, 8080, 8443, 3000, 5000, 8000). Light UDP scan.
 - **network:** Full TCP + UDP scan. All techniques apply.
