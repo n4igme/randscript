@@ -119,6 +119,14 @@ Save to `./assessment/vulnerabilities.md` (create if doesn't exist, append if it
 ---
 ```
 
+
+## Positive Observations
+
+While scanning, note any strong security patterns relevant to this scanner's domain. Add them to the `# Positive Security Observations` section at the end of `vulnerabilities.md`:
+
+```markdown
+- {scanner-name}: {what the codebase does well in this area}
+```
 ## Rules
 
 - **Only report confirmed injection paths** — sink must be reachable from user-controlled source.

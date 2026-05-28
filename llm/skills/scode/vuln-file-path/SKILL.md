@@ -111,6 +111,14 @@ Append to `./assessment/vulnerabilities.md`:
 ---
 ```
 
+
+## Positive Observations
+
+While scanning, note any strong security patterns relevant to this scanner's domain. Add them to the `# Positive Security Observations` section at the end of `vulnerabilities.md`:
+
+```markdown
+- {scanner-name}: {what the codebase does well in this area}
+```
 ## Rules
 
 - **Only report confirmed file/path flaws** — user input must actually reach file operations unsanitized.

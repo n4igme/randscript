@@ -111,6 +111,14 @@ Append to `./assessment/vulnerabilities.md`:
 ---
 ```
 
+
+## Positive Observations
+
+While scanning, note any strong security patterns relevant to this scanner's domain. Add them to the `# Positive Security Observations` section at the end of `vulnerabilities.md`:
+
+```markdown
+- {scanner-name}: {what the codebase does well in this area}
+```
 ## Rules
 
 - **Only report crypto weaknesses with real impact** — MD5 for cache keys is not a vuln; MD5 for passwords is.

@@ -38,25 +38,43 @@ If no scope is defined (small codebase), scan everything. The scope definition p
 
 ### 0. Automated Pre-Scan (run before manual review)
 
-Run these tools first to catch low-hanging fruit and inform manual analysis:
+Check tool availability first, then run whatever is installed. Missing tools are fine — they're supplementary.
 
 ```bash
-# Secrets in git history
-gitleaks detect --source . --report-path assessment/gitleaks.json 2>/dev/null
-# Or: trufflehog filesystem . --json > assessment/trufflehog.json
+# Create assessment directory
+mkdir -p assessment
+
+# Check which tools are available and run them
+if command -v gitleaks &>/dev/null; then
+  gitleaks detect --source . --report-path assessment/gitleaks.json 2>/dev/null && echo "✓ gitleaks complete" || echo "⚠ gitleaks found issues (see report)"
+elif command -v trufflehog &>/dev/null; then
+  trufflehog filesystem . --json > assessment/trufflehog.json 2>/dev/null && echo "✓ trufflehog complete"
+else
+  echo "⊘ Skipping secret scan (install gitleaks or trufflehog)"
+fi
 
 # Dependency vulnerabilities (run whichever applies)
-npm audit --json > assessment/npm-audit.json 2>/dev/null
-pip-audit --format json > assessment/pip-audit.json 2>/dev/null
-cargo audit --json > assessment/cargo-audit.json 2>/dev/null
-bundle audit check --format json > assessment/bundle-audit.json 2>/dev/null
+[ -f package-lock.json ] && command -v npm &>/dev/null && npm audit --json > assessment/npm-audit.json 2>/dev/null && echo "✓ npm audit complete"
+[ -f requirements.txt ] && command -v pip-audit &>/dev/null && pip-audit --format json > assessment/pip-audit.json 2>/dev/null && echo "✓ pip-audit complete"
+[ -f Cargo.lock ] && command -v cargo-audit &>/dev/null && cargo audit --json > assessment/cargo-audit.json 2>/dev/null && echo "✓ cargo audit complete"
+[ -f Gemfile.lock ] && command -v bundle-audit &>/dev/null && bundle audit check --format json > assessment/bundle-audit.json 2>/dev/null && echo "✓ bundle-audit complete"
 
-# Semgrep quick scan (broad pattern matching)
-semgrep --config auto --json -o assessment/semgrep.json . 2>/dev/null
+# Semgrep (broad pattern matching)
+if command -v semgrep &>/dev/null; then
+  semgrep --config auto --json -o assessment/semgrep.json . 2>/dev/null && echo "✓ semgrep complete"
+else
+  echo "⊘ Skipping semgrep (install: pip install semgrep)"
+fi
 
 # IaC scanning (if Terraform/K8s/Docker present)
-checkov -d . --quiet --compact --output json > assessment/checkov.json 2>/dev/null
+if command -v checkov &>/dev/null; then
+  checkov -d . --quiet --compact --output json > assessment/checkov.json 2>/dev/null && echo "✓ checkov complete"
+else
+  echo "⊘ Skipping IaC scan (install: pip install checkov)"
+fi
 ```
+
+If no tools are available, proceed with manual analysis — the tools accelerate but don't replace code reading.
 
 Feed results into the recon report:
 - Secrets found → note in "Sensitive Assets" section

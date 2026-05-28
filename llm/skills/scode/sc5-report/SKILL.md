@@ -35,7 +35,26 @@ Read validated-vulnerabilities.md and for each confirmed finding:
 - Overall security posture assessment
 - Key recommendations (top 3 actions)
 
-### 3. Structure Final Report
+### 3. Map Severity to Platform Rubric
+
+Different bug bounty platforms use different severity scales. Map findings to the target platform:
+
+| Internal Severity | Immunefi | HackerOne | Bugcrowd |
+|-------------------|----------|-----------|----------|
+| **Critical** | Critical (fund loss >$1M or protocol insolvency) | Critical (CVSS 9.0–10.0) | P1 (Critical) |
+| **High** | High (fund loss <$1M, significant impact) | High (CVSS 7.0–8.9) | P2 (High) |
+| **Medium** | Medium (limited impact, conditional) | Medium (CVSS 4.0–6.9) | P3 (Medium) |
+| **Low** | Low (informational, best practice) | Low (CVSS 0.1–3.9) | P4 (Low) |
+
+**Platform-specific notes:**
+- **Immunefi**: Severity is based on "Impact" (what can happen) not "Likelihood." A Critical requires direct fund loss or protocol-breaking impact. Always include a working PoC for Critical/High.
+- **HackerOne**: Uses CVSS 3.1 vectors. Include the full vector string. Programs may have custom severity scales — check the policy.
+- **Bugcrowd**: Uses VRT (Vulnerability Rating Taxonomy). Map findings to VRT categories for faster triage.
+- **Code4rena**: Uses High/Medium/QA/Gas. High = assets at risk. Medium = assets not at direct risk but function/availability impacted. QA = low-risk/non-critical.
+
+If the target platform is known, use their rubric in the report. If unknown, default to CVSS + internal severity.
+
+### 4. Structure Final Report
 
 Organize findings by severity, then by category. Add:
 - CVSS score estimates

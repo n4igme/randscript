@@ -11,6 +11,8 @@ This step is split into focused sub-scanners. Run them in order (or pick specifi
 
 ## Sub-Skills
 
+### Traditional Web/API Scanners (3a–3m)
+
 | Step | Skill | Focus |
 |------|-------|-------|
 | 3a | `vuln-injection` | SQL, command, SSTI, XSS, NoSQL injection |
@@ -26,18 +28,74 @@ This step is split into focused sub-scanners. Run them in order (or pick specifi
 | 3k | `vuln-client-side` | Open redirect, clickjacking, prototype pollution |
 | 3l | `vuln-dependency` | Known CVEs, dependency confusion, supply chain |
 | 3m | `vuln-api` | Mass assignment, GraphQL, rate limiting, data exposure |
-| 3n-i | `vuln-web3-reentrancy` | Reentrancy, unchecked external calls, delegatecall injection |
-| 3n-ii | `vuln-web3-arithmetic` | Integer overflow/underflow, precision loss, type truncation |
-| 3n-iii | `vuln-web3-access` | Access control, proxy/upgradeability, role management |
-| 3n-iv | `vuln-web3-mev` | Front-running/MEV, flash loan, oracle manipulation |
-| 3n-v | `vuln-web3-token` | Token standard flaws, signature replay/malleability |
-| 3o | `vuln-dos` | ReDoS, algorithmic complexity, resource exhaustion, zip/XML bombs |
-| 3p | `vuln-memory` | Buffer overflow, use-after-free, format strings (C/C++/Rust/native) |
-| 3q | `vuln-web3-defi` | AMM exploits, lending flaws, bridge attacks, governance |
-| 3r | `vuln-web3-nft` | Metadata manipulation, randomness, royalty bypass, minting |
-| 3s | `vuln-web3-evm` | Storage slots, returnbomb, dirty bits, phantom functions, gas griefing |
-| 3s-ii | `vuln-web3-modern` | Restaking, Account Abstraction (ERC-4337), L2/Rollup, Intent-based protocols |
-| 3t | `vuln-infra` | Terraform, Dockerfile, K8s manifests, CI/CD pipelines, Helm charts |
+
+### Web3 / Smart Contract Scanners (3w-a–3w-j)
+
+| Step | Skill | Focus |
+|------|-------|-------|
+| 3w-a | `vuln-web3-reentrancy` | Reentrancy, unchecked external calls, delegatecall injection |
+| 3w-b | `vuln-web3-arithmetic` | Integer overflow/underflow, precision loss, type truncation |
+| 3w-c | `vuln-web3-access` | Access control, proxy/upgradeability, role management |
+| 3w-d | `vuln-web3-mev` | Front-running/MEV, flash loan, oracle manipulation |
+| 3w-e | `vuln-web3-token` | Token standard flaws, signature replay/malleability |
+| 3w-f | `vuln-web3-defi` | AMM exploits, lending flaws, bridge attacks, governance |
+| 3w-g | `vuln-web3-nft` | Metadata manipulation, randomness, royalty bypass, minting |
+| 3w-h | `vuln-web3-evm` | Storage slots, returnbomb, dirty bits, phantom functions, gas griefing |
+| 3w-i | `vuln-web3-restaking` | EigenLayer/Symbiotic restaking, AVS, slashing, operator delegation |
+| 3w-j | `vuln-web3-aa` | Account Abstraction (ERC-4337), paymasters, smart accounts |
+| 3w-k | `vuln-web3-l2` | L2/Rollup bridges, sequencer, cross-domain messaging |
+| 3w-l | `vuln-web3-intents` | Intent/solver protocols, Dutch auctions, cross-chain intents |
+
+### Systems & Infrastructure Scanners (3x-a–3x-c)
+
+| Step | Skill | Focus |
+|------|-------|-------|
+| 3x-a | `vuln-dos` | ReDoS, algorithmic complexity, resource exhaustion, zip/XML bombs |
+| 3x-b | `vuln-memory` | Buffer overflow, use-after-free, format strings (C/C++/Rust/native) |
+| 3x-c | `vuln-infra` | Terraform, Dockerfile, K8s manifests, CI/CD pipelines, Helm charts |
+
+## Parallelism Guidance
+
+Scanners within the same group are independent and can run in parallel. Scanners across groups are also independent unless noted.
+
+**Parallel Group A** (can all run simultaneously — no shared state):
+- `vuln-injection`, `vuln-access-control`, `vuln-data-exposure`, `vuln-ssrf`
+
+**Parallel Group B** (can all run simultaneously):
+- `vuln-deserialization`, `vuln-misconfig`, `vuln-logic`, `vuln-authn-session`
+
+**Parallel Group C** (can all run simultaneously):
+- `vuln-crypto`, `vuln-file-path`, `vuln-client-side`, `vuln-dependency`, `vuln-api`
+
+**Parallel Group D** (all Web3 scanners — independent of each other):
+- All `vuln-web3-*` scanners can run in parallel
+
+**Parallel Group E** (systems — independent of each other):
+- `vuln-dos`, `vuln-memory`, `vuln-infra`
+
+Groups A–E are all independent of each other. The only ordering constraint is: run `sc1-recon` and `sc2-threat-model` before any scanner.
+
+## Time/Effort Budget
+
+Scale scanner effort to codebase size. These are guidelines — spend more time on threat-model priority targets, less on low-risk areas.
+
+| Codebase Size | Per-Scanner Budget | Total Scan Budget |
+|---------------|-------------------|-------------------|
+| Small (<10K LOC) | 5–10 min | 1–2 hours |
+| Medium (10K–50K LOC) | 10–20 min | 3–5 hours |
+| Large (50K–200K LOC) | 15–30 min | 5–8 hours |
+| Enterprise (200K+ LOC) | 20–45 min (scoped) | 8–12 hours (scoped) |
+
+**Budget allocation by priority:**
+- Priority 1 targets (from threat model): 40% of time
+- Priority 2 targets: 30% of time
+- Priority 3+ targets: 20% of time
+- Exploratory/edge cases: 10% of time
+
+**When to stop a scanner:**
+- All priority targets from threat model have been checked
+- No new patterns found in the last 5 minutes of searching
+- Scanner has exceeded 2× its time budget without findings
 
 ## Usage
 
@@ -61,12 +119,15 @@ Run all sub-scanners sequentially:
 /skill vuln-web3-access
 /skill vuln-web3-mev
 /skill vuln-web3-token
-/skill vuln-dos
-/skill vuln-memory
 /skill vuln-web3-defi
 /skill vuln-web3-nft
 /skill vuln-web3-evm
-/skill vuln-web3-modern
+/skill vuln-web3-restaking
+/skill vuln-web3-aa
+/skill vuln-web3-l2
+/skill vuln-web3-intents
+/skill vuln-dos
+/skill vuln-memory
 /skill vuln-infra
 ```
 
@@ -74,17 +135,21 @@ Or run only the ones relevant to your threat model's priority targets.
 
 ## Scanner Selection by Tech Stack
 
-Before running all 23 scanners, check `./assessment/recon.md` and skip scanners that don't apply:
+Before running all scanners, check `./assessment/recon.md` and skip scanners that don't apply:
 
 | Tech Stack | Skip These Scanners |
 |------------|-------------------|
-| No Solidity/Vyper/smart contracts | All `vuln-web3-*` (7 scanners) |
+| No Solidity/Vyper/smart contracts | All `vuln-web3-*` (12 scanners) |
 | No C/C++/Rust/native code | `vuln-memory` |
 | No IaC files (no *.tf, Dockerfile, K8s manifests, CI configs) | `vuln-infra` |
 | No file upload endpoints | `vuln-file-path` (still check path traversal) |
 | No XML/SOAP processing | `vuln-deserialization` (still check JSON deserialization) |
 | Pure API (no HTML rendering) | `vuln-client-side` (still check open redirect) |
 | No third-party dependencies | `vuln-dependency` |
+| No restaking/AVS logic | `vuln-web3-restaking` |
+| No ERC-4337/smart accounts | `vuln-web3-aa` |
+| No L2/bridge/rollup code | `vuln-web3-l2` |
+| No intent/solver logic | `vuln-web3-intents` |
 
 ### Web3 Skip-Fast Check
 
@@ -94,7 +159,7 @@ Before invoking any `vuln-web3-*` scanner, run this single check:
 find . -name "*.sol" -o -name "*.vy" | head -1
 ```
 
-If no results → mark ALL Web3 scanners as `SKIPPED (no smart contract code)` in `scan-progress.md` and skip them entirely. This saves invoking 7 scanners individually just to have each one say "not applicable."
+If no results → mark ALL Web3 scanners as `SKIPPED (no smart contract code)` in `scan-progress.md` and skip them entirely. This saves invoking 12 scanners individually just to have each one say "not applicable."
 
 Each sub-skill appends its findings to `./assessment/vulnerabilities.md`.
 
@@ -199,18 +264,21 @@ Before running scanners, create `./assessment/scan-progress.md` (or update if it
 | 3k | vuln-client-side | PENDING | — | |
 | 3l | vuln-dependency | PENDING | — | |
 | 3m | vuln-api | PENDING | — | |
-| 3n-i | vuln-web3-reentrancy | PENDING | — | |
-| 3n-ii | vuln-web3-arithmetic | PENDING | — | |
-| 3n-iii | vuln-web3-access | PENDING | — | |
-| 3n-iv | vuln-web3-mev | PENDING | — | |
-| 3n-v | vuln-web3-token | PENDING | — | |
-| 3o | vuln-dos | PENDING | — | |
-| 3p | vuln-memory | PENDING | — | |
-| 3q | vuln-web3-defi | PENDING | — | |
-| 3r | vuln-web3-nft | PENDING | — | |
-| 3s | vuln-web3-evm | PENDING | — | |
-| 3s-ii | vuln-web3-modern | PENDING | — | |
-| 3t | vuln-infra | PENDING | — | |
+| 3w-a | vuln-web3-reentrancy | PENDING | — | |
+| 3w-b | vuln-web3-arithmetic | PENDING | — | |
+| 3w-c | vuln-web3-access | PENDING | — | |
+| 3w-d | vuln-web3-mev | PENDING | — | |
+| 3w-e | vuln-web3-token | PENDING | — | |
+| 3w-f | vuln-web3-defi | PENDING | — | |
+| 3w-g | vuln-web3-nft | PENDING | — | |
+| 3w-h | vuln-web3-evm | PENDING | — | |
+| 3w-i | vuln-web3-restaking | PENDING | — | |
+| 3w-j | vuln-web3-aa | PENDING | — | |
+| 3w-k | vuln-web3-l2 | PENDING | — | |
+| 3w-l | vuln-web3-intents | PENDING | — | |
+| 3x-a | vuln-dos | PENDING | — | |
+| 3x-b | vuln-memory | PENDING | — | |
+| 3x-c | vuln-infra | PENDING | — | |
 ```
 
 After each scanner completes, update its row:
