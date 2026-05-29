@@ -1,19 +1,38 @@
 ---
 name: osint
 description: "Offensive person/organization OSINT reconnaissance — handle correlation, email discovery, platform enumeration, breach checks, and cross-reference chain mapping."
-version: 1.0.0
+version: 1.0.1
 author: n4igme
 license: MIT
-argument-hint: "<command: start|handles|emails|platforms|domains|social|breaches|chain|report>"
+argument-hint: "<command: start|status|resume|next|handles|emails|platforms|domains|social|breaches|chain|report|abort|cleanup>"
+notes:
+  - "v1.1.0: Added Quick Reference, state.yaml schema, gates, command procedures, output path, staleness check"
 metadata:
   hermes:
     tags: [osint, reconnaissance, intelligence, security, offensive]
-    related_skills: [ptest, opsec]
+    related_skills: [ptest, opsec, w3hunt, atest, ctest]
 ---
 
 # OSINT Reconnaissance Framework
 
 Structured person/organization open-source intelligence gathering with progressive discovery.
+
+## Quick Reference
+
+```
+Phases:  1.Seed → 2.Handles → 3.Emails → 4.Domains → 5.Social → 6.Breaches → 7.Chain+Report
+Flow:    Seed collection → Expansion (discover) → Correlation (link) → Report
+Commands: start | handles | emails | platforms | domains | social | breaches | chain | report
+Lifecycle: status | resume | next | abort | cleanup
+
+Key rules:
+  • Minimum 1 unique seed required (handle, email, domain) — common names alone are insufficient
+  • Always distinguish: publicly derived vs prior knowledge vs inferred
+  • Timestamp all findings (profiles get deleted, usernames recycled)
+  • 2+ data points required before confirming identity match
+  • GitHub API is the richest unauthenticated source for tech targets
+  • Search engines are dead for automation (CAPTCHA) — use direct APIs
+```
 
 ## Architecture
 
@@ -21,43 +40,124 @@ Structured person/organization open-source intelligence gathering with progressi
 
 ## Commands
 
-$ARGUMENTS
-
 | Command | Action |
 |---------|--------|
-| `start` | Initialize OSINT engagement — collect seed data (name, handle, email, domain, location) |
-| `preflight` | Verify tool availability (curl, dig, whois, python3, sherlock/maigret if installed) |
-| `status` | Show current progress — seeds collected, platforms checked, findings count |
-| `resume` | Resume interrupted engagement — reload state and continue from last checkpoint |
-| `handles` | Username/handle enumeration across platforms |
-| `emails` | Email discovery from git commits, WHOIS, public profiles, breach data |
-| `platforms` | Platform presence check (GitHub, HackerOne, Bugcrowd, TryHackMe, HTB, CTFtime, etc.) |
-| `domains` | Domain recon — WHOIS, DNS, MX, SPF, subdomains, hosting |
-| `social` | Social media profiling (LinkedIn, X/Twitter, Instagram, TikTok, Facebook, YouTube) |
-| `breaches` | Breach database lookups and paste site checks |
-| `chain` | Build cross-reference chain map showing how identities link |
-| `report` | Compile full OSINT report with findings |
-| `cleanup` | Archive engagement output, remove temporary files |
+| **Lifecycle** | |
+| `start` | Initialize engagement — collect seed data |
+| `status` | Show progress: seeds, platforms checked, findings |
+| `resume` | Resume interrupted engagement |
+| `next` | Advance to next phase (check gate) |
+| `abort` | Terminate engagement — target out of scope or legal concern |
+| `cleanup` | Archive output, remove temp files |
+| **Phase Execution** | |
+| `handles` | Phase 2: Username enumeration across platforms |
+| `emails` | Phase 3: Email discovery (git, WHOIS, profiles, breaches) |
+| `platforms` | Platform presence check (GitHub, HackerOne, Bugcrowd, etc.) |
+| `domains` | Phase 4: Domain recon (WHOIS, DNS, MX, SPF, subdomains, crt.sh) |
+| `social` | Phase 5: Social media profiling |
+| `breaches` | Phase 6: Breach database lookups |
+| `chain` | Phase 7: Build cross-reference chain map |
+| `report` | Compile full OSINT report |
 
-## Phase 1: Seed Collection
+### Command Procedures
 
-Gather initial data points. Minimum 1 required, more = better results.
+**`start`:**
+1. Collect seed data (minimum 1 unique identifier): name, handle, email, phone, domain, company, location, profile URL.
+2. Create output directory: `./osint-output/`
+3. Initialize `state.yaml`.
+4. Write seeds to `seeds.md`.
+5. Advance to Phase 2.
 
-**Seed types:**
-- Real name (full or partial)
-- Username/handle
-- Email address
-- Phone number
-- Domain/website
-- Company/organization
-- Location (city, country)
-- Profile URL
+**`status`:** Output current phase, seeds collected, platforms checked, findings count, chain links discovered. If no engagement, suggest `start`.
+
+**`resume`:**
+1. Read `state.yaml`.
+2. **Staleness:** >7 days → re-check key profiles (may be deleted/changed). >30 days → re-verify all findings (usernames get recycled, profiles deleted).
+3. Report status and suggest next action.
+
+**`next`:**
+1. Verify current phase gate is satisfied.
+2. If NOT met: list what's missing.
+3. If met: update state.yaml, advance.
+4. Override allowed with justification.
+
+**`abort`:** Record reason, mark remaining phases ABORTED, run cleanup.
+
+**`cleanup`:** Archive `./osint-output/` to `osint-output-{target}-{date}.tar.gz`. Print summary.
+
+---
+
+## State Tracking
+
+Output path: `./osint-output/`
+
+```yaml
+engagement:
+  target: ""          # Primary identifier
+  started: ""
+  status: "active"    # active|completed|aborted
+
+current_phase: 1
+
+gateways:
+  1_seed: OPEN
+  2_handles: LOCKED
+  3_emails: LOCKED
+  4_domains: LOCKED
+  5_social: LOCKED
+  6_breaches: LOCKED
+  7_chain_report: LOCKED
+
+seeds:
+  names: []
+  handles: []
+  emails: []
+  domains: []
+  phones: []
+  locations: []
+
+findings_count: 0
+platforms_checked: 0
+chain_links: 0
+notes: ""
+```
+
+## Output Structure
+
+```
+./osint-output/
+├── state.yaml
+├── seeds.md              # Initial data points
+├── handles.md            # Phase 2: discovered handles
+├── emails.md             # Phase 3: discovered emails
+├── domains.md            # Phase 4: domain intelligence
+├── social.md             # Phase 5: social media findings
+├── breaches.md           # Phase 6: breach data
+├── chain-map.md          # Phase 7: cross-reference chain
+└── report.md             # Final compiled report
+```
+
+---
+
+## Phase Routing
+
+| Phase | Gate | Command |
+|-------|------|---------|
+| 1 Seed Collection | At least 1 unique identifier collected | `start` |
+| 2 Handle Correlation | At least 3 platforms checked, variations tested | `handles` / `platforms` |
+| 3 Email Discovery | Git commits mined, domain patterns checked | `emails` |
+| 4 Domain Recon | DNS/WHOIS/crt.sh completed for all known domains | `domains` |
+| 5 Social Media | All bot-friendly platforms checked | `social` |
+| 6 Breach Checks | HIBP or equivalent checked for all discovered emails | `breaches` |
+| 7 Chain + Report | Cross-reference map built, report generated | `chain` / `report` |
+
+---
 
 ## Phase 2: Handle Correlation
 
-### Technique: Direct Platform Enumeration
+### Direct Platform Enumeration
 
-Check target handle across platforms:
+Check target handle across platforms (bot-friendly — no CAPTCHA):
 
 ```
 GitHub:      https://github.com/{handle}
@@ -65,44 +165,33 @@ GitHub API:  https://api.github.com/users/{handle}
 HackerOne:   https://hackerone.com/{handle}
 Bugcrowd:    https://bugcrowd.com/{handle}
 TryHackMe:   https://tryhackme.com/r/p/{handle}
-HTB:         https://app.hackthebox.com/users/{handle} (requires auth)
 CTFtime:     https://ctftime.org/team/list/?q={handle}
-LinkedIn:    https://linkedin.com/in/{handle}
-X/Twitter:   https://x.com/{handle}
-Instagram:   https://instagram.com/{handle}
-TikTok:      https://tiktok.com/@{handle}
 YouTube:     https://youtube.com/@{handle}
+TikTok:      https://tiktok.com/@{handle}
 Medium:      https://medium.com/@{handle}
 Reddit:      https://reddit.com/user/{handle}
 Telegram:    https://t.me/{handle}
 Keybase:     https://keybase.io/{handle}
 ```
 
-### Technique: GitHub Profile Cross-Links
+**Auth-walled (existence check only):** LinkedIn (`/in/{handle}`), X/Twitter, Instagram, Facebook.
 
-GitHub profiles often expose linked accounts:
-- Check profile sidebar for X, LinkedIn, Instagram, website links
-- Check `.keys` endpoint: `https://github.com/{handle}.keys`
-- Check `.gpg` endpoint: `https://github.com/{handle}.gpg`
+### GitHub Profile Cross-Links
+- Profile sidebar: X, LinkedIn, Instagram, website links
+- `.keys` endpoint: `https://github.com/{handle}.keys`
+- `.gpg` endpoint: `https://github.com/{handle}.gpg`
 
-### Technique: Username Variations
+### Username Variations
+- Prefix/suffix: `{handle}123`, `the{handle}`, `{handle}_`
+- Separators: `{first}.{last}`, `{first}_{last}`
+- Abbreviations: first initial + last, first + last initial
 
-Generate variations from known handle:
-- Prefix/suffix: `{handle}123`, `{handle}_`, `the{handle}`
-- Separators: `{first}.{last}`, `{first}_{last}`, `{first}-{last}`
-- Abbreviations: first initial + last name, first name + last initial
-- Leet speak: common substitutions (a→4, e→3, i→1, o→0)
+---
 
 ## Phase 3: Email Discovery
 
-### Technique: Git Commit Mining
-
+### Git Commit Mining
 ```bash
-# From GitHub API — check multiple repos
-curl -s "https://api.github.com/users/{user}/repos?per_page=100&sort=updated" | \
-  python3 -c "import json,sys; [print(r['name']) for r in json.load(sys.stdin) if not r.get('fork')]"
-
-# Extract emails from commits
 curl -s "https://api.github.com/repos/{user}/{repo}/commits?per_page=100" | \
   python3 -c "
 import json, sys
@@ -111,184 +200,86 @@ emails = set()
 for commit in data:
     c = commit.get('commit', {})
     for field in ['author', 'committer']:
-        info = c.get(field, {})
-        email = info.get('email', '')
-        name = info.get('name', '')
+        email = c.get(field, {}).get('email', '')
+        name = c.get(field, {}).get('name', '')
         if email and 'noreply' not in email:
             emails.add(f'{name} <{email}>')
-for e in sorted(emails):
-    print(e)
+for e in sorted(emails): print(e)
 "
 ```
 
-### Technique: Public Events API
-
+### Public Events API
 ```bash
 curl -s "https://api.github.com/users/{user}/events/public" | \
   python3 -c "
 import json, sys
-data = json.load(sys.stdin)
 emails = set()
-for event in data:
-    payload = event.get('payload', {})
-    for commit in payload.get('commits', []):
+for event in json.load(sys.stdin):
+    for commit in event.get('payload', {}).get('commits', []):
         author = commit.get('author', {})
         if author.get('email'):
             emails.add(f\"{author['name']} <{author['email']}>\")
-for e in sorted(emails):
-    print(e)
+for e in sorted(emails): print(e)
 "
 ```
 
-### Technique: Domain Email Patterns
+### Domain Email Patterns
+- MX records: `dig +short {domain} MX`
+- SPF: `dig +short {domain} TXT`
+- Common patterns: `{first}@`, `{first}.{last}@`, `{f}{last}@`
 
-If domain known:
-- Check MX records: `dig +short {domain} MX`
-- Check SPF: `dig +short {domain} TXT`
-- Common patterns: `{first}@`, `{first}.{last}@`, `{f}{last}@`, `{first}{l}@`
-
-## Phase 3.5: Wayback Machine & Archived Content
-
-**Critical source — deleted content persists in archives.**
-
-### Technique: CDX API Search
-
+### Wayback Machine (deleted content persists)
 ```bash
-# Find all archived URLs for a domain
 curl -s "https://web.archive.org/cdx/search/cdx?url={domain}/*&output=json&limit=50"
-
-# Check specific page history
-curl -s "https://web.archive.org/cdx/search/cdx?url={url}&output=json"
 ```
+Look for: old team pages, contact pages, blog posts with personal details.
 
-### Technique: Retrieve Archived Pages
+### Timezone from Commit Patterns
+Commit hour distribution reveals timezone → narrows location.
 
+### Certificate Transparency
 ```bash
-# Get archived version of a page (use timestamp from CDX results)
-curl -s "https://web.archive.org/web/{timestamp}/{url}"
-
-# Extract text content from archived HTML
-curl -s "https://web.archive.org/web/{timestamp}/{url}" | python3 -c "
-import sys, re
-html = sys.stdin.read()
-html = re.sub(r'<script[^>]*>[\s\S]*?</script>', '', html, flags=re.IGNORECASE)
-html = re.sub(r'<style[^>]*>[\s\S]*?</style>', '', html, flags=re.IGNORECASE)
-html = re.sub(r'<[^>]+>', ' ', html)
-lines = [l.strip() for l in html.split('\n') if l.strip() and len(l.strip()) > 20]
-for line in lines:
-    if not any(x in line for x in ['function(', 'var ', '{', '}', 'margin', 'padding']):
-        print(line)
-"
-```
-
-### What to look for:
-- Old "About Us" / team pages with real names, photos, roles
-- Contact pages with emails, phone numbers, addresses
-- Blog posts with personal details
-- Removed repos/pages that once had sensitive content
-- Old company websites linked to the target
-
-## Phase 3.6: Timezone & Activity Pattern Analysis
-
-### Technique: Commit Timestamp Analysis
-
-```bash
-# Extract commit timestamps from a repo
-curl -s "https://api.github.com/repos/{user}/{repo}/commits?per_page=100" | python3 -c "
-import json, sys
-from datetime import datetime, timedelta
-data = json.load(sys.stdin)
-hours = []
-for commit in data:
-    date_str = commit['commit']['author']['date']
-    dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-    # Adjust for suspected timezone (e.g., UTC+7 for WIB)
-    local = dt + timedelta(hours=7)
-    hours.append(local.hour)
-from collections import Counter
-print('Hour distribution (UTC+7):')
-for h, c in sorted(Counter(hours).items()):
-    print(f'  {h:02d}:00 | {\"█\" * c} ({c})')
-"
-```
-
-### What this reveals:
-- Timezone (narrows location to region)
-- Work schedule (9-5 vs freelancer vs night owl)
-- Weekend vs weekday patterns (employment indicator)
-
-## Phase 3.7: Certificate Transparency
-
-```bash
-# Find all certificates issued for a domain
 curl -s "https://crt.sh/?q=%25.{domain}&output=json" | python3 -c "
 import json, sys
-data = json.load(sys.stdin)
-seen = set()
-for cert in data:
-    name = cert.get('name_value', '')
-    not_before = cert.get('not_before', '')
-    if name not in seen:
-        seen.add(name)
-        print(f'{name} | issued: {not_before}')
-"
+for cert in json.load(sys.stdin):
+    print(cert.get('name_value', ''))
+" | sort -u
 ```
 
-### What this reveals:
-- Subdomains (staging, dev, internal tools)
-- Domain ownership timeline (when certs were first/last issued)
-- Whether domain is still actively maintained
+---
 
 ## Phase 4: Domain Recon
 
 ```bash
-# DNS records
 dig +short {domain} A
 dig +short {domain} MX
 dig +short {domain} TXT
 dig +short {domain} NS
-
-# WHOIS
 whois {domain}
-
-# Certificate transparency
-curl -s "https://crt.sh/?q=%25.{domain}&output=json" | python3 -c "
-import json, sys
-data = json.load(sys.stdin)
-names = set()
-for cert in data:
-    names.add(cert.get('name_value', ''))
-for n in sorted(names):
-    print(n)
-"
 ```
+
+Plus crt.sh subdomain enumeration (see Phase 3).
+
+---
 
 ## Phase 5: Social Media Profiling
 
-### Platform-Specific Techniques
+**LinkedIn:** Public profile at `/in/{slug}`. Auth wall vs 404 = existence confirmation.
+**YouTube:** Channel about page — join date, subscribers, linked sites.
+**Instagram/TikTok:** Bio, follower counts, linked accounts. Page title reveals display name without login.
 
-**LinkedIn** (requires auth for full data):
-- Public profile: `linkedin.com/in/{slug}`
-- Directory: `linkedin.com/pub/dir/{First}/{Last}`
-- Auth wall vs "not found" = existence confirmation
-
-**YouTube:**
-- Channel about page reveals join date, subscriber count, linked sites
-- Video content reveals interests, voice, face, location clues
-
-**Instagram/TikTok:**
-- Bio, follower/following counts, linked accounts
-- Post content for location/activity patterns
+---
 
 ## Phase 6: Breach & Paste Checks
 
 ```bash
 # HaveIBeenPwned (requires API key)
 curl -s -H "hibp-api-key: {key}" "https://haveibeenpwned.com/api/v3/breachedaccount/{email}"
-
-# DeHashed, IntelX, etc. (paid services)
-# Check manually: haveibeenpwned.com, dehashed.com
 ```
+
+Also check: DeHashed, IntelX (paid services).
+
+---
 
 ## Phase 7: Cross-Reference Chain
 
@@ -302,11 +293,9 @@ Build a graph showing how identities connect:
                            └──[breach data]──→ {Password pattern}
 ```
 
-**Chain strength ratings:**
-- 🔴 Direct link (profile cross-reference, same page)
-- 🟠 Strong inference (same unique email across platforms)
-- 🟡 Moderate inference (similar username pattern + same location)
-- 🟢 Weak inference (common name, needs additional confirmation)
+**Chain strength:** 🔴 Direct link | 🟠 Strong inference | 🟡 Moderate | 🟢 Weak (needs confirmation)
+
+---
 
 ## Report Template
 
@@ -314,107 +303,71 @@ Build a graph showing how identities connect:
 # OSINT Report: {Target Identifier}
 
 ## Seeds Used
-- [list initial data points]
-
 ## Identity Summary
-- Real name:
-- Known aliases:
-- Location:
-- Occupation:
-- Employer:
+- Real name / Known aliases / Location / Occupation / Employer
 
 ## Accounts Discovered
 | Platform | Handle/URL | Confidence | Notes |
-|----------|-----------|------------|-------|
 
 ## Emails Discovered
 | Email | Source | Associated Names |
-|-------|--------|-----------------|
 
 ## Cross-Reference Chain
-[diagram showing linkages]
+[diagram]
 
 ## Key Findings
-[notable discoveries, ranked by significance]
-
 ## Recommendations
-[for offensive: next steps / for defensive: exposure risks]
 ```
 
-## Principles
+---
+
+## Operational Rules
 
 ### Data Source Separation
+Always distinguish: **Publicly derived** vs **Prior knowledge** vs **Inferred**. Mark each finding with its source.
 
-**Critical:** Always distinguish between:
-- **Publicly derived** — found through OSINT techniques from public sources
-- **Prior knowledge** — information you already knew (from conversations, internal docs, etc.)
-- **Inferred** — logical deductions that aren't confirmed
+### What Works (2024+)
+**Bot-friendly:** GitHub API, Wayback Machine, crt.sh, DNS/WHOIS, YouTube, TikTok, HackerOne, Bugcrowd.
+**Blocked:** All search engines, LinkedIn (content), X/Twitter, Medium, Facebook.
 
-Mark each finding with its source. Contaminating a report with prior knowledge makes it unreliable for assessing what an actual adversary could discover.
+### Pitfalls
+1. Rate limiting — GitHub: 60 req/hr unauthenticated
+2. False positives — common names match multiple people; verify with 2+ data points
+3. Common names — demand at least one unique identifier before starting
+4. Auth walls — LinkedIn, X, Facebook require login for full data
+5. Temporal — profiles get deleted, usernames recycled; timestamp everything
+6. Legal — stay within scope, respect platform ToS
+7. Prior knowledge contamination — separate what you knew from what you discovered
 
-### Search Engine Reality (2024+)
+### Time Budgets & Abandon Heuristics
 
-Automated search is largely dead for OSINT:
-- Google, Bing, DuckDuckGo, Brave, Startpage — all CAPTCHA-block headless browsers
-- Nitter instances are dead (X/Twitter proxy)
-- Most useful data comes from **direct platform APIs** and **archived content**
+| Target Type | Total Budget | Expansion | Correlation | Report |
+|-------------|-------------|-----------|-------------|--------|
+| Person (unique handle) | 2-3 hr | 1.5 hr | 30 min | 30 min |
+| Person (common name) | 3-4 hr | 2 hr | 1 hr | 30 min |
+| Organization | 4-6 hr | 3 hr | 1.5 hr | 1 hr |
 
-**Effective sources that still work without auth:**
-- GitHub API (60 req/hr unauthenticated)
-- Wayback Machine CDX API (unlimited)
-- crt.sh (certificate transparency, unlimited)
-- DNS/WHOIS (direct queries)
-- YouTube (public channel data)
-- TikTok (public profiles)
-- HackerOne/Bugcrowd (public profiles)
+**Abandon triggers:**
+- No unique handle/email found after 30 min → demand better seed data from requester
+- No new findings after 45 min of expansion → stop expanding, move to correlation
+- Common name + no unique identifier → abort unless requester provides additional context
+- All platforms return 404 for handle → try variations for 15 min max, then move to email-based discovery
+- GitHub has no public repos/commits → skip git mining, focus on other platforms
+- Target appears to have strong OPSEC (no public presence) → document absence as finding, report in 30 min
 
-## Pitfalls
+### Tools (if available)
+`sherlock`/`maigret` (username enum), `holehe` (email registration check), `theHarvester` (email/subdomain harvesting)
 
-1. **Rate limiting** — GitHub API: 60 req/hr unauthenticated, search engines block automated queries
-2. **False positives** — common names/handles match multiple people; always verify with 2+ data points
-3. **Auth walls** — LinkedIn, X/Twitter, Facebook require login for full data
-4. **CAPTCHA** — Google, DuckDuckGo, Bing, Brave, Startpage all block headless browsers — don't waste time
-5. **Nitter/proxies** — most Nitter instances are dead as of 2024+
-6. **Legal** — stay within scope, don't access private data, respect platform ToS for authorized engagements
-7. **Temporal** — profiles get deleted, usernames get recycled; timestamp all findings
-8. **Wayback persistence** — deleted content lives forever in archives; always check web.archive.org
-9. **Prior knowledge contamination** — if you already know things about the target, separate that from what you discovered through OSINT
-10. **Reverse image search** — profile photos can link accounts; check if target uses same photo across platforms
-8. **Common names** — "M. Habib Indonesia" returns thousands of results. Always demand at least one unique identifier (handle, email, domain, specific location) before starting.
+### Script Invocation
 
-## What Actually Works (Browser Automation)
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/osint/scripts"))
+import handle_check
 
-Platforms that DON'T block headless browsers:
-- **GitHub** (API + web) — best source for developers. Commits, profiles, repos, orgs all accessible.
-- **YouTube** — channel pages, about info, video listings all render fine.
-- **TikTok** — public profiles render with follower counts and display names.
-- **HackerOne** — public profiles accessible without auth.
-- **Bugcrowd** — returns 404 for non-existent, loads for existing (even if empty).
-- **Wayback Machine** — CDX API + archived pages work perfectly.
-- **crt.sh** — certificate transparency JSON API, no blocks.
-- **Instagram** — shows page title with display name even without login (e.g., "name (@handle) • Instagram photos and videos"), but full content requires auth.
+# Check single handle across all platforms
+results = handle_check.check("n4igme")
 
-Platforms that BLOCK:
-- All search engines (Google, Bing, DuckDuckGo, Brave, Startpage)
-- LinkedIn (auth wall, but "not found" vs redirect distinguishes existence)
-- X/Twitter (login required for search/profiles)
-- Medium (Cloudflare challenge)
-- Facebook (login required)
-
-## Effective Workflow Order
-
-1. Start with GitHub API (richest unauthenticated data source for tech targets)
-2. Mine git commits for emails/names across ALL repos
-3. Check Wayback Machine for archived versions of discovered domains/sites
-4. Enumerate handles on bot-friendly platforms (TikTok, YouTube, HackerOne, TryHackMe)
-5. Use crt.sh + DNS for domain intelligence
-6. LinkedIn/X existence check via redirect behavior (can't see content but confirms existence)
-7. Save search engine queries for manual follow-up by the user
-
-## Tools (if available)
-
-- `sherlock` / `maigret` — username enumeration across hundreds of sites
-- `holehe` — check if email is registered on various services
-- `ghunt` — Google account OSINT
-- `theHarvester` — email/subdomain/name harvesting (pip3.11)
-- `cloud_enum` — cloud resource enumeration (pip3.11)
+# Check variations (base + common suffixes/prefixes)
+all_found = handle_check.check_variations("n4igme")
+```

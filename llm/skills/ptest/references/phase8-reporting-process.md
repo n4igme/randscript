@@ -1,5 +1,16 @@
 # Phase 8: Reporting Process Guide
 
+## Automated Setup
+
+Run first when entering this phase:
+
+```python
+from hermes_tools import read_file
+exec(read_file("~/.hermes/skills/security/ptest/scripts/phase8_report.py")["content"])
+```
+
+---
+
 ## Overview
 
 The report is the only deliverable the client keeps. A brilliant pentest with a bad report is indistinguishable from a mediocre pentest. This guide covers the process of writing, reviewing, and delivering the report — not just the template structure.

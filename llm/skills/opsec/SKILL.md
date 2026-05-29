@@ -1,10 +1,10 @@
 ---
 name: opsec
 description: "Defensive OPSEC self-assessment framework — exposure scoring, identity compartmentalization, remediation playbook, and periodic audit methodology."
-version: 1.0.0
+version: 1.0.1
 author: n4igme
 license: MIT
-argument-hint: "<command: start|assess|score|chain|remediate|audit|report>"
+argument-hint: "<command: start|status|resume|next|assess|score|chain|remediate|audit|report|abort|cleanup>"
 metadata:
   hermes:
     tags: [opsec, privacy, defensive, security, exposure, compartmentalization]
@@ -15,27 +15,64 @@ metadata:
 
 Structured methodology for assessing and reducing your own digital exposure. Think of it as pentesting yourself — finding leaks in your personal digital footprint before adversaries do.
 
+## Quick Reference
+
+```
+Phases:  1.Inventory → 2.Exposure → 3.Scoring → 4.Chain → 5.Remediation → 6.Audit
+Flow:    What exists → What's exposed → How bad → How linked → Fix it → Maintain
+Commands: start | assess | score | chain | remediate | audit | report
+Lifecycle: status | resume | next | abort | cleanup
+
+Key rules:
+  • Git commit history is the #1 source of identity leaks for developers
+  • Deleted content persists in Wayback Machine — request explicit removal
+  • 3+ hops between public persona and real identity = good compartmentalization
+  • Quarterly audits catch new exposure before adversaries do
+  • Don't overreact — focus on what enables real attacks, not theoretical exposure
+```
+
 ## Architecture
 
 `Inventory (What exists)` → `Assessment (What's exposed)` → `Scoring (How bad)` → `Remediation (Fix it)`
 
 ## Commands
 
-$ARGUMENTS
-
 | Command | Action |
 |---------|--------|
-| `start` | Initialize self-assessment — collect all known handles, emails, domains, real identity |
-| `status` | Show current progress — phases completed, findings count, severity breakdown |
-| `resume` | Resume interrupted assessment — reload state and continue from last checkpoint |
-| `assess` | Run full exposure assessment across all platforms and data sources |
-| `score` | Rate findings by severity (Critical/High/Medium/Low) |
-| `chain` | Map identity cross-reference chains and single points of failure |
-| `remediate` | Generate remediation plan with prioritized actions |
-| `audit` | Periodic audit checklist — run quarterly to catch new exposure |
+| **Lifecycle** | |
+| `start` | Initialize self-assessment — collect all known identifiers |
+| `status` | Show progress: phases completed, findings by severity |
+| `resume` | Resume interrupted assessment |
+| `next` | Advance to next phase (check gate) |
+| `abort` | Terminate assessment |
+| `cleanup` | Archive output, sanitize sensitive data |
+| **Phase Execution** | |
+| `assess` | Phase 2: Run full exposure assessment |
+| `score` | Phase 3: Rate findings by severity |
+| `chain` | Phase 4: Map identity cross-reference chains |
+| `remediate` | Phase 5: Generate remediation plan |
+| `audit` | Phase 6: Periodic audit checklist |
 | `report` | Compile full OPSEC assessment report |
-| `cleanup` | Archive assessment output, sanitize any sensitive data collected |
 
+### Command Procedures
+
+**`start`:** Collect ALL identifiers → create `./opsec-output/` → write `state.yaml` + `inventory.md` → advance to Phase 2.
+
+**`status`:** Current phase, findings by severity (🔴🟠🟡🟢), chain hops to real identity, remediation items pending.
+
+**`resume`:** Read state.yaml. Staleness: >30 days → re-run Phase 2 (new breaches). >90 days → fresh assessment.
+
+**`next`:** Verify gate (inventory complete / all checks run / findings scored / chain mapped / remediation written). If unmet, list gaps.
+
+**`abort`:** Record reason, mark remaining ABORTED, cleanup.
+
+**`cleanup`:** Archive `./opsec-output/` → `opsec-output-{date}.tar.gz`. Remove discovered credentials (document first).
+
+### Output: `./opsec-output/`
+
+```
+state.yaml | inventory.md | exposure.md | scoring.md | chain-map.md | remediation-plan.md | audit-checklist.md | report.md
+```
 ## Phase 1: Identity Inventory
 
 Collect ALL known identifiers (be honest — adversaries will find them anyway):
@@ -115,9 +152,7 @@ Check repos for accidentally committed sensitive data:
 **Deleted content persists in archives. This is a separate risk category.**
 
 ```bash
-# Check if your sites/domains have been archived
 curl -s "https://web.archive.org/cdx/search/cdx?url={your-domain}/*&output=json&limit=50"
-curl -s "https://web.archive.org/cdx/search/cdx?url={your-github-pages}/*&output=json&limit=50"
 ```
 
 **What to check:**
@@ -127,72 +162,6 @@ curl -s "https://web.archive.org/cdx/search/cdx?url={your-github-pages}/*&output
 - Old blog posts with personal details you later deleted
 
 **Key insight:** Making a repo private or deleting a page does NOT remove it from Wayback Machine. You must explicitly request removal via: https://web.archive.org/web/removals
-
-### 2.5 Certificate Transparency Audit
-
-```bash
-# Check all certs ever issued for your domains
-curl -s "https://crt.sh/?q=%25.{your-domain}&output=json" | python3 -c "
-import json, sys
-data = json.load(sys.stdin)
-seen = set()
-for cert in data:
-    name = cert.get('name_value', '')
-    not_before = cert.get('not_before', '')
-    if name not in seen:
-        seen.add(name)
-        print(f'{name} | issued: {not_before}')
-"
-```
-
-**What to look for:**
-- Subdomains that reveal internal tools or services
-- Active certs on domains you thought were dead (someone else using them?)
-- Timeline of domain activity
-
-### 2.6 Domain & WHOIS Audit
-
-```bash
-# Check if WHOIS exposes registrant info
-whois {your-domain}
-
-# Check DNS for service hints
-dig +short {domain} MX    # Email provider
-dig +short {domain} TXT   # SPF, verification records
-dig +short {domain} A     # Hosting provider
-```
-
-### 2.5 Wayback Machine Audit
-
-**Critical** — even deleted content persists in archives.
-
-```bash
-# Check what's been archived for your domains/sites
-curl -s "https://web.archive.org/cdx/search/cdx?url={domain}/*&output=json&limit=50"
-
-# View archived version of a specific page
-curl -s "https://web.archive.org/web/{timestamp}/{url}"
-```
-
-**What to look for:**
-- Old company websites with team pages, contact info, office addresses
-- Previous versions of personal sites with more info than current
-- Deleted repos/pages that contained sensitive data
-- Wedding/event pages with PII that were meant to be temporary
-
-### 2.6 Certificate Transparency Audit
-
-```bash
-# Check all certs ever issued for your domains
-curl -s "https://crt.sh/?q=%25.{domain}&output=json" | python3 -c "
-import json, sys
-data = json.load(sys.stdin)
-for cert in data:
-    print(f\"{cert.get('name_value','')} | issued: {cert.get('not_before','')}\")
-"
-```
-
-Reveals: subdomains you may have forgotten, timeline of domain activity, hosting changes.
 
 ### 2.5 Breach Exposure Check
 
@@ -208,6 +177,15 @@ Search for:
 - `"{handle}" site:github.com`
 - `"{email}" -site:github.com`
 - `"{real name}" {city/region}`
+
+### 2.7 Domain & WHOIS Audit
+
+```bash
+whois {your-domain}
+dig +short {domain} MX    # Email provider
+dig +short {domain} TXT   # SPF, verification records
+dig +short {domain} A     # Hosting provider
+```
 
 ### 2.8 Timezone & Activity Fingerprinting
 
@@ -450,3 +428,22 @@ Run quarterly:
 10. **Domain lapse risk** — expired domains can be weaponized for impersonation and email interception
 11. **Certificate transparency is permanent** — crt.sh logs are append-only; subdomains you created are visible forever
 12. **Employer derivability** — internal domain prefixes in commits (e.g., `dksec.local`) may be guessable if the company abbreviation is common
+
+## Time Budgets
+
+| Assessment Type | Total | Inventory | Exposure | Scoring | Chain | Remediation |
+|----------------|-------|-----------|----------|---------|-------|-------------|
+| First full assessment | 3-4 hr | 30 min | 1.5-2 hr | 30 min | 30 min | 30 min |
+| Quarterly audit | 1 hr | skip | 30 min | 15 min | skip | 15 min |
+| Post-incident (breach/dox) | 2 hr | 15 min | 1 hr | 15 min | 15 min | 15 min |
+
+**Abandon triggers:**
+- No new exposure found after 1 hour of Phase 2 → your OPSEC is good, move to scoring
+- All findings are 🟢 Low → skip remediation, schedule next quarterly audit
+- Assessment reveals 🔴 Critical → stop assessment, remediate immediately, then resume
+
+## Cross-Skill Integration
+
+- **Validate your own exposure:** Run `osint` skill against your handles — `handle_check.py` from osint scripts checks 12+ platforms in one call
+- **After remediation:** Re-run osint to verify fixes worked (profile removed, email no longer discoverable)
+- **For team assessments:** Use osint on team members (with authorization) to find org-wide patterns

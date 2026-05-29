@@ -1,10 +1,12 @@
 ---
 name: atest
-version: 1.0.0
+version: 1.0.1
 description: "Lightweight API penetration testing framework for REST, GraphQL, and gRPC targets. 4 focused phases without full infrastructure recon overhead."
 tags: [api, rest, graphql, grpc, pentest, authentication, injection]
 trigger: "api pentest, api security test, graphql pentest, grpc pentest, rest api test, api-only engagement"
-argument-hint: "<command: start|status|resume|next|report>"
+argument-hint: "<command: start|status|resume|next|report|abort|cleanup>"
+notes:
+  - "v1.1.0: Added time budgets, abandon heuristics, bola_scanner.py, state_manager.py, proven patterns, token acquisition moved to Phase 1 gate"
 metadata:
   hermes:
     tags: [api, rest, graphql, grpc, pentest]
@@ -14,6 +16,21 @@ metadata:
 # API-First Penetration Testing Framework
 
 Focused 4-phase workflow for pure API engagements (REST, GraphQL, gRPC) where no web UI or mobile app is in scope. Skips infrastructure recon and goes straight to API-level testing.
+
+## Quick Reference
+
+```
+Phases:  1.Scope&Recon → 2.AuthN/AuthZ → 3.Injection&Logic → 4.Reporting
+States:  LOCKED → OPEN → PASSED (sequential)
+Commands: start | status | next | resume | report | abort | cleanup
+
+Key rules:
+  • BOLA/IDOR is #1 API vulnerability — test on EVERY endpoint with IDs
+  • Test both horizontal (user→user) and vertical (user→admin) access
+  • GraphQL: always try introspection + batching + nested queries
+  • Rate limiting bypass: rotate headers, use array params, change HTTP method
+  • Every finding needs reproducible curl/request evidence
+```
 
 ## Architecture
 
@@ -30,9 +47,41 @@ Phase 1: Scope & Recon → Phase 2: AuthN/AuthZ → Phase 3: Injection & Logic �
 | `resume` | Resume interrupted engagement from last checkpoint |
 | `next` | Advance to next phase (runs exit criteria check) |
 | `report` | Generate final report |
+| `abort` | Terminate engagement early — records reason, generates partial report |
 | `cleanup` | Archive engagement output, remove temporary files |
 
 If no command is given, show current status and suggest next action.
+
+### Command Procedures
+
+**`start`:**
+1. Collect: API type, base URLs, documentation, auth mechanism, authorization model, rate limits, rules of engagement.
+2. Run `state_manager.init_state(workdir, name, api_type, auth_mechanism, base_urls, ...)` — creates output directory + state.yaml + scope.md + findings-log.md.
+3. Begin Phase 1 recon immediately (documentation discovery, endpoint enumeration).
+4. Attempt token acquisition before advancing to Phase 2.
+
+**`status`:** Output current phase, gateway states (4 phases), findings count by severity, time elapsed. If no engagement, suggest `start`.
+
+**`resume`:**
+1. Read `state.yaml` to determine active phase.
+2. **Staleness:** >7 days → re-verify API is still accessible, tokens not expired. >30 days → re-run Phase 1 (APIs change frequently).
+3. Report status and suggest next action.
+
+**`next`:**
+1. Verify current phase gate is satisfied.
+2. If NOT met: list unmet criteria, suggest what to test.
+3. If met: update state.yaml, advance phase.
+4. Override allowed with justification.
+
+**`abort`:**
+1. Record reason in state.yaml, mark remaining phases ABORTED.
+2. Generate partial report from existing findings.
+3. Run cleanup.
+
+**`cleanup`:**
+1. Archive `./atest-output/` to `atest-output-{target}-{date}.tar.gz`.
+2. Remove test tokens/credentials you created (keep found credentials as evidence).
+3. Print summary: findings by severity, phases completed.
 
 ---
 
@@ -127,7 +176,35 @@ Your testing priorities shift based on API type. Determine this during initializ
 
 ## Phase 1: Scope & Recon
 
-### Gate: endpoints mapped, auth flow documented, API surface understood
+### Gate: endpoints mapped, auth flow documented, API surface understood, at least one valid token obtained (or documented as unobtainable)
+
+**Token acquisition is a Phase 1 exit criterion.** You cannot test BOLA/IDOR without a token. Before advancing to Phase 2, you must have:
+- ✅ At least one valid authenticated token, OR
+- ✅ Documented proof that no token is obtainable (no self-registration, no default creds, no provided creds) — Phase 2 then runs unauthenticated-only testing
+
+**Token Acquisition Attempts (do this BEFORE advancing):**
+```bash
+# Default credentials
+for creds in admin:admin admin:password root:root test:test admin:changeme; do
+  user=$(echo $creds | cut -d: -f1); pass=$(echo $creds | cut -d: -f2)
+  curl -s "$BASE_URL/api/auth/login" -X POST -H "Content-Type: application/json" \
+    -d "{\"username\":\"$user\",\"password\":\"$pass\"}"
+done
+
+# Empty/null password (if MinPasswordLength:0 found in config)
+curl -s "$BASE_URL/api/auth/login" -X POST -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":""}'
+
+# Registration endpoint (self-signup)
+for path in /api/auth/register /api/register /api/signup /api/users/create; do
+  curl -s "$BASE_URL$path" -X POST -H "Content-Type: application/json" \
+    -d '{"username":"pentest@test.com","password":"Test1234!","email":"pentest@test.com"}' \
+    -w "\n%{http_code}"
+done
+
+# OAuth/OIDC public client flows
+# Check /.well-known/openid-configuration for token_endpoint
+```
 
 **With docs vs without docs:**
 - **With OpenAPI/Swagger/introspection:** Phase 1 takes ~10% of time. Parse the spec, map all endpoints, move quickly to Phase 2. Your job is validation, not discovery.
@@ -209,35 +286,12 @@ Your testing priorities shift based on API type. Determine this during initializ
 
 ### Gate: auth bypass tested, BOLA/IDOR tested on all object-referencing endpoints, privilege escalation attempted
 
+**First: run proven patterns (10 min) — see `references/proven-patterns.md`**
+7 high-hit-rate checks before systematic testing. If any hits → validate and document immediately.
+
 **If CDN-fronted and automated scanning fails in Phase 1:** see ptest `vuln-assessment.md` Section 0 (CDN/WAF-Aware Pre-Check) for manual alternatives.
 
 **Techniques:**
-
-0. **Token Acquisition Attempts (before testing bypass):**
-   If no credentials were provided, try to obtain a valid token:
-   ```bash
-   # Default credentials
-   for creds in admin:admin admin:password root:root test:test admin:changeme; do
-     user=$(echo $creds | cut -d: -f1); pass=$(echo $creds | cut -d: -f2)
-     curl -s "$BASE_URL/api/auth/login" -X POST -H "Content-Type: application/json" \
-       -d "{\"username\":\"$user\",\"password\":\"$pass\"}"
-   done
-
-   # Empty/null password (if MinPasswordLength:0 found in config)
-   curl -s "$BASE_URL/api/auth/login" -X POST -H "Content-Type: application/json" \
-     -d '{"username":"admin","password":""}'
-
-   # Registration endpoint (self-signup)
-   for path in /api/auth/register /api/register /api/signup /api/users/create; do
-     curl -s "$BASE_URL$path" -X POST -H "Content-Type: application/json" \
-       -d '{"username":"pentest@test.com","password":"Test1234!","email":"pentest@test.com"}' \
-       -w "\n%{http_code}"
-   done
-
-   # OAuth/OIDC public client flows
-   # Check /.well-known/openid-configuration for token_endpoint
-   ```
-   **Goal:** Get at least one valid token to enable Phase 2 BOLA/IDOR testing.
 
 1. **Authentication Bypass:**
    ```bash
@@ -582,12 +636,39 @@ Before writing the report, revisit all findings and attempt to chain them for hi
 
 ## Effort Allocation
 
-| Phase | % of Total Time | Rationale |
-|-------|----------------|-----------|
-| 1 Recon | 15% | API surface mapping |
-| 2 AuthN/AuthZ | 40% | Highest-value — BOLA is #1 API risk |
-| 3 Injection & Logic | 30% | Broad testing surface |
-| 4 Reporting | 15% | Write-up + PoCs |
+| Phase | % | 4-hour engagement | 8-hour engagement | Rationale |
+|-------|---|-------------------|-------------------|-----------|
+| 1 Recon | 15% | 35 min | 70 min | API surface mapping |
+| 2 AuthN/AuthZ | 40% | 100 min | 190 min | Highest-value — BOLA is #1 API risk |
+| 3 Injection & Logic | 30% | 75 min | 145 min | Broad testing surface |
+| 4 Reporting | 15% | 35 min | 75 min | Write-up + PoCs |
+
+## Abandon & Pivot Heuristics
+
+**Phase 1 (Recon):**
+- No API docs found after 20 min → switch to blind enumeration (fuzz top 50 paths)
+- API returns 403 on everything → check if auth is required first (move token acquisition up)
+- Can't get a valid token after 15 min → document as blocker, test unauth-only in Phase 2
+
+**Phase 2 (AuthN/AuthZ):**
+- No BOLA after testing 20+ endpoints → stop BOLA, shift remaining time to injection
+- All endpoints enforce auth correctly → document "auth hardened", move to Phase 3 early
+- JWT is properly validated (no none/HS256 confusion, short expiry, proper signature) → skip JWT attacks after 10 min, focus on BOLA/privilege escalation
+
+**Phase 3 (Injection & Logic):**
+- No injection after testing top 10 input parameters → stop broad injection, focus on business logic only
+- WAF blocking all payloads → try 3 bypass techniques max, then document WAF and move on
+- No business logic flaws after 30 min → wrap up, move to reporting
+
+**Global abandon rules:**
+- **75% of time budget spent, zero findings** → stop testing, write "hardened" report
+- **Critical/High found early** → validate PoC immediately, write it up, then continue testing remaining surface
+- **Rate limited / IP blocked** → wait 10 min, retry once. If persistent, document and report with partial results
+
+**Pivot triggers:**
+- SSRF confirmed → pivot to cloud metadata (169.254.169.254) before continuing API tests
+- Unauth GraphQL mutations found → stop other testing, enumerate all mutations, test each
+- Config endpoint leaks credentials → use them immediately for privilege escalation before they rotate
 
 ---
 
@@ -599,3 +680,71 @@ Before writing the report, revisit all findings and attempt to chain them for hi
 - **Scope Enforcement** — only test documented endpoints. If you discover undocumented internal APIs, confirm they're in scope before testing.
 - **No Destructive Operations** — don't DELETE production resources unless explicitly authorized. Prove DELETE works via 400/405 response analysis (see ptest Write Access Response Protocol).
 - **GraphQL Depth** — don't crash the server with unbounded nested queries. Test with depth 5-7, document if no depth limit exists.
+
+---
+
+## Script Invocation
+
+Scripts are in `~/.hermes/skills/security/atest/scripts/`. Invoke via `execute_code`.
+
+**state_manager.py — engagement lifecycle:**
+```python
+from hermes_tools import terminal
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/atest/scripts"))
+import state_manager
+
+workdir = "."  # or specific project directory
+
+# Initialize
+state_manager.init_state(workdir, "Target API", api_type="rest", auth_mechanism="jwt",
+    base_urls=["https://api.target.com"], has_graphql=True)
+
+# Check status
+state_manager.status(workdir)
+
+# Advance phase
+state_manager.advance_phase(workdir)
+
+# Add finding
+state_manager.add_finding(workdir, "ATEST-001", "BOLA on /api/users/{id}", "High", "AuthZ", "GET /api/users/{id}")
+
+# Check abandon
+should, reason = state_manager.should_abandon(workdir, budget_hours=4)
+
+# Abandon
+state_manager.abandon(workdir, "75% budget, zero findings")
+```
+
+**bola_scanner.py — systematic BOLA/IDOR testing:**
+```python
+from hermes_tools import terminal
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/atest/scripts"))
+import bola_scanner
+
+# Manual endpoint list
+results = bola_scanner.scan(
+    base_url="https://api.target.com",
+    endpoints=[
+        {"method": "GET", "path": "/api/users/{id}"},
+        {"method": "GET", "path": "/api/orders/{id}"},
+        {"method": "PUT", "path": "/api/users/{id}", "body": {"name": "test"}},
+    ],
+    token_a="eyJ...",       # User A's token
+    token_b="eyJ...",       # User B's token
+    user_a_id="123",        # User A's resource ID
+    user_b_id="456",        # User B's resource ID
+)
+
+# Or from OpenAPI spec (auto-extracts endpoints with path params)
+results = bola_scanner.scan_from_openapi(
+    base_url="https://api.target.com",
+    openapi_path="/tmp/openapi.json",
+    token_a="eyJ...",
+    token_b="eyJ...",
+    user_a_id="123",
+    user_b_id="456",
+)
+print(results["summary"])
+```

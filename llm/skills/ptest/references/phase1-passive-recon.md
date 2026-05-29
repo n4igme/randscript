@@ -15,6 +15,23 @@ exec(read_file("~/.hermes/skills/security/ptest/scripts/phase1_passive.py")["con
 - First phase of any engagement (Gateway 1 is OPEN).
 - When you need to map the attack surface without alerting the target.
 
+## Phase Boundary: Passive vs Active
+
+**Phase 1 is STRICTLY passive** — no packets sent to the target. If it touches the target's infrastructure, it belongs in Phase 2.
+
+| Passive (Phase 1) | Active (Phase 2) |
+|---|---|
+| DNS zone file analysis | HTTP probe (sending requests) |
+| SPF/DMARC/TXT record reading | Technology fingerprinting (via response headers) |
+| Shodan InternetDB lookup (third-party DB) | Port scanning (SYN packets) |
+| GitHub/Google/Wayback search | TLS cert grabbing (connecting to :443) |
+| CNAME resolution check (DNS only) | Directory/path discovery |
+| Third-party service mapping (from DNS) | Banner grabbing |
+
+**Why this matters:** The user corrected: "why did we do port scanning in phase 1? Phase 1 is just passive recon." Techniques 6b-6e in the checklist below (port scan, TLS analysis) are listed here for completeness of the Phase 1 output, but their EXECUTION happens in Phase 2. Phase 1 documents what needs scanning; Phase 2 does the scanning.
+
+**Practical approach:** For internal engagements where stealth isn't a concern, it's acceptable to run HTTP probes and fingerprinting during Phase 1 setup — but classify them as Phase 2 work in the report and checklist.
+
 ## Techniques & Tools
 
 ### 0. Internal Engagement: Request Asset Inventory (MANDATORY for internal pentests)
@@ -222,16 +239,68 @@ waybackurls target.com | sort -u > wayback-urls.txt
 ```
 
 ### 3. Technology Fingerprinting
-Identify tech stack from public-facing assets.
+Identify tech stack from ALL live hosts (not just a sample).
+
+**Fingerprint ALL live hosts in batch** — this is mandatory, not optional. A single httpx/curl pass collecting headers reveals infrastructure groupings that manual spot-checks miss.
+
+```python
+# Batch fingerprint all live hosts (Python httpx)
+import httpx, json
+
+with open('live-hosts.txt') as f:
+    hosts = [h.strip() for h in f]
+
+results = []
+for host in hosts:
+    try:
+        r = httpx.get(f'https://{host}', verify=False, timeout=8,
+                      headers={'User-Agent': 'Mozilla/5.0'})
+        h = dict(r.headers)
+        fp = {
+            'host': host, 'status': r.status_code, 'size': len(r.content),
+            'server': h.get('server', ''),
+            'powered_by': h.get('x-powered-by', ''),
+            'cdn_waf': 'Cloudflare' if 'cf-ray' in h else
+                       'CloudFront' if 'x-amz-cf-id' in h else
+                       'GCP' if 'x-goog-' in str(h).lower() else '',
+            'technology': [],
+        }
+        # Detect from headers
+        if 'x-envoy-upstream-service-time' in h: fp['technology'].append('Envoy/Istio')
+        if 'x-kong-' in str(h).lower(): fp['technology'].append('Kong Gateway')
+        if 'x-goog-iap-generated-response' in h: fp['technology'].append('Google IAP')
+        if 'alt-svc' in h and 'h3' in h.get('alt-svc',''): fp['technology'].append('GCP LB')
+        if 'x-cloud-trace-context' in h: fp['technology'].append('GCP Cloud Trace')
+        # Detect from body (first 2000 chars)
+        body = r.text[:2000].lower()
+        if '__next' in body: fp['technology'].append('Next.js')
+        if 'react' in body: fp['technology'].append('React')
+        results.append(fp)
+    except: pass
+
+# Save and analyze
+with open('phase1-fingerprints.json', 'w') as f:
+    json.dump(results, f, indent=2)
+```
+
+**What to extract per host:**
+- Server header (nginx, envoy, Lucy, OpenVPN-AS, cloudflare)
+- X-Powered-By (Next.js, Express, Short.io/Edge)
+- CDN/WAF (Cloudflare, CloudFront, GCP)
+- Via header (1.1 google = GCP LB, kong/3.1.1 = Kong)
+- IAP cookies (GCP_IAP_XSRF_NONCE = Google IAP protected)
+- Technology from body (React, Vue, Angular, n8n, Dynatrace, Grafana)
+- Security headers presence (HSTS, X-Frame-Options, CSP)
+
+**Group results by infrastructure** to map the architecture:
+- Same response size on 403 = same backend/WAF config
+- Same `via` header = same load balancer cluster
+- Same IAP client_id = same GCP project
+- Same server header = same technology stack
+
 ```bash
-# HTTP headers (passive — only reads response headers)
-curl -sI https://target.com
-
-# Wappalyzer CLI
-wappalyzer https://target.com
-
-# whatweb
-whatweb -v https://target.com
+# Quick CLI alternative (httpx with tech detection)
+cat live-hosts.txt | httpx -status-code -title -web-server -tech-detect -content-length -o fingerprints.txt
 ```
 
 ### 4. Email & Username Discovery
@@ -266,6 +335,20 @@ shodan host 1.2.3.4
 **This step is MANDATORY before reporting any subdomain-related findings.**
 
 After enumeration, validate every discovered subdomain for liveness. DNS existence alone is NOT evidence of exposure.
+
+#### Pitfall: GCP Global Load Balancer False Positives
+
+When port scanning GCP-hosted targets, some IPs will show ALL ports as "open" (SYN-ACK on every port). This is a GCP Global LB behavior — it accepts TCP connections on any port but sends no data (no banner, no HTTP response, connection resets on data send).
+
+**How to identify:**
+- All scanned ports return "open" with no banner
+- IP is in GCP range (34.x.x.x, 35.x.x.x)
+- Shodan shows 400+ ports for the IP
+- Connecting to MySQL/Redis/SSH ports gives no greeting
+
+**Verification:** Connect to a known-service port (3306, 6379, 22) and check for banner. Real services send greeting packets; GCP LBs give silence then RST.
+
+**These are NOT real open services.** They're IAP-protected backends where the LB accepts TCP but requires Google OAuth before proxying. Mark as "GCP LB false positive" and move on.
 
 #### Step 1: DNS Resolution Check
 ```bash
@@ -361,12 +444,17 @@ Write `./ptest-output/recon-passive/checklist.md`:
 |---|-----------|--------|-------|
 | 0 | Request Asset Inventory (internal engagements) | PENDING | |
 | 0b | Knowledge Base / Support Site Scraping | PENDING | |
-| 1 | OSINT Gathering | PENDING | |
+| 1 | OSINT Gathering (WHOIS, Wayback, GitHub, Google dorks, Shodan) | PENDING | |
 | 2 | Subdomain Enumeration | PENDING | |
-| 3 | Technology Fingerprinting | PENDING | |
+| 3 | Technology Fingerprinting (headers + body on ALL live hosts) | PENDING | |
 | 4 | Email & Username Discovery | PENDING | |
 | 5 | Network Mapping | PENDING | |
-| 6 | Asset Validation (DNS + HTTP probe) | PENDING | |
+| 6 | Asset Validation (DNS + HTTP probe ALL hosts) | PENDING | |
+| 6b | Port Scan (non-HTTP services: SFTP, VPN, SMTP, SSH) | PENDING | |
+| 6c | Subdomain Takeover Check (all CNAME targets) | PENDING | |
+| 6d | SPF/DMARC/Email Security Analysis | PENDING | |
+| 6e | TLS Certificate Analysis (CN, SANs, issuer, expiry) | PENDING | |
+| 6f | Third-Party Service Inventory (from DNS + headers) | PENDING | |
 | 7 | Binary/Source Intelligence | PENDING | |
 ```
 
@@ -453,11 +541,18 @@ Result:                  Forgotten PHP app with SQLi → 21 databases compromise
 ## Exit Criteria
 
 - [ ] Attack surface is mapped (domains, IPs, subdomains).
-- [ ] Enumerated subdomains validated for liveness (DNS + HTTP probe).
+- [ ] Enumerated subdomains validated for liveness (DNS + HTTP probe ALL hosts).
+- [ ] Technology fingerprinting completed on ALL live hosts (not a sample).
+- [ ] Non-HTTP services port-scanned (SFTP, VPN, SMTP, SSH on relevant hosts).
+- [ ] Subdomain takeover check completed (all CNAME targets verified for dangling).
+- [ ] SPF/DMARC/email security analyzed (p=none is a finding for financial targets).
+- [ ] TLS certificates analyzed (CN, SANs, issuer, expiry, mismatches).
+- [ ] Third-party service inventory compiled (from DNS records + response headers).
 - [ ] Only confirmed-accessible hosts reported as findings.
 - [ ] Technology stack identified on live hosts.
 - [ ] Potential entry points listed (verified).
 - [ ] Open-source target software checked for security issues between versions.
 - [ ] Exposed binaries analyzed for internal endpoints and secrets (if available).
 - [ ] Env-prefix quick-win check completed.
+- [ ] OSINT completed (GitHub, Shodan InternetDB, Google dorks).
 - [ ] Checklist shows all applicable techniques executed.

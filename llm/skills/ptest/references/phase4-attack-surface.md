@@ -1,5 +1,16 @@
 # Phase 4: Attack Surface Mapping
 
+## Automated Setup
+
+Run first when entering this phase:
+
+```python
+from hermes_tools import read_file
+exec(read_file("~/.hermes/skills/security/ptest/scripts/phase4_attack_surface.py")["content"])
+```
+
+---
+
 ## When to Use
 - After enumeration is complete (Gateway 3 PASSED).
 - Before any vulnerability assessment or exploitation begins.

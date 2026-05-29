@@ -29,6 +29,8 @@ A subdomain takeover occurs when a subdomain's DNS record (usually CNAME) points
 | Bitbucket | `*.bitbucket.io` | "Repository not found" |
 | Cargo | `*.cargocollective.com` | "404 Not Found" |
 | Fly.io | `*.fly.dev` | "404 Not Found" |
+| Aiven | `*.aivencloud.com` | DNS NXDOMAIN (service deleted) |
+| short.io | `cname.short.io` | 302 redirect (active) or 404 (deleted link) |
 
 ---
 
@@ -131,6 +133,7 @@ subfinder -d target.com -silent | \
 - DNS returns NXDOMAIN for the CNAME target
 - HTTP response shows a platform-specific "not found" error page
 - You can demonstrate claim-ability (do NOT actually claim it)
+- **Check all environment variants:** When one dangling CNAME is found (e.g., `grafana-dev`), immediately check `grafana-stg`, `grafana-qa`, `grafana-pt`, `grafana-prod` — organizations often have parallel CNAMEs across environments and may decommission them inconsistently
 
 **Not Vulnerable (Do Not Report):**
 - CNAME resolves to an active, configured service
@@ -159,3 +162,5 @@ subfinder -d target.com -silent | dnsx -cname -resp-only -silent | sort -u | htt
 - Some services (CloudFront, Azure) require specific conditions beyond a dangling CNAME
 - Never actually register/claim the resource during a pentest without explicit written authorization
 - Screenshot the error page and DNS records as evidence
+- **Aiven (aivencloud.com):** Services are named per-project (e.g., `public-dev-o11y-grafana-prj-aiven-non-prod`). If the CNAME target returns NXDOMAIN, the Aiven service was deleted. Takeover requires creating a new Aiven service with the exact same name in the same cloud region. Verify claimability by checking if the service name is available in Aiven's console — do NOT actually create it without authorization. **Multi-environment pattern:** When one Aiven CNAME is dangling, check ALL environment variants (dev/stg/qa/pt/prod) — organizations often decommission services across environments at different times, so multiple may be vulnerable simultaneously. Aiven is NOT listed in `can-i-take-over-xyz` as of May 2026 — this doesn't mean it's safe, just untested publicly. Aiven has no wildcard DNS (non-existent services = NXDOMAIN, not a default page), so NXDOMAIN is a reliable signal. Service names appear user-chosen (not UUID/random), which suggests takeover is likely possible but needs practical verification via Aiven account creation.
+- **short.io:** Active links return 302 redirects. If a short.io CNAME returns 404 or the short.io dashboard shows the link as unclaimed, it may be takeable. However, short.io links that redirect to the parent domain (e.g., `jadi.jago.com → jago.com`) are active and NOT vulnerable.

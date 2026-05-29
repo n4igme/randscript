@@ -52,6 +52,11 @@ feroxbuster -u https://target.com -w $SECLISTS_PATH/Discovery/Web-Content/raft-m
 - Use appropriate wordlists for the identified technology stack
 - If gobuster/feroxbuster unavailable, document gap and use alternative (dirsearch, dirb)
 
+**Pitfalls:**
+- SPA catch-all: Many modern apps (Flutter, React, Angular) return 200 for ALL paths. Use `--exclude-length <spa-size>` to filter. First check a random UUID path to determine the catch-all response size.
+- gobuster `-s` and `-b` conflict: Don't use `-s` (status codes) without clearing `-b` (blacklist) first. Use `-b ""` to clear the default 404 blacklist when specifying `-s`.
+- Rate-limited targets: gobuster/feroxbuster may timeout. Fall back to `xargs -P` with curl for parallel path discovery on slow targets.
+
 ### 2. API Endpoint Discovery (MANDATORY: ffuf)
 Map API endpoints, methods, and response patterns.
 ```bash
@@ -109,6 +114,8 @@ joomscan -u https://target.com
 
 ### 6. JavaScript Analysis
 Extract endpoints, secrets, and functionality from client-side code.
+
+**Flutter Web Apps:** If target serves `main.dart.js` + `flutter.js`, see `references/flutter-web-app-analysis.md` for specialized extraction (JWT decode, auth headers, partner IDs, internal domains from 4-10MB Dart-compiled JS).
 ```bash
 # linkfinder — extract endpoints from JS files
 linkfinder -i https://target.com -o ./ptest-output/enumeration/linkfinder.txt
@@ -156,6 +163,9 @@ Identify the web framework, then load the appropriate attack playbook.
 # Rails: _session_id cookie, X-Request-Id header
 # Spring Boot: /actuator, x-envoy-* headers
 # GraphQL: /graphql, /graphiql, /playground
+# Tyk Gateway: /hello returns JSON with "Tyk GW", 403 "Requested endpoint is forbidden"
+# n8n: /rest/settings returns config JSON, /healthz returns {"status":"ok"}
+# Flutter Web: main.dart.js + flutter.js in page source
 
 # Quick framework fingerprint
 curl -sk "https://target.com" -D - -o /tmp/fw-detect.html 2>/dev/null

@@ -1,5 +1,16 @@
 # Phase 5: Threat Modeling & Vulnerability Assessment
 
+## Automated Setup
+
+Run first when entering this phase:
+
+```python
+from hermes_tools import read_file
+exec(read_file("~/.hermes/skills/security/ptest/scripts/phase5_vuln_assess.py")["content"])
+```
+
+---
+
 ## When to Use
 - After attack surface mapping is complete (Gateway 4 PASSED).
 - When you need to identify and prioritize vulnerabilities before exploitation.

@@ -1,18 +1,18 @@
 ---
 name: ptest
 description: "Structured penetration testing framework with gated phases. Guides methodical progression from recon through exploitation to reporting."
-version: 4.5.0
+version: 1.0.1
 author: n4igme
 license: MIT
-argument-hint: "<command: start|preflight|status|resume|next|escalate|cleanup|recon-passive|recon-active|enumerate|attack-surface|vuln-assess|exploit|post-exploit|report>"
+argument-hint: "<command: start|preflight|status|resume|next|escalate|abort|cleanup|recon-passive|recon-active|enumerate|attack-surface|vuln-assess|exploit|post-exploit|report>"
 notes:
-  - "v4.5.0: Hub model — SKILL.md is routing only, all phase content in references/phase*.md"
-  - "scripts/ contains legacy subprocess-based .py files; prefer inline hermes_tools code blocks from references/execute-code-integration.md"
+  - "v4.6.0: Hub model — SKILL.md handles routing + framework rules. Phase techniques in references/phase*.md. Tool tables, scope matrix, finding template, heuristics extracted to references/."
+  - "scripts/ contains hermes_tools-based phase scripts for all 8 phases; see references/execute-code-integration.md for tier definitions and usage"
   - "Shell scripts (bulk-actuator-scan.sh, http-probe-parallel.sh) still usable via terminal() for standalone runs"
 metadata:
   hermes:
     tags: [pentest, penetration-testing, security, recon, exploitation, post-exploitation, red-teaming, offensive-security]
-    related_skills: [godmode, parse-finding, mtest, scode, osint, xdev]
+    related_skills: [godmode, mtest, scode, osint, xdev, atest, ctest, w3hunt]
 ---
 
 # Penetration Testing Framework
@@ -24,7 +24,8 @@ Structured pentest engagement with mandatory quality gates preventing premature 
 ```
 Phases:  1.Passive → 2.Active → 3.Enumerate → 4.AttackSurface → 5.VulnAssess → 6.Exploit → 7.PostExploit → 8.Report
 States:  LOCKED → OPEN → PASSED (sequential, no skipping)
-Commands: start | preflight | status | resume | next | escalate | cleanup | recon-passive | recon-active | enumerate | attack-surface | vuln-assess | exploit | post-exploit | report
+Commands: start | preflight | status | resume | next | escalate | abort | cleanup
+Phases:   recon-passive | recon-active | enumerate | attack-surface | vuln-assess | exploit | post-exploit | report
 
 Mandatory tools by phase:
   P1: dig, curl, whois          P2: nmap              P3: gobuster/feroxbuster, ffuf
@@ -45,18 +46,18 @@ Key guardrails:
 
 ## Commands
 
-$ARGUMENTS
-<!-- ↑ Runtime token: the skill framework substitutes this with the user's actual command argument -->
-
 | Command | Action |
 |---------|--------|
+| **Lifecycle** | |
 | `start` | Initialize a new engagement — prompt for scope, targets, and authorization |
 | `preflight` | Check mandatory tool availability and install missing tools |
 | `status` | Show current gateway state, progress, and pending techniques |
 | `resume` | Resume an interrupted engagement — read existing output and continue from last checkpoint |
 | `next` | Attempt to advance to the next phase (runs exit criteria check) |
 | `escalate` | Trigger critical finding escalation |
+| `abort` | Terminate engagement early — records reason, generates partial report |
 | `cleanup` | Archive engagement output, sanitize sensitive data |
+| **Phase Execution** | |
 | `recon-passive` | Execute passive recon techniques |
 | `recon-active` | Execute active recon techniques |
 | `enumerate` | Execute application-layer enumeration |
@@ -76,97 +77,24 @@ If no command is given, show current status and suggest next action.
 
 ## Preflight Check (`preflight`)
 
-**Run this before starting any engagement.** Verifies all mandatory and recommended tools are available, and installs missing ones.
+> Full tool tables, wordlist setup, and procedure: `references/preflight.md`
 
-### Mandatory Tools (engagement cannot proceed without these)
+Verifies mandatory and recommended tools are available, installs missing ones, resolves SecLists path, and writes preflight report to `./ptest-output/preflight.md`.
 
-| Tool | Phase | Install Command (macOS) | Install Command (Linux) |
-|------|-------|------------------------|------------------------|
-| `dig` | 1 | `brew install bind` | `apt install dnsutils` |
-| `curl` | 1 | (pre-installed) | `apt install curl` |
-| `whois` | 1 | (pre-installed) | `apt install whois` |
-| `nmap` | 2 | `brew install nmap` | `apt install nmap` |
-| `gobuster` | 3 | `brew install gobuster` | `go install github.com/OJ/gobuster/v3@latest` |
-| `ffuf` | 3 | `brew install ffuf` | `go install github.com/ffuf/ffuf/v2@latest` |
-| `nuclei` | 5 | `brew install nuclei` | `go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest` |
+If `./ptest-output/` doesn't exist, `preflight` runs in report-only mode (prints to stdout). It only writes `preflight.md` when called during or after `start`.
 
-### Recommended Tools (enhance coverage but not blocking)
+---
 
-| Tool | Phase | Install Command (macOS) | Install Command (Linux) |
-|------|-------|------------------------|------------------------|
-| `subfinder` | 1 | `brew install subfinder` | `go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest` |
-| `amass` | 1 | `brew install amass` | `go install github.com/owasp-amass/amass/v4/...@master` |
-| `theHarvester` | 1 | `pip3 install theHarvester` | `pip3 install theHarvester` |
-| `spiderfoot` | 1 | `pip3 install spiderfoot` | `pip3 install spiderfoot` |
-| `photon` | 1 | `pip3 install photon` | `pip3 install photon` |
-| `gitleaks` | 1 | `brew install gitleaks` | `go install github.com/gitleaks/gitleaks/v8@latest` |
-| `trufflehog` | 1 | `brew install trufflehog` | `go install github.com/trufflesecurity/trufflehog/v3@latest` |
-| `dnsx` | 2 | `go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest` | `go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest` |
-| `puredns` | 2 | `go install github.com/d3mondev/puredns/v2@latest` | `go install github.com/d3mondev/puredns/v2@latest` |
-| `massdns` | 2 | `brew install massdns` | `apt install massdns` |
-| `dnsrecon` | 2 | `pip3 install dnsrecon` | `pip3 install dnsrecon` |
-| `dnsenum` | 2 | `brew install dnsenum` | `apt install dnsenum` |
-| `masscan` | 2 | `brew install masscan` | `apt install masscan` |
-| `feroxbuster` | 3 | `brew install feroxbuster` | `apt install feroxbuster` |
-| `arjun` | 3 | `pip3 install arjun` | `pip3 install arjun` |
-| `kiterunner` | 3 | `go install github.com/assetnote/kiterunner/cmd/kr@latest` | `go install github.com/assetnote/kiterunner/cmd/kr@latest` |
-| `linkfinder` | 3 | `pip3 install linkfinder` | `pip3 install linkfinder` |
-| `wpscan` | 3 | `brew install wpscan` | `gem install wpscan` |
-| `nikto` | 5 | `brew install nikto` | `apt install nikto` |
-| `testssl.sh` | 5 | `brew install testssl` (binary: `testssl.sh`) | `git clone https://github.com/drwetter/testssl.sh.git` |
-| `sslscan` | 5 | `brew install sslscan` | `apt install sslscan` |
-| `searchsploit` | 5 | `brew install exploitdb` | `apt install exploitdb` |
-| `sqlmap` | 6 | `brew install sqlmap` | `apt install sqlmap` |
-| `hydra` | 6 | `brew install hydra` | `apt install hydra` |
+## Status (`status`)
 
-### Wordlists
+Output:
+1. Current phase and gateway state (OPEN/LOCKED/PASSED/ABORTED for all 8)
+2. Active phase checklist summary: X/Y techniques done, Z findings in this phase
+3. Total findings count and breakdown by severity (Critical/High/Medium/Low/Info)
+4. Time elapsed since engagement start
+5. Suggested next action
 
-**Platform-aware path resolution:** Detect the SecLists path at preflight and store it for the engagement.
-
-```bash
-# Resolve SECLISTS_PATH based on platform
-if [ -d "/usr/share/seclists" ]; then
-  SECLISTS_PATH="/usr/share/seclists"
-elif [ -d "/opt/homebrew/share/seclists" ]; then
-  SECLISTS_PATH="/opt/homebrew/share/seclists"
-elif [ -d "/usr/local/share/seclists" ]; then
-  SECLISTS_PATH="/usr/local/share/seclists"
-elif [ -d "$HOME/SecLists" ]; then
-  SECLISTS_PATH="$HOME/SecLists"
-else
-  SECLISTS_PATH=""  # Not found — prompt user
-fi
-```
-
-Store the resolved path in `state.yaml` under `config.seclists_path`. All subsequent commands use `$SECLISTS_PATH` instead of hardcoded paths.
-
-The following wordlists are expected (from SecLists):
-- `$SECLISTS_PATH/Discovery/Web-Content/raft-medium-directories.txt`
-- `$SECLISTS_PATH/Discovery/Web-Content/raft-medium-files.txt`
-- `$SECLISTS_PATH/Discovery/Web-Content/api/api-endpoints.txt`
-- `$SECLISTS_PATH/Discovery/DNS/subdomains-top1million-5000.txt`
-
-Install SecLists if missing:
-```bash
-# macOS
-brew install seclists
-
-# Linux / manual
-git clone https://github.com/danielmiessler/SecLists.git /usr/share/seclists
-```
-
-### Preflight Procedure
-
-1. **Detect platform** (macOS/Linux).
-2. **Check mandatory tools** — for each, verify `which <tool>` succeeds.
-3. **Report status** — show table of available/missing tools.
-4. **Install missing mandatory tools** — prompt user for confirmation, then install.
-5. **Check recommended tools** — report which are available, offer to install missing ones.
-6. **Check wordlists** — verify SecLists path exists.
-7. **Update nuclei templates** — run `nuclei -update-templates` if nuclei is installed.
-8. **Write preflight report** — save to `./ptest-output/preflight.md`.
-
-If any mandatory tool cannot be installed, the engagement can still proceed but the gap must be documented in the phase checklist.
+If no engagement exists (`./ptest-output/state.yaml` not found), report "No active engagement" and suggest `start`.
 
 ---
 
@@ -280,6 +208,15 @@ If `state.yaml` cannot be read:
 5. Rebuild `state.yaml` — mark completed phases as `PASSED`, current phase as `OPEN`, remaining as `LOCKED`.
 6. Inform user of reconstructed state and ask for confirmation before proceeding.
 
+### Staleness Check
+
+| Inactivity | Action |
+|------------|--------|
+| >7 days | Flag all existing findings as `STALE — re-verify before report`. Re-probe key targets to confirm they're still alive and unchanged. |
+| >30 days | Treat as a new engagement. Prior findings are reference only — re-verify everything before inclusion in any report. |
+
+Staleness is calculated from the most recent timestamp in `state.yaml` (last phase transition or `time_tracking` entry).
+
 ---
 
 # ═══════════════════════════════════════════════════════════════
@@ -290,8 +227,8 @@ If `state.yaml` cannot be read:
 
 | Gateway | Phase | Reference File | Exit Criteria |
 |---------|-------|-----------|---------------|
-| 1 | Passive Reconnaissance | `references/phase1-passive-recon.md` | Attack surface mapped, subdomains validated, technologies identified. OSINT completeness verified. **Env-prefix quick-win check completed.** |
-| 2 | Active Reconnaissance | `references/phase2-active-recon.md` | Subdomain list expanded via active DNS techniques, all hosts port-scanned, services detected, network topology mapped |
+| 1 | Passive Reconnaissance | `references/phase1-passive-recon.md` | Attack surface mapped, subdomains validated, technologies identified. OSINT completeness verified. **Env-prefix quick-win check completed.** No packets sent to target — only third-party sources (DNS records, Shodan InternetDB, GitHub, Google, CT logs). |
+| 2 | Active Reconnaissance | `references/phase2-active-recon.md` | All hosts HTTP-probed, port-scanned, technology-fingerprinted, path discovery on every live host, services detected, network topology mapped |
 | 3 | Enumeration | `references/phase3-enumeration.md` | Applications enumerated, APIs mapped, parameters discovered, Prometheus metrics mined for hidden services |
 | 4 | Attack Surface Mapping | `references/phase4-attack-surface.md` | Asset inventory confirmed with user, scope finalized, entry points mapped |
 | 5 | Threat Modeling & Vuln Assessment | `references/phase5-vuln-assessment.md` | Attack trees documented, vuln scans complete, CORS reflection tested on all auth endpoints, vectors prioritized |
@@ -327,6 +264,13 @@ Before drafting any finding report, answer these 3 questions. One NO = KILL the 
 - Finding is on the program's "never submit" list (self-XSS, logout CSRF, missing headers without impact)
 - Impact is purely theoretical with no concrete demonstration
 
+**PoC script quality (MANDATORY):**
+- Every PoC script MUST run without errors (`python3 script.py` → no SyntaxError, no KeyError)
+- Test the script locally before including in report — f-strings with dicts inside don't work in Python < 3.12, API responses may be rate-limited or return unexpected status codes
+- Handle error cases: rate limiting (429), missing keys in response, connection timeouts
+- Hardcode fallback values (e.g., previously registered client_id) when rate limits prevent fresh registration
+- If the attack chain requires user interaction (OAuth consent, clicking a link), document exactly what the tester should do to complete the proof
+
 ### Local Exploit Verification Gate (Phase 6 → 7 transition, MANDATORY)
 
 Before advancing from Phase 6, every confirmed exploit MUST be locally verified when possible.
@@ -357,13 +301,16 @@ In these cases, document: "Local verification not possible: {reason}. Confidence
 |-------|----------------|-----------|
 | 1–2 Recon (Passive + Active) | 15% | Discovery, not exploitation |
 | 3 Enumeration | 15% | Deep enough to find entry points |
-| 4 Attack Surface | 5% | Planning — consolidation only |
+| 4 Attack Surface | 5% | Planning — consolidation only (elastic: takes as long as user needs to confirm) |
 | 5 Vuln Assessment | 20% | Scanning + manual verification |
 | 6 Exploitation | 25% | Highest-value work |
 | 7 Post-Exploitation | 10% | Demonstrate impact |
 | 8 Reporting | 10% | Write-up (findings documented throughout) |
 
-Adjust based on scope size. Large scope (50+ hosts) → more recon time. Small scope (single app) → more exploitation time.
+Adjust based on scope size:
+- **50+ hosts:** P1-2 → 25% (+10%), P3 → 10% (-5%), P6 → 20% (-5%)
+- **Single app:** P1-2 → 10% (-5%), P3 → 10% (-5%), P6 → 35% (+10%)
+- **API-only:** P3 → 20% (+5%), P5 → 15% (-5%)
 
 **Continuous/internal engagements:** Set `time_budget.mode: "continuous"` in state.yaml. Track time for reporting only — no budget enforcement.
 
@@ -375,55 +322,9 @@ Adjust based on scope size. Large scope (50+ hosts) → more recon time. Small s
 
 ## Finding Template
 
-Every finding documented during the engagement MUST follow this format:
+> Full template, ID assignment, and deduplication rules: `references/finding-template-full.md`
 
-### Finding ID Assignment
-
-IDs are auto-incremented from `state.yaml`:
-1. Read current `findings_count` from `./ptest-output/state.yaml`.
-2. Increment by 1.
-3. Use the new value as the finding ID (e.g., `FINDING-1`, `FINDING-2`, ...).
-4. Write the updated `findings_count` back to `state.yaml` immediately.
-
-This ensures unique, sequential IDs even across phases and sessions.
-
-### Findings Deduplication Rule
-
-- **Same vulnerability on multiple hosts/gateways** = 1 finding. List all affected assets in the "Affected Asset" field (e.g., `microservices.prod.bfi.co.id, microservices.prod.bravo.bfi.co.id`). Note which are confirmed vs inferred.
-- **Same vulnerability class on different endpoints** (e.g., SQLi on `/users` and SQLi on `/orders`) = separate findings (different root cause, different fix).
-- **Same root cause, different impact** (e.g., missing auth on GET vs POST of same endpoint) = 1 finding documenting all methods affected.
-
-```markdown
-## [FINDING-{ID}] {Title}
-
-**Severity:** Critical / High / Medium / Low / Info
-**CVSS 3.1:** {score} ({vector string})
-**Affected Asset:** {host, endpoint, or component}
-**Environment:** prod / nonprod / experiment / all
-**Phase Discovered:** {phase number and name}
-**Verification Status:** Confirmed / Unverified
-
-### Description
-{What the vulnerability is and why it matters}
-
-### Steps to Reproduce
-1. {step}
-2. {step}
-3. {step}
-
-### Evidence
-{Screenshots, request/response logs, command output — MUST include direct proof}
-
-### Impact
-{What an attacker can achieve}
-
-### Remediation
-{Required fix and defense-in-depth recommendations}
-```
-
-**Verification Status rules:**
-- **Confirmed** — direct evidence proving the issue exists right now. Only confirmed findings go into the final report.
-- **Unverified** — suspected based on indirect evidence but not proven. Goes into "Potential Issues" appendix. Does NOT count toward `findings_count`.
+Every finding uses `FINDING-{ID}` (auto-incremented from `state.yaml`). Must include: severity, CVSS, affected asset, environment tag, steps to reproduce, evidence, impact, and remediation. Only **Confirmed** findings (with direct proof) go into the final report.
 
 ---
 
@@ -452,6 +353,15 @@ This ensures unique, sequential IDs even across phases and sessions.
 5. **Sign-off** — ask user: *"Phase [X] complete. [N] findings documented. Ready to advance to [next phase]?"*
 6. **Update State** — update `./ptest-output/state.yaml`: mark gateway as PASSED, unlock next.
 
+**If exit criteria are NOT met:**
+1. List specific unmet criteria.
+2. Suggest which techniques to run to satisfy them.
+3. Do NOT advance — gateway remains OPEN.
+4. Ask: *"Want to address these gaps, or override with justification?"*
+5. If user overrides, record justification in checklist and proceed.
+
+If no sign-off response within the session, continue executing remaining techniques in the current phase rather than blocking.
+
 ---
 
 ## Escalation Protocol
@@ -464,12 +374,12 @@ Triggered by `escalate` command OR automatically when a Critical/P1 finding is d
 
 1. Document finding fully using the Finding Template (assigns a finding ID).
 2. Classify severity (CVSS 3.1).
-3. Write to `./ptest-output/escalations/escalation-{escalations_count}.md`, referencing `FINDING-{ID}`.
-4. Alert user for immediate client communication.
-5. Current gateway pauses until escalation is acknowledged.
-6. Increment `escalations_count` in `state.yaml`.
+3. Increment `escalations_count` in `state.yaml` (1-indexed — first escalation = `escalation-1`).
+4. Write to `./ptest-output/escalations/escalation-{escalations_count}.md`, referencing `FINDING-{ID}`.
+5. Alert user for immediate client communication.
+6. Current gateway pauses until escalation is acknowledged.
 
-See `escalate-finding.md` for full procedure.
+See `references/escalate-finding.md` for full procedure.
 
 ---
 
@@ -484,68 +394,30 @@ Post-engagement housekeeping:
 
 ---
 
+## Abort (`abort`)
+
+Terminate an engagement early when it cannot or should not continue.
+
+**Valid reasons:** authorization revoked, target decommissioned, client request, scope invalidated, legal concern.
+
+**Procedure:**
+1. **Prompt for reason** — require explicit justification.
+2. **Mark phases** — current `OPEN` phase → `ABORTED (reason)`, all `LOCKED` phases → `ABORTED`.
+3. **Set state** — write `engagement.status: ABORTED` and `engagement.aborted_at: {timestamp}` to `state.yaml`.
+4. **Generate partial report** — if any findings exist, produce a summary report noting the engagement was terminated early and why.
+5. **Run cleanup** — archive and sanitize as normal.
+
+---
+
 # ═══════════════════════════════════════════════════════════════
 # PHASES — Phase-specific techniques, checklists, and procedures
 # ═══════════════════════════════════════════════════════════════
 
 ## Scope-Aware Checklist Generation
 
-When generating phase checklists during `start`, filter techniques by scope type. Techniques that don't apply to the engagement's scope type should be pre-marked as `N/A (scope: {type})` instead of `PENDING`.
+> Full technique-by-scope matrix: `references/scope-matrix.md`
 
-| Phase | Technique | web | network | cloud | mobile | mixed |
-|-------|-----------|-----|---------|-------|--------|-------|
-| 1 | OSINT Gathering | Y | Y | Y | Y | Y |
-| 1 | JS Bundle Analysis & Staging Domain Discovery | Y | N | Y | Y | Y |
-| 1 | Subdomain Enumeration | Y | Y | Y | N | Y |
-| 1 | Internal Asset Inventory Request | Y | Y | Y | N | Y |
-| 1 | Knowledge Base / Support Site Scraping | Y | Y | Y | N | Y |
-| 1 | Pattern-Based Subdomain Brute-Force | Y | Y | Y | N | Y |
-| 1 | Technology Fingerprinting | Y | N | Y | Y | Y |
-| 1 | Email & Username Discovery | Y | Y | Y | N | Y |
-| 1 | Network Mapping | N | Y | Y | N | Y |
-| 1 | Asset Validation | Y | Y | Y | N | Y |
-| 2 | Port Scanning (MANDATORY) | Y | Y | Y | Y | Y |
-| 2 | Active DNS Expansion — Pattern Permutation (MANDATORY) | Y | Y | Y | N | Y |
-| 2 | Active DNS Expansion — DNS-Level Brute-Force (MANDATORY) | Y | Y | Y | N | Y |
-| 2 | Active DNS Expansion — Reverse DNS on IP Ranges | N | Y | Y | N | Y |
-| 2 | Active DNS Expansion — Virtual Host Enumeration | Y | N | Y | N | Y |
-| 2 | Active DNS Expansion — Zone Transfer Attempt | Y | Y | Y | N | Y |
-| 2 | Service Detection & Banner Grabbing | Y | Y | Y | Y | Y |
-| 2 | OS Fingerprinting | N | Y | N | N | Y |
-| 2 | Network Topology Mapping | N | Y | Y | N | Y |
-| 3 | Directory & File Brute-Force (MANDATORY) | Y | N | N | N | Y |
-| 3 | HTTP Method Testing on Unauth Endpoints (MANDATORY) | Y | N | Y | N | Y |
-| 3 | API Endpoint Discovery (MANDATORY) | Y | N | Y | Y | Y |
-| 3 | Parameter Discovery | Y | N | N | Y | Y |
-| 3 | Virtual Host Enumeration | Y | N | N | N | Y |
-| 3 | CMS-Specific Enumeration | Y | N | N | N | Y |
-| 3 | JavaScript Analysis | Y | N | N | Y | Y |
-| 3 | JavaScript Secret Scanning (MANDATORY) | Y | N | N | Y | Y |
-| 3 | Source Map Sweep (MANDATORY when web apps found) | Y | N | N | N | Y |
-| 3 | Authentication Endpoint Mapping | Y | N | Y | Y | Y |
-| 3 | Bulk Actuator/Admin Scan (MANDATORY) | Y | N | Y | N | Y |
-| 5 | Threat Modeling | Y | Y | Y | Y | Y |
-| 5 | Nuclei Scan (MANDATORY) | Y | N | Y | N | Y |
-| 5 | CORS Origin Reflection Testing (MANDATORY) | Y | N | Y | N | Y |
-| 5 | OAuth/OIDC redirect_uri Validation (MANDATORY) | Y | N | Y | N | Y |
-| 5 | Nikto Scan | Y | N | N | N | Y |
-| 5 | SSL/TLS Assessment | Y | Y | Y | N | Y |
-| 5 | CVE Mapping | Y | Y | Y | Y | Y |
-| 5 | Manual Verification | Y | Y | Y | Y | Y |
-| 5 | Prioritized Vector List | Y | Y | Y | Y | Y |
-| 6 | Known CVE Exploitation | Y | Y | Y | Y | Y |
-| 6 | Web Application Attacks | Y | N | Y | N | Y |
-| 6 | Authentication Bypass | Y | Y | Y | Y | Y |
-| 6 | Injection Attacks | Y | N | Y | Y | Y |
-| 6 | Logic Flaws | Y | N | Y | Y | Y |
-| 6 | Client-Side Attacks | Y | N | N | Y | Y |
-| 7 | Privilege Escalation | Y | Y | Y | Y | Y |
-| 7 | Lateral Movement | N | Y | Y | N | Y |
-| 7 | Persistence (Document Only) | N | Y | Y | N | Y |
-| 7 | Data Access | Y | Y | Y | Y | Y |
-| 7 | Credential Harvesting | Y | Y | Y | Y | Y |
-
-When scope type is `mixed`, all techniques are `PENDING`. For other scope types, mark `N` entries as `N/A (scope: {type})`.
+When generating phase checklists during `start`, filter techniques by scope type. Techniques that don't apply to the engagement's scope type should be pre-marked as `N/A (scope: {type})` instead of `PENDING`. When scope type is `mixed`, all techniques are `PENDING`.
 
 ---
 
@@ -563,7 +435,7 @@ When entering a phase, load the corresponding reference file with `skill_view(na
 | 6 | `references/phase6-exploitation-framework.md` | Entering exploitation |
 | 7 | `references/phase7-post-exploitation-framework.md` | Entering post-exploitation |
 | 8 | `references/phase8-reporting-process.md` | Entering reporting |
-| — | `escalate-finding.md` | Critical finding discovered (any phase) |
+| — | `references/escalate-finding.md` | Critical finding discovered (any phase) |
 
 **Load only the active phase file.** Each contains: full technique checklist, procedures, commands, exit criteria, and pitfalls specific to that phase.
 
@@ -575,33 +447,9 @@ When entering a phase, load the corresponding reference file with `skill_view(na
 
 ## Multi-Target Engagement Structure
 
-When a bug bounty program has multiple in-scope assets, organize per-target:
+> Directory layout, rules, and fast-exit heuristics: `references/multi-target-structure.md`
 
-```
-./ptest-output/                    # Primary target (first tested)
-  state.yaml
-  scope.md                         # FULL program scope (all assets)
-  findings-log.md
-./target2.domain/
-  ptest-output/
-    state.yaml                     # Independent state per target
-    scope.md                       # Target-specific scope subset
-    findings-log.md
-```
-
-**Rules:**
-1. The primary `scope.md` documents ALL program assets and their status (tested/dead/RBAC-blocked/pending)
-2. Each target gets its own `state.yaml` with independent phase tracking
-3. Finding IDs are unique per-target (F-1 in target A ≠ F-1 in target B)
-4. When submitting, reference findings by `{target}:{finding-id}` (e.g., `findaya.co.id:F-4`)
-5. Cross-target findings go in the target where they have highest impact
-6. Mark targets as completed: `tested (N findings)`, `dead (decommissioned)`, `RBAC-blocked`, `hardened (0 findings)`
-
-**Fast-exit heuristics:**
-- Identical Istio RBAC 403 on all paths → "RBAC-blocked", move on (5 min max)
-- All subdomains don't resolve → "dead/decommissioned", move on (2 min max)
-- Well-known hardened service, all endpoints return proper 401 → "hardened", move on (10 min max)
-- Prioritize targets sharing infrastructure with already-vulnerable targets
+Each target gets independent state tracking. Finding IDs are unique per-target. Reference findings by `{target}:{finding-id}` when submitting.
 
 ---
 
@@ -627,11 +475,18 @@ When a bug bounty program has multiple in-scope assets, organize per-target:
 
 ### Workflow Rules
 
-- **Strict Sequence & Self-Audit** — never skip a phase. Before requesting gateway sign-off, proactively review what was missed — list gaps honestly and offer to fill them.
+- **Test every asset individually** — do not assume subdomains behave the same because they share infrastructure. Each may have different WAF policies, backends, or exposed paths. "api.jago.com returns 401 so all *.api.jago.com must too" is a BAD assumption that was proven wrong.
+- **Present ALL data first, then prioritize** — never cherry-pick "interesting" results and hide the rest. Show complete picture (all live hosts grouped by response code), then highlight priorities. User needs to see what was tested vs what wasn't.
+- **Track tested vs status-checked** — "Probed" = path discovery, parameter fuzzing, tech-specific tests. "Status-checked" = one curl for HTTP code. Don't conflate them in reports.
+- **When behind WAF/Access control** — don't give up after confirming the wall. Try: different paths, methods, UAs, HTTP versions, direct IP, alternate ports, websocket upgrade, path encoding. Use `xargs -P` with curl for fast parallel path discovery (gobuster often times out on rate-limited targets).
+- **"Try harder" means** — full directory bruteforce (not 20 manual paths), every live subdomain gets path discovery, parameter fuzzing on every input-accepting endpoint, technology-specific CVE testing, multiple bypass techniques per WAF.
+- **Strict Sequence & Self-Audit** — never skip a phase. Never skip steps within a phase. Complete ALL checklist items for the current phase before requesting gateway sign-off. The user explicitly corrected: "we will test all the scope dude, skip the step, then you may lost something." Before requesting sign-off, proactively review what was missed — list gaps honestly and offer to fill them. Do not suggest "pivoting to depth" or "skipping remaining Phase 1 items" — finish the phase completely first.
 - **Phase 1 OSINT Completeness** — verify ALL 10 techniques attempted: (1) WHOIS/DNS/TXT, (2) subdomain enum, (3) Wayback Machine, (4) GitHub/GitLab search, (5) Google dorking, (6) Shodan/Censys, (7) JS bundle analysis, (8) Mobile app identification, (9) Docker Hub check, (10) dark web & breach data OSINT.
+- **Phase 1 is STRICTLY passive** — no packets to target infrastructure. HTTP probing, port scanning, TLS cert grabbing (connecting to target), technology fingerprinting, and path discovery are ALL Phase 2 (Active Recon). Phase 1 uses only third-party data sources: DNS zone files, Shodan InternetDB, GitHub code search, Google dorks, CT logs, WHOIS, SPF/DMARC/TXT record analysis. If you're sending a SYN packet or HTTP request to the target, it's Phase 2.
 - **Mandatory Tool Execution** — mandatory tools per phase must be run. If unavailable, document the gap explicitly.
 - **Human Sign-off** — always request user confirmation before passing a gateway.
 - **No Time/Schedule Commentary** — never comment on the time or suggest stopping. The operator decides their schedule.
+- **Complete Data First, Then Prioritize** — when presenting recon/scan results, show ALL data grouped by category (response codes, service types) before highlighting priorities. Never cherry-pick "interesting" results and omit the rest. The operator needs the full picture to make decisions. No assumptions about what they "already know".
 - **Authorization First** — refuse to begin without confirmed authorization.
 - **No Deployed Persistence** — document persistence techniques but do not deploy backdoors without explicit authorization.
 - **ALWAYS do post-exploitation.** See `references/post-exploitation-rules.md`. Never stop at "proved access exists" — demonstrate actual impact.
@@ -639,13 +494,8 @@ When a bug bounty program has multiple in-scope assets, organize per-target:
 
 ### Target Assessment Heuristics
 
-- **Hardened Target Fast-Exit** — if first 3 vectors fail cleanly, mark as "hardened" and move on (15-20 min max). **Exception:** Always check pre-auth flows (OTP, login, registration, password reset).
-- **Zero-Finding Close-Out Path** — if Phase 5 concludes with 0 exploitable vectors, fast-track Phases 6-8 with a close-out report.
-- **Captcha-Gated Assessment** — assess within 10 minutes: server-validated? bypass paths? non-prod enforcement? If no bypass, document as blocker.
-- **RBAC Mesh Fast-Exit** — 50+ subdomains all returning identical 403 = mesh-blocked. Confirm on 10-15 hosts, then move on (30 min cap).
-- **SPA Catch-All Detection** — compare response size of target path vs random nonexistent path. Same size = false positive.
-- **False Positive Verification** — check for SPA catch-alls, CORS crashes, 302-to-login. See `references/false-positive-detection.md`.
-- **Account Creation Blockers** — document limitation, offer user options (manual signup, OAuth, API registration). Never bypass KYC.
+> Fast-exit rules, blocker handling, false positive detection: `references/target-heuristics.md`
+> GCP port scan false positives, CF port 8080, Shodan InternetDB, delegation pitfalls: `references/gcp-port-scan-pitfalls.md`
 
 ### CTI & Legal
 
@@ -658,85 +508,37 @@ When a bug bounty program has multiple in-scope assets, organize per-target:
 See `references/cross-skill-triggers.md` for full table and chains.
 
 | Signal | Trigger Skill |
-|--------|--------------|
+|--------|--------------|\
 | Cloud infrastructure (AWS/GCP/Azure) | `ctest` |
 | API-heavy target | `atest` |
 | Mobile app discovered | `mtest` |
 | Web3/blockchain | `w3hunt` |
 | Source code available | `scode` |
+| Istio/service mesh detected | `references/istio-mesh-assessment.md` |
 | Geo-restricted target | `references/geo-restriction-bypass.md` |
+| n8n/workflow automation found | `references/n8n-workflow-assessment.md` — check /rest/settings (unauthenticated config leak), enumerate webhooks (RCE vector via CVE-2026-42231), test telemetry key, check version for CVEs |
+| Tyk API Gateway detected | `references/tyk-gateway-enumeration.md` — check /hello (version+health leak), brute admin secret, enumerate registered APIs via 403 differential |
+| Flutter web app detected | `references/flutter-web-app-analysis.md` — extract JWTs, auth headers, partner IDs, internal domains from main.dart.js |
 
----
-
-## Istio/Service Mesh Assessment
-
-> See `references/istio-mesh-assessment.md` for full Istio/Envoy detection indicators, external assessment scope, and security implications to report.
+Cross-skill work runs **parallel** to the current phase (doesn't block gateway). Findings tagged with `source: "{skill-name}"` in findings-log.md. Each skill maintains its own state; only findings flow back to ptest.
 
 ---
 
 ## Automation Scripts (execute_code integration)
 
-Phase scripts live in `scripts/`. Two tiers:
+> Full tier definitions, script table, and usage patterns: `references/execute-code-integration.md`
 
-**Tier 1 — Phase Setup (run once at phase entry):**
-Call via `execute_code` when entering a phase. Reads prior phase state, generates checklist, runs lightweight automation, prints structured summary.
+Phase scripts live in `scripts/`. Two tiers: **Tier 1** (phase setup, run once at entry) and **Tier 2** (batch execution for 20+ targets). Decision heuristic: 1-3 targets → direct calls, 4-6 → delegate_task, 10+ → execute_code with batch script.
 
-| Script | Phase | What It Does |
-|--------|-------|-------------|
-| `phase1_passive.py` | 1 | crt.sh + subfinder + env-prefix candidates |
-| `phase2_active.py` | 2 | DNS resolution, live host list, nmap suggestions |
-| `phase3_enumerate.py` | 3 | Wordlist resolution, actuator path list, command suggestions |
-| `phase6_exploit.py` | 6 | Read prioritized vectors, set up tracking, cred inventory check |
-| `phase7_post_exploit.py` | 7 | Access classification, playbook selection |
+### Script Failure Protocol
 
-**Tier 2 — Batch Execution (run mid-phase for bulk operations):**
-Call when a technique involves 20+ targets. Returns structured JSON summary.
+| Exit Condition | Action |
+|----------------|--------|
+| Exit 0 | Parse output, continue normally |
+| Exit 1 (partial) | Parse successful results, log failures, continue manually for failed targets |
+| Exit 2+ (total failure) | Fall back to manual execution of the technique |
+| Timeout | Kill process, log partial results, split into smaller batches and retry |
 
-| Script | Phase | What It Batches |
-|--------|-------|-----------------|
-| `bulk-actuator-scan.sh` | 3 | Actuator/admin scan on all hosts |
-| `http-probe-parallel.sh` | 1-2 | HTTP probe all subdomains |
-| `probe-parallel.sh` | 2-3 | Parallel probing |
+**Never mark a technique as DONE based solely on a failed script.** If the script fails, the technique remains PENDING until manually completed or explicitly SKIPPED with documented reason.
 
-**Usage pattern:**
-```python
-from hermes_tools import terminal
-# Tier 1: setup
-result = terminal("cd ./ptest-output && python3 /path/to/scripts/phase3_enumerate.py", timeout=120)
-# Tier 2: bulk operation
-result = terminal("bash /path/to/scripts/bulk-actuator-scan.sh live-subs.txt results.txt", timeout=300)
-```
-
-**When to use execute_code vs sequential calls:**
-- 1-3 targets → direct tool calls
-- 4-6 targets → delegate_task
-- 10+ targets → execute_code with batch script
-
----
-
-## Execution Pitfalls (Hermes Agent)
-
-> **Full reference:** See `references/operational-pitfalls.md` for all execution pitfalls including parallel probing, terminal backgrounding, tool-specific workarounds, and target-specific lessons learned from BFI Finance and Bank Jago engagements.
-
-> **Batch operations:** See `references/execute-code-integration.md` for when and how to use `execute_code` to batch bulk operations (HTTP probing, actuator scanning, method testing) instead of sequential tool calls.
-
-### execute_code Phase Scripts
-
-Each phase with automation has a `hermes_tools`-based script in `scripts/`. Run via `execute_code`:
-
-```python
-from hermes_tools import read_file
-exec(read_file("~/.hermes/skills/security/ptest/scripts/<script>.py")["content"])
-```
-
-| Phase | Script | What It Does |
-|-------|--------|-------------|
-| 1 | `phase1_passive.py` | crt.sh + subfinder + env-prefix candidates |
-| 2 | `phase2_active.py` | DNS resolution + naming pattern extraction |
-| 3 | `phase3_enumerate.py` | Tool check + actuator quick-scan (top 10) |
-| 6 | `phase6_exploit.py` | Read vectors + cred inventory + unauth endpoints |
-| 7 | `phase7_post_exploit.py` | Access classification + playbook selection |
-
-**Why execute_code:** Avoids output token truncation. Scripts run inside the sandbox, use `hermes_tools` (terminal, read_file, write_file), and return compact JSON summaries. The agent reasons on the summary, not raw data.
-
-> **Phase setup scripts:** `scripts/phase{1,2,3,6,7}_*.py` exist for automated phase initialization. Integration approach (inline hermes_tools vs external script call) is pending — see `references/execute-code-integration.md` for current tier definitions and code block examples. Do NOT embed code blocks directly in phase reference files without user approval.
+> **Execution pitfalls (parallel probing, terminal backgrounding, tool workarounds):** See `references/operational-pitfalls.md`

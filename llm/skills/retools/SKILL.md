@@ -1,6 +1,6 @@
 ---
 name: retools
-version: 1.0.0
+version: 1.0.1
 description: "Reverse engineering tooling skill covering Ghidra, radare2, IDA, and Binary Ninja workflows. Setup, scripting, plugin management, and integration with MCP for automated analysis."
 tags: [reverse-engineering, ghidra, radare2, ida, binary-ninja, re, disassembly, decompilation]
 trigger: "ghidra setup, ghidra extension, r2 analysis, radare2, ida script, binary ninja, reverse engineering tools, RE tooling, ghidra mcp, decompile binary"
@@ -55,6 +55,73 @@ Utility skill for RE tool setup, scripting, and integration. Supports xdev (expl
 - Binary: `/Applications/Binary Ninja.app`
 - Plugins: `~/Library/Application Support/Binary Ninja/plugins/`
 - API: `import binaryninja` (headless scripting)
+
+---
+
+## Quick Start Decision Tree
+
+```
+What do you have?
+│
+├── APK/DEX (Android Java/Kotlin)
+│   ├── JADX MCP (preferred) — decompile + navigate via MCP tools
+│   ├── APKEditor (~/PenTest/Tools/APKEditor-1.4.7.jar) — repack/patch
+│   └── Fallback: apktool d + dex2jar + jd-gui
+│
+├── .so / ELF (native library)
+│   ├── Quick triage: r2 -q -c 'aaa; afl; iz' ./lib.so (5 min)
+│   ├── JNI functions: r2 -q -c 'aa; afl~Java_' ./lib.so
+│   ├── Deep analysis: Ghidra (import → auto-analyze → decompile)
+│   └── If ARM64 + stripped: Ghidra > r2 (better decompilation)
+│
+├── PE / Windows binary
+│   ├── IDA Pro (best decompilation for x86/x64)
+│   ├── Ghidra (free alternative, good enough for most)
+│   └── Quick strings: strings + FLOSS (for obfuscated strings)
+│
+├── iOS binary (Mach-O)
+│   ├── Ghidra (ARM64 support, free)
+│   ├── IDA (better if available)
+│   └── class-dump / dsdump for ObjC headers
+│
+├── Firmware / embedded
+│   ├── binwalk (extract filesystem)
+│   ├── r2 (MIPS/ARM analysis)
+│   └── Ghidra (best for unknown architectures)
+│
+└── Obfuscated script (JS/Python/PS)
+    └── Manual deobfuscation — see Malware section below
+```
+
+---
+
+## JADX / APK Tooling (Android Java/DEX RE)
+
+### JADX MCP (preferred — integrated with Hermes)
+
+JADX GUI with MCP plugin provides decompilation tools directly:
+```
+mcp_jadx_mcp_server_get_class_source(class_name)
+mcp_jadx_mcp_server_search_classes_by_keyword(search_term, search_in="code")
+mcp_jadx_mcp_server_get_android_manifest()
+mcp_jadx_mcp_server_get_methods_of_class(class_name)
+mcp_jadx_mcp_server_get_xrefs_to_method(class_name, method_name)
+```
+
+### APKEditor (repack/patch)
+```bash
+java -jar ~/PenTest/Tools/APKEditor-1.4.7.jar d -i app.apk -o decoded/
+java -jar ~/PenTest/Tools/APKEditor-1.4.7.jar b -i decoded/ -o patched.apk
+apksigner sign --ks debug.keystore --ks-pass pass:android patched.apk
+```
+
+### Quick APK Triage (5 min)
+```bash
+unzip -q app.apk -d extracted/
+grep -rn "AIza\|AKIA\|sk_live\|api_key\|secret" extracted/
+find extracted/lib/ -name "*.so" | sort
+aapt dump xmltree app.apk AndroidManifest.xml
+```
 
 ---
 
@@ -125,6 +192,17 @@ analyzeHeadless /tmp/ghidra_project proj_name \
 ---
 
 ## radare2 Workflows
+
+### Plugin Setup
+```bash
+# Decompiler plugins (required for `pdg` and `pdd` commands)
+r2pm -ci r2ghidra    # Ghidra decompiler in r2 (pdg command)
+r2pm -ci r2dec       # Alternative decompiler (pdd command)
+
+# Useful extras
+r2pm -ci r2frida     # Frida integration (=!i, =!ic, =!ii)
+r2pm -ci r2yara      # YARA rule matching
+```
 
 ### Quick Binary Analysis
 ```bash

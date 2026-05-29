@@ -1,10 +1,10 @@
 ---
 name: xdev
-version: 1.0.0
+version: 1.0.1
 description: "System-level exploit development framework covering Linux, Windows, macOS, Android, iOS, and firmware. 5 gated phases from vulnerability analysis through reliable exploit delivery."
 tags: [exploit, exploitation, shellcode, rop, heap, kernel, firmware, arm64, mitigation-bypass]
 trigger: "exploit dev, exploit development, write exploit, build exploit, shellcode, rop chain, heap exploitation, kernel exploit, privilege escalation exploit, firmware exploit"
-argument-hint: "<command: start|status|resume|next|report>"
+argument-hint: "<command: start|status|resume|next|report|abort|cleanup>"
 metadata:
   hermes:
     tags: [exploit, development, shellcode, kernel, firmware, offensive]
@@ -14,6 +14,21 @@ metadata:
 # Exploit Development Framework
 
 Structured 5-phase workflow for developing working exploits from known vulnerabilities. Takes a crash/bug and produces a reliable exploit with documentation. Covers Linux, Windows, macOS, Android, iOS, and firmware targets.
+
+## Quick Reference
+
+```
+Phases:  1.VulnAnalysis → 2.PrimitiveDev → 3.MitigationBypass → 4.ExploitConstruction → 5.Documentation
+States:  LOCKED → OPEN → PASSED (sequential)
+Commands: start | status | next | resume | report | abort | cleanup
+
+Key rules:
+  • Understand the bug FULLY before writing exploit code
+  • Each phase builds on primitives from the previous
+  • Reliability > speed — a 90% reliable exploit beats a 50% one
+  • Document every dead end (saves time on retry)
+  • Test on exact target version (mitigations vary by patch level)
+```
 
 ## Architecture
 
@@ -30,9 +45,44 @@ Phase 1: Vuln Analysis → Phase 2: Primitive Dev → Phase 3: Mitigation Bypass
 | `resume` | Resume interrupted engagement from last checkpoint |
 | `next` | Advance to next phase (runs exit criteria check) |
 | `report` | Generate final exploit write-up |
+| `abort` | Terminate development — target patched, approach infeasible, or deprioritized |
 | `cleanup` | Archive engagement output, remove temporary exploit artifacts |
 
 If no command is given, show current status and suggest next action.
+
+### Command Procedures
+
+**`start`:**
+1. Collect: platform, architecture, vuln class, trigger (PoC/crash), target version, known mitigations, goal.
+2. Create output directory (`./xdev-output/` with subdirs for each phase).
+3. Write `state.yaml` with engagement metadata.
+4. Write `target.md` with version details, compile flags, mitigation state.
+5. Load platform decision tree → identify which reference file to use.
+6. Begin Phase 1 analysis (crash triage, root cause identification).
+
+**`status`:** Output current phase, gateway states, primitives developed so far (read/write/exec), mitigations bypassed, reliability estimate. If no engagement, suggest `start`.
+
+**`resume`:**
+1. Read `state.yaml` to determine active phase and primitives.
+2. **Staleness:** >7 days → re-verify target hasn't been patched (check CVE status, vendor advisories). >30 days → re-assess if exploit is still relevant (may be patched or superseded).
+3. Re-read findings-log for dead ends already explored.
+4. Report status and suggest next action.
+
+**`next`:**
+1. Verify current phase gate is satisfied.
+2. If NOT met: list unmet criteria (e.g., "no write primitive yet"), suggest approaches.
+3. If met: update state.yaml, advance phase.
+4. Override allowed with justification (e.g., "skipping mitigation bypass — target has no ASLR").
+
+**`abort`:**
+1. Record reason in state.yaml (target patched, approach infeasible, deprioritized, time budget exceeded).
+2. Document what was achieved (primitives, partial chains) — may be useful for future targets.
+3. Run cleanup.
+
+**`cleanup`:**
+1. Archive `./xdev-output/` to `xdev-output-{target}-{date}.tar.gz`.
+2. Remove compiled exploit binaries (keep source).
+3. Print summary: primitives achieved, mitigations bypassed, reliability.
 
 ---
 
@@ -94,6 +144,58 @@ mitigations_bypassed: []
 reliability: ""      # percentage or description
 current_phase: 1
 ```
+
+---
+
+## Platform Decision Tree
+
+Based on platform + vuln class, load the right reference and use the right technique:
+
+```
+Linux userland (glibc heap)
+├── UAF/OOB → tcache poisoning, fastbin dup, house of * techniques
+├── Format string → stack read/write, GOT overwrite
+└── Reference: references/linux-userland.md
+
+Linux kernel (SLUB allocator)
+├── UAF → cross-cache attack (msg_msg, pipe_buffer, sk_buff)
+├── OOB → adjacent object corruption (tty_struct, seq_operations)
+├── Race → userfaultfd/FUSE page fault stalling
+└── Reference: references/linux-kernel.md
+
+Windows userland (LFH/segment heap)
+├── UAF → LFH bucket spray, nt heap manipulation
+├── Type confusion → vtable hijack, COM object abuse
+└── Reference: references/windows-userland.md
+
+Windows kernel (pool allocator)
+├── UAF/OOB → pool spray (named pipes, IoCompletionPort)
+├── Race → TOCTOU on shared memory
+└── Reference: references/windows-kernel.md
+
+Browser (PartitionAlloc / jemalloc)
+├── Type confusion → addrof/fakeobj via TypedArray/ArrayBuffer
+├── UAF → bucket spray with same-size objects
+├── JIT → JIT spray, bounds check elimination
+└── Reference: references/ios-webkit-chain.md
+
+Android native (jemalloc / scudo)
+├── UAF → jemalloc region spray, scudo quarantine bypass
+├── Kernel → same as Linux kernel (SLUB)
+└── Reference: references/android-native.md
+
+iOS/macOS (kalloc / zone allocator)
+├── UAF → zone spray (mach messages, IOKit objects)
+├── PAC bypass → signing gadgets, PAC-less code, PACDA/PACDB confusion
+└── Reference: references/macos-ios.md, references/arm64-exploitation.md
+
+Firmware/embedded (no allocator / flat memory)
+├── Stack overflow → direct ROP (often no ASLR/DEP)
+├── Command injection → UART/serial shell
+└── Reference: references/firmware-embedded.md
+```
+
+**Load the matching reference file when entering Phase 2.**
 
 ---
 
@@ -168,7 +270,33 @@ current_phase: 1
    - Overwrite GOT entry (format string / arbitrary write)
    - JIT spray (browser/JS engine targets)
 
-5. **Heap Shaping:**
+5. **Heap Shaping (allocator-specific):**
+
+   **Linux glibc (ptmalloc2):**
+   - tcache: LIFO, per-thread, no integrity checks (< 2.32) → tcache poisoning trivial
+   - fastbin: single-linked, size check only → fastbin dup, double-free
+   - Unsorted bin: fd/bk leak → libc base. Corrupt bk → unsorted bin attack (write)
+
+   **Linux kernel (SLUB):**
+   - Cross-cache attack: free target object, reclaim slab page with different cache
+   - Spray objects: `msg_msg` (variable size), `pipe_buffer` (1024), `sk_buff`, `tty_struct`
+   - `userfaultfd` / `FUSE`: stall page faults to widen race windows
+
+   **Windows (LFH / Segment Heap):**
+   - LFH: randomized within bucket, spray heavily (256+ objects) for adjacency
+   - Segment heap (Win10+): VS/LFH subsegments, less predictable → need larger spray
+   - Pool (kernel): `NtCreateNamedPipeFile`, `IoCompletionPort` for pool spray
+
+   **Browser (PartitionAlloc / jemalloc):**
+   - PartitionAlloc (Chrome/WebKit): bucket-based, same-size guarantee → spray same-type objects
+   - jemalloc (Firefox): region-based, predictable adjacency with large sprays
+   - ArrayBuffer/TypedArray for controlled data placement
+
+   **iOS/macOS (kalloc / zone):**
+   - Zone allocator: spray with mach messages (`mach_msg` OOL descriptors)
+   - kalloc zones: size-segregated, spray IOKit objects or `ipc_kmsg`
+   - Cross-zone: free in one zone, reclaim from another (harder post-iOS 15)
+
    ```
    # General strategy:
    # 1. Spray objects of target size to fill holes
@@ -333,13 +461,41 @@ current_phase: 1
 
 ## Effort Allocation
 
-| Phase | % of Total Time | Rationale |
-|-------|----------------|-----------|
-| 1 Analysis | 15% | Understand before building |
-| 2 Primitives | 30% | Hardest creative work |
-| 3 Mitigations | 20% | Research-heavy |
-| 4 Construction | 25% | Integration + reliability |
-| 5 Documentation | 10% | Write-up + PoC polish |
+| Phase | % | 8-hour target | 16-hour target | Rationale |
+|-------|---|---------------|----------------|-----------|
+| 1 Analysis | 15% | 75 min | 2.5 hr | Understand before building |
+| 2 Primitives | 30% | 2.5 hr | 5 hr | Hardest creative work |
+| 3 Mitigations | 20% | 100 min | 3 hr | Research-heavy |
+| 4 Construction | 25% | 2 hr | 4 hr | Integration + reliability |
+| 5 Documentation | 10% | 50 min | 1.5 hr | Write-up + PoC polish |
+
+## Abandon & Pivot Heuristics
+
+**Phase 1 (Analysis):**
+- Can't reproduce crash after 1 hour → verify exact version/config, check if already patched
+- Root cause unclear after 2 hours → try different analysis approach (dynamic vs static), or get help
+- Bug is in unreachable code path → abort (no attacker-controlled trigger)
+
+**Phase 2 (Primitives):**
+- No info leak after 2 hours → try alternative leak sources (side channel, partial overwrite, brute force if 32-bit)
+- No write primitive after 4 hours → reassess exploitability. If Theoretical → abort.
+- Heap shaping fails consistently → try different spray object, different allocator path, or cross-cache technique
+
+**Phase 3 (Mitigations):**
+- Can't bypass ASLR + no leak source → check if partial overwrite is sufficient for the target
+- CFI/PAC blocking all gadgets → look for PAC-less code paths, or pivot to data-only attack
+- Sandbox too restrictive → assess if the bug alone (pre-sandbox-escape) has enough impact to report
+
+**Phase 4 (Construction):**
+- Reliability below 30% after 2 hours of tuning → document as "requires further work", report with current rate
+- Exploit works on test VM but not real target → version/config mismatch, rebuild test environment
+- Kernel exploit causes panic on failure → add fork-before-exploit or find non-destructive failure path
+
+**Global abandon rules:**
+- **Target patched mid-development** → document progress, archive. Primitives may apply to future bugs in same component.
+- **Exploitability downgraded to Theoretical** → abort, document why. Don't spend 16 hours on a bug that can't be exploited.
+- **3+ separate bugs needed for chain** → reassess ROI. Only continue if payout/impact justifies the complexity.
+- **CTF/lab context** → time-box to competition duration. Partial progress (primitives without full chain) still earns points.
 
 ---
 

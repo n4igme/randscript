@@ -1,10 +1,10 @@
 ---
 name: ctest
-version: 1.0.0
+version: 1.0.1
 description: "Cloud and container penetration testing framework with 5 gated phases covering AWS/GCP/Azure IAM, container escape, K8s exploitation, and serverless abuse."
 tags: [cloud, aws, gcp, azure, kubernetes, container, iam, serverless, pentest]
 trigger: "cloud pentest, aws pentest, gcp pentest, azure pentest, kubernetes pentest, container escape, iam escalation, cloud security"
-argument-hint: "<command: start|status|resume|next|report>"
+argument-hint: "<command: start|status|resume|next|report|abort|cleanup>"
 metadata:
   hermes:
     tags: [cloud, aws, gcp, azure, kubernetes, container, pentest]
@@ -30,9 +30,46 @@ Phase 1: Scope & Discovery → Phase 2: IAM & Access → Phase 3: Service Exploi
 | `resume` | Resume interrupted engagement from last checkpoint |
 | `next` | Advance to next phase (runs exit criteria check) |
 | `report` | Generate final report |
+| `abort` | Terminate engagement early — records reason, generates partial report |
 | `cleanup` | Archive engagement output, remove temporary files |
 
 If no command is given, show current status and suggest next action.
+
+### Command Procedures
+
+**`start`:**
+1. Collect: cloud provider, scope type, target assets, access level, rules of engagement, authorization proof.
+2. Create output directory (`./ctest-output/` with subdirs for each phase).
+3. Write `state.yaml` with engagement metadata.
+4. Write `scope.md` with all target details.
+5. Begin Phase 1 discovery immediately based on scope type:
+   - External → credential hunting + public resource enumeration
+   - Authenticated → map reachable resources with provided creds
+   - Internal → systematic service enumeration
+
+**`status`:** Output current phase, gateway states (5 phases), findings count by severity, cloud provider, time elapsed. If no engagement, suggest `start`.
+
+**`resume`:**
+1. Read `state.yaml` to determine active phase.
+2. **Staleness:** >3 days → re-verify credentials still valid (tokens expire). >14 days → re-run Phase 1 discovery (cloud resources change frequently). >30 days → treat as fresh engagement.
+3. Report status and suggest next action.
+
+**`next`:**
+1. Verify current phase gate is satisfied.
+2. If NOT met: list unmet criteria, suggest what to test.
+3. If met: update state.yaml, advance phase.
+4. Override allowed with justification.
+
+**`abort`:**
+1. Record reason in state.yaml, mark remaining phases ABORTED.
+2. Generate partial report from existing findings.
+3. Run cleanup.
+
+**`cleanup`:**
+1. Archive `./ctest-output/` to `ctest-output-{target}-{date}.tar.gz`.
+2. Remove test credentials/tokens you created (keep found credentials as evidence).
+3. Revoke any temporary IAM roles/policies created during testing.
+4. Print summary: findings by severity, phases completed.
 
 ---
 
@@ -134,6 +171,9 @@ Your approach fundamentally changes based on access level. Before starting Phase
 
 ### Gate: cloud provider confirmed, account/project enumerated, external attack surface mapped
 
+**First: run proven patterns (10 min) — see `references/proven-patterns.md`**
+7 high-hit-rate checks before systematic discovery. If any hits (leaked keys, public storage with secrets) → pivot immediately to Phase 2 with found credentials.
+
 **Prioritization by scope type:**
 - **External:** Credential Discovery (#5) first → then Service Discovery (#3) → then External Attack Surface (#4). You need creds or public resources before anything else matters.
 - **Authenticated:** Account/Project Enumeration (#2) first → then Service Discovery (#3). You already have access, map what's reachable.
@@ -203,6 +243,12 @@ Your approach fundamentally changes based on access level. Before starting Phase
 - Container with mobile backend → invoke `mtest` if app in scope
 - SSRF to internal services → feed endpoints back to `ptest`/`atest`
 - Geo-blocked cloud services → see ptest `references/geo-restriction-bypass.md`
+
+**Cross-skill triggers INTO ctest (reverse):**
+- SSRF found in ptest/atest → run ctest Phase 1 metadata checks (169.254.169.254) + Phase 3 compute exploitation
+- Cloud credentials leaked via web app (config.js, .env, source maps) → run ctest Phase 2 IAM analysis with found creds
+- S3/GCS URLs in API responses → run ctest Phase 3 storage enumeration on those buckets
+- Docker registry URL found in mtest/ptest → run ctest Phase 4 registry access checks
 
 ---
 
@@ -304,6 +350,35 @@ Your approach fundamentally changes based on access level. Before starting Phase
    - User data scripts with secrets
    - SSM command execution on managed instances
    - Snapshot access (public AMIs/images with secrets)
+
+   **IMDSv2 Bypass Techniques (when IMDSv1 is disabled):**
+   ```bash
+   # IMDSv2 requires PUT to get token first (hop limit = 1 by default)
+   TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+   curl -s -H "X-aws-ec2-metadata-token: $TOKEN" "http://169.254.169.254/latest/meta-data/iam/security-credentials/"
+
+   # Bypass 1: SSRF that follows redirects can't get token (PUT not forwarded)
+   # But: if SSRF allows custom method → PUT to token endpoint, then GET with token
+
+   # Bypass 2: Container-level access (hop limit doesn't apply inside container)
+   # ECS tasks / Docker containers on EC2 can reach IMDS even with hop=1
+   # because the request originates from the instance itself
+   curl -s "http://169.254.169.254/latest/meta-data/"  # works from inside container
+
+   # Bypass 3: ECS Task metadata (different endpoint, no IMDSv2 protection)
+   # Inside ECS container:
+   curl -s "$AWS_CONTAINER_CREDENTIALS_RELATIVE_URI"  # env var set by ECS
+   curl -s "http://169.254.170.2$AWS_CONTAINER_CREDENTIALS_RELATIVE_URI"
+
+   # Bypass 4: If hop limit raised to 2+ (misconfiguration)
+   # SSRF through one proxy hop can reach IMDS
+   aws ec2 describe-instances --query 'Reservations[].Instances[].MetadataOptions' # check HttpPutResponseHopLimit
+
+   # Bypass 5: DNS rebinding
+   # Point attacker domain to 169.254.169.254 after initial DNS check passes
+   # Works if SSRF validates hostname but not IP at request time
+   ```
+   **Key insight:** IMDSv2 blocks most SSRF but NOT container-level access. If you have code execution inside a container on EC2, IMDS is still reachable.
    ```bash
    # Public snapshots with your account's data
    aws ec2 describe-snapshots --restorable-by-user-ids all --owner-ids <account_id>
@@ -566,13 +641,47 @@ After finding something, check if it unlocks:
 
 ## Effort Allocation
 
-| Phase | % of Total Time | Rationale |
-|-------|----------------|-----------|
-| 1 Discovery | 15% | Scope mapping, not exploitation |
-| 2 IAM & Access | 25% | Highest-value — IAM misconfig = game over |
-| 3 Services | 25% | Broad surface, many quick wins |
-| 4 Containers | 20% | Deep technical work |
-| 5 Reporting | 15% | Write-up + remediation roadmap |
+| Phase | % | 4-hour engagement | 8-hour engagement | Rationale |
+|-------|---|-------------------|-------------------|-----------|
+| 1 Discovery | 15% | 35 min | 70 min | Scope mapping, not exploitation |
+| 2 IAM & Access | 25% | 60 min | 120 min | Highest-value — IAM misconfig = game over |
+| 3 Services | 25% | 60 min | 120 min | Broad surface, many quick wins |
+| 4 Containers | 20% | 50 min | 95 min | Deep technical work (skip if no K8s) |
+| 5 Reporting | 15% | 35 min | 75 min | Write-up + remediation roadmap |
+
+## Abandon & Pivot Heuristics
+
+**Phase 1 (Discovery):**
+- No credentials found after 20 min (external scope) → shift to public resource enumeration only
+- All buckets/storage return AccessDenied → move to Phase 2 with whatever access you have
+- Can't identify cloud provider after 15 min → check if target is actually cloud-hosted (may be on-prem)
+
+**Phase 2 (IAM & Access):**
+- No escalation paths after testing top 10 IAM patterns → document current privilege level, move to Phase 3
+- Credentials expired/rotated mid-test → re-acquire (check if original source still works), if not → report as finding + move on
+- All roles have least-privilege → document "IAM hardened", shift time to Phase 3 services
+
+**Phase 3 (Services):**
+- No public storage after checking all regions → stop storage, focus on compute/serverless
+- Lambda/Functions all have no env vars and proper IAM → skip serverless after 15 min
+- No findings after 3 service categories tested → move to Phase 4 (or Phase 5 if no containers)
+
+**Phase 4 (Containers):**
+- K8s API requires auth + RBAC is tight → cap at 30 min, focus on registry access and image scanning
+- No privileged containers, no mounted sockets → document "container hardened", move to reporting
+- etcd not exposed, kubelet requires auth → skip cluster-level attacks after 20 min
+
+**Global abandon rules:**
+- **75% of time budget spent, zero findings** → stop testing, write "hardened" report
+- **Critical found early (leaked keys, public admin access)** → validate immediately, document, then continue for additional findings
+- **Rate limited / account locked** → stop, wait 30 min. If persistent, report with partial results
+- **Credentials revoked mid-engagement** → document the revocation as evidence of detection, report current findings
+
+**Pivot triggers:**
+- SSRF found (from ptest/atest) → immediately test cloud metadata (169.254.169.254), skip remaining Phase 1
+- Leaked AWS keys found → stop discovery, jump to Phase 2 IAM analysis with those keys
+- Public terraform.tfstate found → extract all secrets/keys, pivot to Phase 2 with extracted credentials
+- Container registry public → pull images, extract secrets, feed back to Phase 2/3
 
 ---
 

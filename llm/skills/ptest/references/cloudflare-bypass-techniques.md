@@ -64,6 +64,31 @@ dig +short subdomain.target.com
 
 **Priority:** Non-proxied hosts are your #1 targets. They bypass ALL CF protections.
 
+### Stale Zone File → Origin IP Leak
+
+Zone files may contain **stale A records** from before CF onboarding. Compare zone file IPs against live DNS:
+
+```python
+import socket
+
+# Zone file says: bibit.jago.com → 34.50.79.16 (GCP IP)
+# Live DNS resolves: bibit.jago.com → 104.18.39.232 (CF IP)
+# → Zone file leaked the real origin IP!
+
+zone_ip = "34.50.79.16"  # From zone file
+live_ip = socket.getaddrinfo("bibit.jago.com", 443)[0][4][0]
+if live_ip != zone_ip:
+    print(f"ORIGIN LEAK: zone={zone_ip}, live={live_ip} (CF)")
+```
+
+**Bank Jago example:** Zone file had GCP origin IPs (34.x.x.x) while live DNS pointed to CF (104.18.39.232). Five origin IPs discovered this way.
+
+**Exploitation attempt results:**
+- 4/5 origins: ALL PORTS FILTERED (GCP firewall drops packets entirely)
+- 1/5 origin (dev): ports 80/443 open but returns generic 403 on all paths/hosts (GCP LB IP allowlist — only allows CF edge IPs)
+
+**Conclusion:** Origin IP leak from zone file is an **info disclosure** finding but often NOT directly exploitable because well-configured origins have their own IP allowlist restricting to CF edge ranges. Still worth documenting — it reveals infrastructure and may become exploitable if firewall rules change.
+
 ---
 
 ## 2. Distinguishing Cloudflare Products
@@ -256,6 +281,8 @@ curl https://target.com/cdn-cgi/trace
 | Scenario | Evidence | Action |
 |----------|----------|--------|
 | IP Allowlist, no origin found | Identical 403 on all paths/methods, no historical DNS, no leaked origin | **STOP** — document finding, move on |
+| IP Allowlist, origin found but filtered | Origin IPs discovered (zone file/historical) but all ports filtered or LB returns 403 | **STOP** — document origin IP leak as Info, move on |
+| Geo-block (all hosts same CF IP) | Multiple unrelated subdomains resolve to same CF IP (e.g., 104.18.39.232), all return identical 403 | **STOP** — likely geo/IP reputation block at account level, not per-host |
 | API Shield, no creds | MISSING_API_TOKEN, no token source identified | **STOP** — note for social engineering phase |
 | Zero Trust, no identity | CF Access login, no valid identity provider access | **TEST CF ENDPOINTS FIRST** then STOP |
 | WAF blocking, origin unknown | Challenges on all requests, no bypass after 30min | **DEPRIORITIZE** — try origin discovery |
@@ -396,6 +423,7 @@ curl -H "X-Forwarded-For: 127.0.0.1" https://cf-protected.com/admin
 - **CrimeFlare**: Database of known CF-to-origin mappings (outdated but sometimes useful)
 - **cf-check**: Verify if IP is in CF ranges
 - **subfinder + dnsx**: Mass subdomain resolution to find non-proxied hosts
+- **Python httpx**: Preferred over curl for systematic bypass testing (supports HTTP/2, async, programmatic header rotation)
 
 ```bash
 # Quick check if host is behind CF
@@ -405,3 +433,81 @@ dig +short target.com | while read ip; do
   done
 done
 ```
+
+---
+
+## 6. Systematic Bypass Testing with Python httpx
+
+When curl is insufficient (need batch testing, response comparison, programmatic analysis), use Python httpx:
+
+```python
+import httpx
+import socket
+
+target = "https://target.com"
+
+# Phase 1: Baseline response
+r = httpx.get(target, verify=False, timeout=10)
+baseline_size = len(r.content)
+baseline_status = r.status_code
+print(f"Baseline: {baseline_status} | {baseline_size} bytes")
+
+# Phase 2: Bypass attempts (compare against baseline)
+bypass_tests = [
+    # UA spoofing
+    {"name": "Googlebot", "headers": {"User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"}},
+    {"name": "Mobile Safari", "headers": {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)"}},
+    # Header injection
+    {"name": "XFF:127.0.0.1", "headers": {"X-Forwarded-For": "127.0.0.1"}},
+    {"name": "X-Real-IP:127.0.0.1", "headers": {"X-Real-IP": "127.0.0.1"}},
+    {"name": "CF-Connecting-IP spoof", "headers": {"CF-Connecting-IP": "103.21.244.0"}},
+    {"name": "True-Client-IP", "headers": {"True-Client-IP": "103.21.244.0"}},
+    # Method variation
+    {"name": "OPTIONS", "method": "OPTIONS", "headers": {}},
+    {"name": "POST JSON", "method": "POST", "headers": {"Content-Type": "application/json"}, "data": "{}"},
+    # Path tricks
+    {"name": "/robots.txt", "path": "/robots.txt", "headers": {}},
+    {"name": "/.well-known/security.txt", "path": "/.well-known/security.txt", "headers": {}},
+    {"name": "/favicon.ico", "path": "/favicon.ico", "headers": {}},
+    # Accept variation
+    {"name": "Accept: application/json", "headers": {"Accept": "application/json"}},
+    # Websocket
+    {"name": "WS upgrade", "headers": {"Upgrade": "websocket", "Connection": "Upgrade"}},
+]
+
+for test in bypass_tests:
+    method = test.get("method", "GET")
+    path = test.get("path", "/")
+    url = target + path if path != "/" else target
+    data = test.get("data", None)
+    r = httpx.request(method, url, headers=test["headers"], content=data, verify=False, timeout=10)
+    marker = "!!!" if r.status_code != baseline_status or len(r.content) != baseline_size else ""
+    print(f"{marker}{test['name']:35s} | {r.status_code} | {len(r.content):5d} bytes")
+
+# Phase 3: Origin IP discovery (compare zone file vs live DNS)
+zone_ips = {"target.com": "34.x.x.x"}  # From zone file
+for host, zone_ip in zone_ips.items():
+    live_ip = socket.getaddrinfo(host, 443)[0][4][0]
+    if live_ip != zone_ip:
+        print(f"ORIGIN LEAK: {host} zone={zone_ip} live={live_ip}")
+        # Test origin directly
+        for scheme in ["http", "https"]:
+            try:
+                r = httpx.get(f"{scheme}://{zone_ip}/", headers={"Host": host}, verify=False, timeout=5)
+                print(f"  {scheme}://{zone_ip} | {r.status_code} | {len(r.content)} bytes")
+            except Exception as e:
+                print(f"  {scheme}://{zone_ip} | {str(e)[:40]}")
+```
+
+**Port 8080 on CF-proxied hosts (NOT a bypass):**
+CF-proxied hosts have port 8080 open. It's Cloudflare's HTTP listener that either:
+- Returns 301 → https://host/ (redirect to HTTPS), or
+- Returns the same CF 403 "Attention Required" page
+Do NOT report as an open port finding or bypass vector. It's standard CF infrastructure.
+
+**Interpretation guide:**
+- All responses identical size/status = geo-block or IP allowlist (hard stop)
+- Specific paths return different size (e.g., 4544 vs 5463) = CF generating different error pages but still blocking (not a bypass)
+- Null byte (`/%00`) returning 400 = CF's own parser rejecting, not origin (not useful)
+- Origin IP timeout = firewall drops all non-CF traffic (not exploitable)
+- Origin IP 403 with no server header + `alt-svc: h3` = GCP Load Balancer with IP allowlist
