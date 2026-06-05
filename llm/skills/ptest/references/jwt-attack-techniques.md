@@ -524,3 +524,52 @@ curl -sk -X POST "$KEYCLOAK/protocol/openid-connect/token/introspect" \
 5. 6.8.4 (jwk injection — common misconfiguration)
 6. 6.8.6 (kid traversal — if backend is Linux)
 7. Rest as time permits
+
+---
+
+## Additional Vectors (from gabut-explorer offensive-jwt)
+
+### JWT Confusion Attacks
+
+| Confusion Type | Technique |
+|----------------|-----------|
+| SAML-JWT | Send JWT where SAML expected (weaker validation path) |
+| API Key-JWT | Send JWT in `X-API-Key` header, or API key as Bearer |
+| Session-JWT Hybrid | Expired JWT + valid session cookie → test if claims bleed |
+| OAuth Token | Send ID token (JWT) to resource server expecting opaque token |
+
+### JWKS Cache Poisoning
+
+Force caches to accept attacker keys:
+- `kid` collisions with legitimate keys
+- Response header manipulation on JWKS endpoint
+- Race condition between key rotation and cache refresh
+
+### Timing Attack on HMAC
+
+Non-constant-time comparison leaks secret byte-by-byte:
+```python
+import requests, time
+for byte in range(256):
+    sig = bytes([byte]) + b'\x00' * 31
+    start = time.perf_counter()
+    requests.get(url, headers={'Authorization': f'Bearer h.p.{sig.hex()}'})
+    elapsed = time.perf_counter() - start
+    # Longer = correct byte
+```
+
+### Mobile JWT Storage Locations
+
+| Platform | Location | Risk |
+|----------|----------|------|
+| Android SharedPrefs | `/data/data/<pkg>/shared_prefs/` | World-readable if misconfigured |
+| Android Keystore | Hardware-backed | Safe unless rooted |
+| iOS Keychain | `kSecAttrAccessibleAlways` = insecure | Check accessibility level |
+| React Native AsyncStorage | SQLite (Android) / plist (iOS) | Plaintext, no encryption |
+
+### `crit` Header Abuse
+
+```json
+{"alg":"RS256","crit":["exp"],"exp":null}
+```
+If server ignores unknown critical params, expired/malformed claims pass validation.

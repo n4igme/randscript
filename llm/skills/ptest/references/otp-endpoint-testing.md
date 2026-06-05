@@ -123,6 +123,132 @@ Significant timing difference (>50ms consistently) = timing-based enumeration.
 - `send_otp` returns "success" for all inputs including invalid emails (no enumeration — good)
 - Empty email reveals: `"Phone number can't be blank"` (parameter discovery)
 
+## 8. Missing Authentication Proof via Error-Code Differential
+
+When an OTP endpoint processes requests without a session, prove it by comparing against a sibling endpoint that correctly enforces auth. The differential response is the evidence.
+
+**Pattern:**
+```bash
+# Endpoint A (vulnerable) — skips auth, goes straight to code validation
+curl -sk -X POST "https://target.com/passport/email/bind/" \
+  -d "email=test@test.com&code=123456"
+# Response: {"data":{"error_code":1703,"description":"Verification code is expired or incorrect"},"message":"error"}
+# ↑ error_code 1703 = server validated the code (auth was skipped)
+
+# Endpoint B (secure) — enforces session before processing
+curl -sk -X POST "https://target.com/passport/email/verify/" \
+  -d "email=test@test.com&code=123456"
+# Response: {"data":{"error_code":1,"description":"Session expired. Log in to continue."},"message":"error"}
+# ↑ error_code 1 = server rejected at auth gate (correct behavior)
+```
+
+**Why this matters:**
+- Triagers often dismiss "no rate limit" alone as low-impact
+- The error-code differential PROVES the endpoint skips authentication — it's not just "responding to requests," it's actively validating codes without a session
+- Combined with no rate limit → brute-force feasibility → account takeover chain
+
+**Validation steps:**
+1. Send request with no cookies/session → note error code
+2. Send to equivalent "secure" sibling endpoint → note different error code
+3. Map error codes: auth-gate errors (1, "session expired") vs processing errors (1703, "code incorrect")
+4. If the vulnerable endpoint returns a processing error (not auth error), auth is missing
+
+**Important caveat (TikTok 2026-05):**
+- Both correct AND incorrect codes may return the same error (1703) when no session exists
+- This does NOT disprove the bug — it means the endpoint validates codes but can't complete the bind without a target account context
+- The vulnerability is the missing auth gate itself (proven by error-code differential with sibling endpoint)
+- A valid session + brute-force would succeed because the code validation logic is reachable
+
+**Reporting tip:** Frame the finding as "Missing Authentication for Critical Function" (CWE-306), not just "no rate limit." The auth bypass is the root cause; no rate limit is the enabler that makes exploitation feasible.
+
+**Severity:** High (CVSS 8.1 — AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N) when combined with no rate limit on a 6-digit code (brute-forceable in hours).
+
+### Proving Exploitability When Triagers Dispute (Success-Signal PoC)
+
+Triagers may argue: "even with brute-force, you can't tell correct from incorrect because the response is always the same error code." Counter this by testing with an **authenticated session from an account that can actually complete the bind**:
+
+**Setup:**
+1. Create a fresh account WITHOUT email bound (phone-only signup, or OAuth signup)
+2. From that authenticated session, trigger `send_code` to a controlled email
+3. Test `/email/bind/` with wrong codes → note response (should be processing error like 1703)
+4. Test `/email/bind/` with correct code → note response (should be success or different error)
+5. The differential proves brute-force would succeed
+
+**Why this works:**
+- Unauthenticated requests always return the same error because there's no account context to bind TO
+- Authenticated requests from an account without email CAN complete the bind → correct code produces a different response
+- The attacker scenario: attacker has their own account (no email), triggers code to victim's email, brute-forces from their session
+
+**Rate limit comparison (critical evidence):**
+```python
+# Vulnerable endpoint: processes all attempts
+for i in range(20):
+    r = requests.post(f"{TARGET}/passport/email/bind/",
+                      cookies=session_cookies,
+                      data={"email": "victim@email.com", "code": f"{i:06d}"})
+    # All return 1703 (code validation) — no blocking
+
+# Secure sibling: blocks after 1-3 attempts
+for i in range(5):
+    r = requests.post(f"{TARGET}/passport/email/verify/",
+                      cookies=session_cookies,
+                      data={"email": "victim@email.com", "code": f"{i:06d}"})
+    # Returns error_code=7 "Maximum attempts reached" — rate limited
+```
+
+**If you can't create a fresh account** (CAPTCHA, phone verification barriers):
+- Document the rate limit differential as primary evidence
+- Show that `/bind/` processes 20+ attempts while `/verify/` blocks after 1-3
+- Argue: "the endpoint that correctly enforces auth ALSO has rate limiting; the one missing auth ALSO lacks rate limiting — this is a systemic security gap, not intentional design"
+- Include the error-code differential (1703 vs error_code=1) as proof of missing auth gate
+
+**Real-world proof (TikTok, 2026-05-29):**
+The oracle was confirmed by testing with an authenticated session on an account that already had email bound:
+- Correct code (938450) + auth session → `error_code=7` (code accepted, secondary constraint "already bound")
+- Wrong code (111111) + auth session → `error_code=1703` (generic "incorrect")
+- Same codes WITHOUT auth → both return `error_code=1703` (no oracle unauthenticated)
+
+This proves: the server validates the code FIRST, then checks secondary constraints. An attacker with an account that has NO email bound would get `success` instead of `error_code=7` on correct code. The oracle exists only in authenticated context — test BOTH contexts before concluding "no oracle."
+
+**Lesson:** When triagers say "you can't distinguish correct from incorrect," test from an authenticated session. The unauthenticated context may mask the oracle that exists in the real attack scenario (attacker uses their own session).
+
+## Instagram Private API Login (2FA Testing Setup)
+
+When testing Instagram's `/api/v1/accounts/two_factor_login/` for rate limit bypass, you need a `two_factor_identifier` from a 2FA-enabled account. Login format:
+
+```python
+import requests, time, hashlib, uuid
+
+device_id = 'android-' + hashlib.md5(b'username').hexdigest()[:16]
+timestamp = str(int(time.time()))
+
+headers = {
+    'User-Agent': 'Instagram 275.0.0.27.98 Android (26/8.0.0; 480dpi; 1080x1920; Xiaomi; MI 6; sagit; qcom; en_US; 458229258)',
+    'X-IG-App-ID': '567067343352427',
+}
+
+data = {
+    'username': 'target_username',
+    'enc_password': f'#PWD_INSTAGRAM:0:{timestamp}:actual_password',
+    'device_id': device_id,
+    'phone_id': str(uuid.uuid4()),
+    'guid': str(uuid.uuid4()),
+    'login_attempt_count': '0',
+    '_csrftoken': 'missing',
+}
+
+r = requests.post('https://i.instagram.com/api/v1/accounts/login/',
+                  headers=headers, data=data, verify=False)
+# If 2FA enabled: response contains "two_factor_identifier" + "two_factor_info"
+# Use that identifier to test /api/v1/accounts/two_factor_login/ rate limits
+```
+
+**Pitfalls:**
+- Facebook-linked accounts may have password login disabled (returns `bad_password` even with correct creds + suggests "Use Facebook")
+- `enc_password` format: `#PWD_INSTAGRAM:0:{unix_timestamp}:{plaintext_password}` (version 0 = plaintext, higher versions use encrypted)
+- Account registration via API requires email verification + CAPTCHA — can't automate easily
+- Need a real account with 2FA enabled; can't bypass the setup step programmatically
+
 ## Key Insight
 
 OTP endpoints are often overlooked because testers assume they need an account. In reality:

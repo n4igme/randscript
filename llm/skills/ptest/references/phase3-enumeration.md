@@ -13,7 +13,83 @@ exec(read_file("~/.hermes/skills/security/ptest/scripts/phase3_enumerate.py")["c
 
 ## When to Use
 - After active recon is complete (Gateway 2 PASSED).
-- When you need to discover application-layer content: directories, files, API endpoints, parameters, and hidden functionality.
+- When you need to enumerate application-layer details: directories, APIs, parameters.
+
+## ALL-Hosts Coverage Rule (WinTicket, June 2026)
+
+**Phase 3 must cover EVERY live subdomain, not just the primary app/API.**
+
+Common mistake: fuzzing only www + api and calling Phase 3 done, while 10+ other live hosts (GCS buckets, Firebase hosting, SGTM, SparkPost, tracking services) go untested.
+
+**Per-host-type enumeration:**
+| Host Type | Techniques |
+|-----------|-----------|
+| GCS/Cloud Storage | Bucket listing, known object paths, /.env, /config.json, sensitive file probe |
+| Firebase Hosting | /__/firebase/init.json, /__/auth/handler, /__/auth/action, /__/auth/iframe |
+| Server-side GTM | /healthy, /healthz, /gtm.js, /gtag/js, /g/collect, /_ah/health |
+| SparkPost/Email | /q/, /f/, /track, /open, /click, /c/, /o/ |
+| OpenResty/nginx | /health, /status, /click, /api, common paths |
+| API (Istio/Envoy) | JS-extracted routes, ffuf with domain-specific wordlist |
+
+**Exit gate addition:** Before requesting Phase 3 sign-off, verify every row in domains-live.md has a corresponding enumeration entry or explicit N/A notation.
+
+## Fast-Triage Fingerprint (Large Scope — 15+ live hosts)
+
+Before deep enumeration, quickly categorize ALL live hosts to avoid wasting time on dead-end targets:
+
+```bash
+# Step 1: Quick fingerprint (status + size + redirect + server)
+for host in $(cat live-hosts.txt); do
+  curl -sk -o /dev/null -w "${host}: %{http_code}|%{size_download}|%{redirect_url}\n" "https://${host}/" -m 10
+done
+
+# Step 2: POST differentiation (CDN/OSS vs real API)
+# CDN/OSS returns XML MethodNotAllowed; real APIs return JSON errors
+for host in $(cat live-hosts.txt); do
+  resp=$(curl -sk -X POST -H 'Content-Type: application/json' -d '{}' "https://${host}/" -m 8 2>/dev/null | head -c 100)
+  echo "${host}: ${resp}"
+done
+```
+
+**Category → Action:**
+
+| Fingerprint | Category | Action |
+|-------------|----------|--------|
+| 200 + fixed size for ALL paths | SPA catch-all | Extract inline config (tern-site-config, __NEXT_DATA__), find backend URL, skip path fuzzing |
+| POST → XML `<Error><Code>MethodNotAllowed</Code>` + `webapp-origin.marmot-cloud.com` | CDN/OSS bucket | Dead end — static hosting only |
+| 204 + size 0 on all paths + `server: ESA` | Tracking beacon | Dead end |
+| 200 + body = "success" (7 bytes) + all paths same | Health/proxy stub | Dead end |
+| 302 → /platform or /index.html + body = "index page" | Empty OSS app | Dead end |
+| 302 → /error or /index.html for ALL unknown paths (nginx/Spanner) | API catch-all (server-side routing) | ffuf will produce mass false positives — use `-fc 302` or verify manually. Real endpoints return JSON (200/400/401/403), not 302. |
+| JS has `sourceMappingURL` but .map returns 404 | Source maps stripped at deploy | Not exploitable — note and move on, don't waste time trying variants |
+| JSON error response (RefererCheckFailed, Invalid request, resultCode) | Real API backend | Deep enumerate — high priority |
+| 403 + JSON body | API with auth gate | Try Referer/header bypass, enumerate sub-paths |
+| 405 + Tengine | WAF-fronted API | Test methods, check for path-specific rules |
+
+**Multi-host same-backend detection:** If two hosts return identical response patterns (same error format, same field names), they likely share a backend. Confirm by checking one endpoint on both. Document but don't duplicate enumeration effort — just verify both are affected when reporting.
+
+**Antom example (June 2026):** 24 live hosts → 5 real API backends, 4 SPA frontends (all proxying to same 2 backends), 15 dead ends (CDN, beacon, stubs). Deep enum only needed on 5 targets, saving ~70% effort.
+
+## CRITICAL: Full Subdomain Coverage Check (MANDATORY at phase entry)
+
+Before starting any technique, verify your target list covers ALL subdomains:
+
+```bash
+# Diff master list vs live-hosts from Phase 2
+sort -u ./ptest-output/recon-passive/subdomains-master.txt > /tmp/master.txt
+sort -u ./ptest-output/recon-active/live-hosts.txt > /tmp/live.txt
+comm -23 /tmp/master.txt /tmp/live.txt > /tmp/missed.txt
+echo "Missed subdomains: $(wc -l < /tmp/missed.txt)"
+
+# Batch-probe all missed (filter out _cert-validation, mail tracking)
+grep -v "^_\|^em[0-9]\|^url[0-9]\|^img\.\|^r\." /tmp/missed.txt | \
+  xargs -P 10 -I{} curl -sk --max-time 5 -o /dev/null \
+  -w '%{http_code} %{size_download} {}\n' 'https://{}/' | sort
+```
+
+**Pitfall (Bank Jago, May 2026):** Phase 2 live-hosts.txt had only 67 entries out of 343 in master list. 184 subdomains were never probed. User caught this gap at Phase 3 sign-off. Among the missed hosts: workstations.jago.com (Guacamole), iam.jago.com (IAP), multiple GCS buckets, and CF Access-protected apps. Always diff and batch-probe before declaring Phase 3 complete.
+
+**Pitfall (LINE WORKS, June 2026):** Master list had 36 subdomains but only 8 were HTTP-probed in Phase 2. The remaining 28 were marked "dead DNS" in Phase 1 notes and never re-verified at Phase 3 entry. Two of them (alpha.line-works.com, stage.line-works.com) actually resolved to private IPs — confirming they exist but are unreachable. The handoff diff MUST run regardless of Phase 1 notes, because DNS can change between phases.
 
 ## Scope
 This phase covers **application-layer discovery**:
@@ -53,7 +129,8 @@ feroxbuster -u https://target.com -w $SECLISTS_PATH/Discovery/Web-Content/raft-m
 - If gobuster/feroxbuster unavailable, document gap and use alternative (dirsearch, dirb)
 
 **Pitfalls:**
-- SPA catch-all: Many modern apps (Flutter, React, Angular) return 200 for ALL paths. Use `--exclude-length <spa-size>` to filter. First check a random UUID path to determine the catch-all response size.
+- **SPA catch-all: Many modern apps (Flutter, React, Angular) return 200 for ALL paths. Use `--exclude-length <spa-size>` to filter. First check a random UUID path to determine the catch-all response size.
+- **CloudFront rate limiting (429):** Targets behind CloudFront often rate-limit at ~30 req/s. ffuf/gobuster with default threads will trigger 429 within seconds. Solutions: (1) use `-rate 5 -t 2` in ffuf, (2) fall back to Python httpx with `time.sleep(0.3)` between requests, (3) for targeted checks, use a manual path list (20-30 high-value paths) instead of full wordlists. When 429 hits, wait 5-10 seconds before retrying — the limit resets quickly. Note: nginx 429 (body contains `<center>nginx</center>`) = origin rate limit; CloudFront 429 = CDN-level throttle.
 - gobuster `-s` and `-b` conflict: Don't use `-s` (status codes) without clearing `-b` (blacklist) first. Use `-b ""` to clear the default 404 blacklist when specifying `-s`.
 - Rate-limited targets: gobuster/feroxbuster may timeout. Fall back to `xargs -P` with curl for parallel path discovery on slow targets.
 
@@ -100,6 +177,63 @@ Run targeted enumeration based on identified CMS/framework.
 ```bash
 # WordPress
 wpscan --url https://target.com --enumerate ap,at,u -o ./ptest-output/enumeration/wpscan.txt
+```
+
+#### WordPress Hardened Sites (all REST locked behind auth)
+
+When WordPress returns `{"code":"rest_not_logged_in"}` on ALL wp-json endpoints, use these alternative enumeration techniques:
+
+```python
+import httpx, re
+
+client = httpx.Client(verify=False, timeout=10)
+
+# 1. Plugin discovery via readme.txt (always accessible even on hardened sites)
+plugins = ["elementor", "elementor-pro", "wp-fastest-cache", "autoptimize",
+           "redirection", "contact-form-7", "wordfence", "wp-mail-smtp",
+           "all-in-one-wp-migration", "updraftplus"]
+for plugin in plugins:
+    r = client.get(f"https://target.com/wp-content/plugins/{plugin}/readme.txt")
+    if r.status_code == 200:
+        ver = re.search(r'Stable tag:\s*(.+)', r.text)
+        print(f"[+] {plugin}: {ver.group(1).strip() if ver else 'trunk'}")
+
+# 2. Version from /feed/ generator tag
+r = client.get("https://target.com/feed/")
+gen = re.search(r'<generator>.*\?v=([0-9.]+)</generator>', r.text)
+print(f"WP version: {gen.group(1) if gen else 'hidden'}")
+
+# 3. User enumeration via ?author=N (may leak slugs on subsites)
+for i in range(1, 20):
+    r = client.get(f"https://target.com/?author={i}", follow_redirects=False)
+    if r.status_code == 301:
+        loc = r.headers.get('location', '')
+        slug = re.search(r'/author/([^/]+)/', loc)
+        if slug:
+            print(f"User {i}: {slug.group(1)}")
+
+# 4. Elementor nonce from public page source
+r = client.get("https://target.com/")
+nonces = re.findall(r'"nonce":"([^"]+)"', r.text)
+ajax_url = re.search(r'"ajaxurl":"([^"]+)"', r.text)
+# Elementor nonce enables: elementor_pro_forms_send_form (test form submission)
+
+# 5. Sitemap from Yoast SEO (reveals content structure)
+r = client.get("https://target.com/sitemap_index.xml")
+sitemaps = re.findall(r'<loc>([^<]+)</loc>', r.text)
+
+# 6. admin-ajax nopriv actions (work without auth)
+for action in ["heartbeat", "elementor_pro_forms_send_form", "load_more"]:
+    r = client.post("https://target.com/wp-admin/admin-ajax.php",
+                    data={"action": action})
+    if r.status_code == 200 and len(r.content) > 1:
+        print(f"[+] {action}: {r.text[:80]}")
+
+# 7. Apple App Site Association + Android Asset Links
+r1 = client.get("https://target.com/apple-app-site-association")  # root, NOT .well-known
+r2 = client.get("https://target.com/.well-known/assetlinks.json")
+# Extract deep link paths from AASA → probe server-side
+```
 
 # Pimcore
 # Check: /admin/login, /bundles/, /js/routing, /_profiler, /_wdt
@@ -115,7 +249,47 @@ joomscan -u https://target.com
 ### 6. JavaScript Analysis
 Extract endpoints, secrets, and functionality from client-side code.
 
+**CRITICAL: Analyze ALL JS files, not just app chunks.** Third-party SDKs (platform-websdk, auth0-spa-js, okta-auth-js, transmit-security) often reveal entire hidden auth layers with different endpoints, error formats, and session handling. These SDKs are typically 100-300KB and contain hardcoded path definitions the main app never references directly.
+
+**Checklist (MANDATORY):**
+1. Download and search ALL `<script src=...>` files (vendor, SDK, GTM, polyfills)
+2. Search for path patterns: `"/(api|v1|v2|cis|auth|fido|webauthn|session|identity|verify|oauth)[^"]*"`
+3. Test discovered paths on ALL in-scope hosts (not just the obvious one)
+4. If a path 404s, try with prefix: `/cis/path`, `/auth/path`, `/identity/path`
+5. Check for different error format (JSON structure change = different backend)
+
+**Lesson (bitbank.cc, June 2026):** Main app chunks revealed standard `/v1/user/*` paths. But `ts-platform-websdk.js` (241KB vendor SDK) revealed `/v1/auth-session/*`, `/v1/webauthn/*`, `/fido/login/authenticate/*` — an entire Transmit Security CIS layer invisible from the main API. These endpoints used a completely different error format and accepted unauthenticated requests.
+
 **Flutter Web Apps:** If target serves `main.dart.js` + `flutter.js`, see `references/flutter-web-app-analysis.md` for specialized extraction (JWT decode, auth headers, partner IDs, internal domains from 4-10MB Dart-compiled JS).
+
+**Transmit Security CIS:** If `ts-platform-websdk.js` found, see `references/transmit-security-cis-testing.md`.
+
+**Identity SDKs:** If target loads a third-party identity SDK (`ts-platform-websdk.js`, `auth0-spa-js`, `@okta/okta-auth-js`, etc.), see `references/identity-sdk-endpoint-extraction.md` for extracting hidden auth endpoints, determining their host/prefix, and the CloudFront behavior policy gotcha. These SDKs often reveal undocumented auth paths (`/cis/v1/auth-session/*`, `/fido/*`, `/login`, `/signup`) that standard API fuzzing misses entirely.
+
+**SPA chunk analysis (Angular/React/Vue):** Download ALL lazy-loaded chunks (not just main.js) and grep across them. The auth service, API URL map, and request body constructors are typically in a separate chunk from the main bundle. Search for:
+- Route/URL enums: `t.Login="/login",t.Signup="/signup"` pattern
+- Request body construction: `post(this.apiUrl+ut.Login,{body:c})` pattern  
+- Field names near auth calls: `{mail:i,password:n,"g-recaptcha-response":o}`
+
+**Angular SPAs:** Check ALL chunks (chunk-*.js), not just main.js. Also check vendor SDKs loaded separately (e.g., `ts-platform-websdk.js` for Transmit Security, `platform-websdk-*`). These third-party identity SDKs often reveal:
+- Undocumented API paths (e.g., `/cis/v1/auth-session/*`, `/fido/login/authenticate/*`)
+- Different API base paths than the documented ones (root-level vs /v1/ prefix)
+- Auth flow field names (e.g., `mail` vs `email`, `g-recaptcha-response` with hyphens vs underscores)
+- Error code mappings (search for `code:NNNNN` patterns)
+
+**CRITICAL lesson (bitbank.cc, June 2026):** Main API docs showed only HMAC-authenticated `/v1/user/*` endpoints. The platform-websdk.js (241KB) revealed an entire undocumented auth layer: `/login`, `/signup`, `/reset_password`, `/fido/*`, `/register_mail`, `/signedup` — all at the API root without /v1 prefix, using different auth (reCAPTCHA instead of HMAC). Without analyzing this SDK, the whole unauthenticated attack surface would have been missed.
+
+**Angular/React SPAs with identity SDKs:** If target embeds third-party auth SDKs (Transmit Security `ts-platform-websdk.js`, Auth0, Okta), see `references/spa-js-endpoint-extraction.md` for multi-layer extraction. These SDKs reveal entire hidden API surfaces (auth-session, webauthn, verification endpoints) that standard fuzzing will NEVER find. **Always analyze ALL script src references, not just the app's own chunks.**
+
+**Key lesson (bitbank.cc, June 2026):** ffuf found 0 undocumented endpoints. JS analysis found 90+ endpoints, root-level auth paths, and an entire CIS service prefix. JS bundles ARE the API documentation for hardened targets.
+
+**Third-Party Identity SDKs (CRITICAL — often missed):** SPAs frequently embed identity platform SDKs (Transmit Security, Auth0, Okta, Firebase Auth) as separate JS bundles. These SDKs contain hardcoded API paths that may differ from the main API's path structure. Always:
+1. Identify ALL `<script src=...>` tags — not just `main.js` chunks
+2. Download and analyze vendor/third-party scripts separately (e.g., `ts-platform-websdk.js`, `auth0-spa-js`, `firebase-auth.js`)
+3. Search for API paths — they often live on a different prefix (e.g., `/cis/v1/` instead of `/v1/`)
+4. Test discovered paths on ALL in-scope hosts — the SDK may call a proxy path on the app domain (e.g., `app.target.com/cis/v1/auth-session/status`) rather than a separate identity subdomain
+
+**Bitbank lesson (2026-06):** `ts-platform-websdk.js` (Transmit Security, 241KB) revealed `/cis/v1/auth-session/*`, `/v1/webauthn/*`, `/fido/login/authenticate/*` endpoints. These existed at `api.bitbank.cc/` root (no /v1 prefix) and were NOT documented in the public API docs. Also revealed root-level `/login`, `/signup`, `/register_mail`, `/reset_password` endpoints returning undocumented error codes (30004, 30005).
 ```bash
 # linkfinder — extract endpoints from JS files
 linkfinder -i https://target.com -o ./ptest-output/enumeration/linkfinder.txt
@@ -131,8 +305,58 @@ curl -s https://target.com/static/js/main.*.js.map | head -100
 curl -s https://target.com/static/js/main.*.js | grep -ioE '(api[_-]?key|token|secret|password|auth)["\s]*[:=]["\s]*[^\s",}]+' | sort -u
 ```
 
+### 6b. Referer-Based Access Control Bypass (Enumeration Technique)
+
+Many APIs enforce Referer checks instead of (or in addition to) token auth. When endpoints return "RefererCheckFailed" or similar, systematically try valid Referers:
+
+```bash
+# Common Referer values to try (derive from tern-site-config, dns-prefetch links, or known frontend URLs)
+REFERERS=(
+  "https://dashboard.target.com/"         # Main frontend
+  "https://global-testpre.alipay.com/"    # Pre-production (Ant Group pattern)
+  "https://render-intl.alipay.com/"       # CDN origin
+)
+
+for ref in "${REFERERS[@]}"; do
+  resp=$(curl -sk -H "Referer: ${ref}" -X POST -H 'Content-Type: application/json' \
+    -d '{}' "https://api.target.com/endpoint.json" -m 8 2>/dev/null)
+  if ! echo "$resp" | grep -q "RefererCheckFailed"; then
+    echo "[+] Bypass with: ${ref}"
+    echo "    Response: ${resp:0:100}"
+    break
+  fi
+done
+```
+
+**Key insight:** Different Referers may work for different endpoint groups. Production frontends bypass prod endpoints; pre-prod Referers bypass PRE endpoints. Some endpoints (like password/key material) may need NO Referer at all — always test without Referer first.
+
+**Ant Group / Antom specifics:** See `references/alibaba-cloud-infrastructure.md` §"Referer-Based Access Control Bypass" for known working values.
+
 ### 7. Authentication Endpoint Mapping
 Document all authentication mechanisms and entry points.
+
+**Error code sequence mapping (MANDATORY for APIs with structured errors):**
+When an API returns structured error codes (e.g., `{"success":0,"data":{"code":30004}}`), systematically determine the validation sequence by sending requests with progressively more fields:
+```python
+# Step 1: Empty body → identifies "missing required field" code
+# Step 2: Add one field at a time → identifies which field triggers next error
+# Step 3: Add all required fields with invalid values → identifies validation order
+# Example sequence discovered (bitbank.cc):
+#   {} → 30004 (missing mail+password)
+#   {mail} → 30010 (missing password) 
+#   {mail, password} → 40018 (missing/empty recaptcha)
+#   {mail, password, g-recaptcha-response:"fake"} → 20022 (invalid recaptcha)
+# This reveals: field presence check → empty check → reCAPTCHA → credential validation
+```
+
+**Finding the exact field names from JS (critical for non-standard APIs):**
+Don't guess field names. Search the JS for the POST body construction:
+```bash
+# Find the service method that calls the auth endpoint
+grep -C5 'post.*Login\|post.*login\|"/login"' /tmp/chunk-*.js | grep -oE '"[a-z_-]+":' | sort -u
+# Look for patterns like: post(this.apiUrl+ut.Login,{body:c})
+# Then trace back what 'c' contains
+```
 ```bash
 # Identify login pages
 for path in /login /signin /auth /admin/login /api/auth /oauth /sso; do
@@ -345,7 +569,51 @@ curl -s "https://registry.target.com/v2/_catalog" -w "\n%{http_code}"
 curl -sI "https://registry.target.com/v2/" | grep -i "www-authenticate"
 ```
 
+## Pitfalls
+
+### Coverage Discipline (CRITICAL)
+- **Enumerate ALL live hosts, not just "interesting" ones.** Phase 2 produces a full live-hosts list. Phase 3 MUST touch every one of them — even if just a quick probe to confirm they're blocked. The user corrected this: testing 13/54 hosts is not "Phase 3 complete."
+- **NEVER assume a host is "dead" or "abandoned" and skip enumeration.** A default page (Apache2, nginx welcome, IIS default) does NOT mean there's nothing behind it. Run gobuster/feroxbuster on EVERY live host regardless of what the index page shows. Hidden apps, forgotten admin panels, and exposed files often sit behind default pages. User correction (BFI, May 2026): "don't be assume dude" — skipped gobuster on e-pmo2.bfi.co.id because it showed Apache2 default page. Manual spot-checks (`.git`, `.env`) are NOT a substitute for proper directory brute-forcing.
+- **Workflow:** (1) Get unique live host count from Phase 2. (2) Categorize: accessible vs blocked/unreachable. (3) Run techniques on ALL accessible hosts. (4) Document blocked hosts with reason (CF 403, IAP redirect, timeout). (5) Only then claim exit criteria met.
+- **Same path on all environments:** If `/partner-webview/` works on `api.jago.com`, also check `dev-api`, `stg-api`, `pt-api`. Dev/staging may have debug features, source maps, or weaker auth.
+
+### Catch-All Response Detection
+- **GCP health endpoints** (e.g., `dev-data-jit.jago.com`) may return `{"ok":true}` for ALL paths — test a random UUID path first to detect catch-all behavior before marking actuator endpoints as "found."
+- **SPA catch-all:** Flutter/React/Angular apps return 200 with fixed-size HTML for all paths. Always check a random path first, note the response size, then use `--exclude-length` in gobuster or `-fs` in ffuf.
+- **Source map false positive:** When `.map` files return the same size as the SPA catch-all, they are NOT real source maps — they are the catch-all HTML. Always verify content-type and first bytes before concluding source maps are exposed. (bitbank.cc lesson: all 10 chunk.js.map files returned 496038 bytes = exact SPA size, content-type text/html.)
+- **Multiple catch-all sizes:** A single target may have DIFFERENT catch-all sizes for different route groups. bitbank.cc returned 40445 for root paths, 9492 for sub-404 paths, and 113446 for /announcement/* paths (client-rendered routes with more content). Test multiple random paths at different depths to map all catch-all patterns before filtering.
+- **CloudFront POST-vs-GET differential:** When CloudFront serves a cacheable-only distribution (S3 origin), GET returns the SPA catch-all for ALL paths but POST returns a CloudFront 403 ("distribution supports only cachable requests") with ~1053 bytes. Use this differential to detect real backend paths: if POST on `/prefix/path` returns 403/1053 while GET returns the SPA catch-all, there IS a backend route configured at that prefix — CloudFront is just blocking non-cacheable methods. The backend likely handles these via a different CloudFront behavior (e.g., origin pointing to an API server). Test the path on other in-scope hosts where the behavior might allow POST.
+
+### Cloudflare "CNAME Cross-User Banned"
+- Response: 403 with ~8KB body, title "CNAME Cross-User Banned | Cloudflare"
+- This means the subdomain's DNS points to Cloudflare IPs but no CF zone claims it — **subdomain takeover vector** (different from dangling CNAME to external service like Aiven/Heroku).
+- Verify: `dig +short <subdomain>` returns CF IPs (104.18.x.x / 172.64.x.x) but the zone isn't configured.
+
+### Google IAP-Protected Hosts
+- Hosts behind GCP Identity-Aware Proxy redirect to `accounts.google.com/o/oauth2/v2/auth` with a `client_id` parameter.
+- The client_id itself is not sensitive (it's a public OAuth client) but document it for completeness.
+- **IAP bypass attempts:** Try `/healthz`, `/_/healthz`, `/readiness`, `/api/health` — these are sometimes excluded from IAP rules. Usually they still redirect, but worth checking.
+
 ## Exit Criteria
+- [ ] **ALL live hosts from Phase 2** have been probed (not just "interesting" ones).
+## Phase 2→3 Handoff Verification (MANDATORY)
+
+Before starting Phase 3 techniques, verify the target list is complete:
+
+```bash
+# Compare master subdomain list vs live-hosts.txt from Phase 2
+sort -u subdomains-master.txt > /tmp/master.txt
+sort -u live-hosts.txt > /tmp/live.txt
+comm -23 /tmp/master.txt /tmp/live.txt > /tmp/missed.txt
+echo "Missed from Phase 2: $(wc -l < /tmp/missed.txt)"
+```
+
+**If missed count > 0:** Batch-probe all missed subdomains before proceeding. Phase 2 may have only probed a subset (e.g., from DNS brute-force results but not the full passive enumeration list). Use `xargs -P 10 curl` for fast batch probing.
+
+**Bank Jago lesson (2026-05-29):** Phase 2 live-hosts.txt had 67 entries but master list had 343 subdomains. 184 were never probed — including hosts with exposed APIs, GCP IAP services, and subdomain takeover targets. User caught this gap during Phase 3 review.
+
+## Exit Criteria
+- [ ] **Phase 2→3 handoff verified** — ALL subdomains from master list probed (not just live-hosts.txt).
 - [ ] All live web applications have directory/file enumeration completed.
 - [ ] API endpoints mapped with methods and parameters.
 - [ ] Authentication mechanisms identified per application.

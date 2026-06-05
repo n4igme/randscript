@@ -24,6 +24,15 @@
    # This produces a single APK with all DEX files, native libs, and resources combined.
    # Always analyze the merged APK — split analysis misses cross-module references.
 
+   # If APKEditor unavailable — zip overlay method:
+   cp base.apk merged.apk
+   for split in split_config.*.apk; do
+     unzip -o "$split" -d split_tmp && cd split_tmp && zip -r ../merged.apk . && cd .. && rm -rf split_tmp
+   done
+   # NOTE: zip overlay overwrites AndroidManifest.xml with the last split's manifest.
+   # For JADX analysis, open base.apk directly — it has all DEX + correct manifest.
+   # The merged APK is useful for full native lib + resource analysis.
+
    # Android — from APKMirror/APKPure (black-box)
    # Download manually or use apkeep
    pip install apkeep

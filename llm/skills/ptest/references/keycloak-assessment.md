@@ -237,6 +237,15 @@ done
 
 **Note:** `Access-Control-Allow-Origin: *` with `Access-Control-Allow-Credentials: true` is a browser-level contradiction (browsers ignore credentials with wildcard). But `ACAO: <reflected_origin>` with `ACAC: true` IS exploitable. The distinction matters for severity.
 
+**Token endpoint preflight exploitation:** When the token endpoint responds to OPTIONS with `Access-Control-Allow-Methods: POST, OPTIONS` + `Access-Control-Allow-Headers: ... Content-Type, Authorization` + reflected origin + credentials:true, an attacker's JavaScript can perform cross-origin POST to exchange authorization codes or refresh tokens. This elevates CORS from info-disclosure to full session theft. Verify with:
+```bash
+curl -sk -X OPTIONS -H "Origin: https://evil.com" \
+  -H "Access-Control-Request-Method: POST" \
+  -H "Access-Control-Request-Headers: Content-Type" \
+  "${KC}/realms/${REALM}/protocol/openid-connect/token" -D- | grep -i "access-control"
+# Look for: allow-methods: POST, allow-headers: Content-Type, allow-origin: evil.com, allow-credentials: true
+```
+
 **Root cause:** Often caused by Istio/Envoy CorsPolicy with `allowOrigins: [{regex: ".*"}]` or Keycloak realm-level Web Origins set to `*`. Fix requires restricting to specific trusted origins at both mesh and application level.
 
 ### 10. Hidden Realm Discovery via Prometheus Metrics (2 min)

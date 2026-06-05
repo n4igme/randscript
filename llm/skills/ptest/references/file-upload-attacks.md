@@ -340,6 +340,8 @@ exiftool uploaded_file.jpg | grep -i "file type"
 
 ## 8. Pitfalls
 
+- **WAF content inspection on file bodies**: Cloudflare (and some other WAFs) inspect the actual content of multipart file uploads, not just filenames/headers. If `<?`, `<script`, or other signatures appear anywhere in the file body, the request is blocked (403). This defeats polyglot techniques (GIF89a+PHP, EXIF injection) when the WAF is in play. Workarounds: (1) bypass WAF entirely via origin IP, (2) use encoding the WAF doesn't detect (base64 payload + LFI chain with php://filter to decode), (3) find a non-tag-based execution vector. Always test a clean upload first (no payload) to confirm the upload mechanism works before adding payloads — this isolates "form field errors" from "WAF blocking content."
+- **Server-side filename rewriting defeats extension attacks**: Many apps construct filenames server-side (e.g., `{project}_{user}_{timestamp}.{ext}` where ext is extracted from the original). Double extensions (`shell.php.png`) get stripped to just the last extension. Null bytes in filenames are blocked by modern PHP/WAF. If the server controls the final filename, extension-based attacks won't work — pivot to .htaccess/.user.ini or LFI chains instead.
 - **Testing only happy path**: Always test with no extension, multiple dots, unicode filenames (`shell.ᵽhp`), and zero-length files
 - **Ignoring storage location**: Uploaded files may land in a non-executable directory (S3, blob storage) — confirm the file is accessible and rendered/executed by the server
 - **Forgetting async processing**: Some apps process uploads via background jobs (ImageMagick, LibreOffice) — race conditions and delayed execution matter

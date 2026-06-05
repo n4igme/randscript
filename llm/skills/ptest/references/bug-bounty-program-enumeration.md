@@ -42,3 +42,14 @@ Prioritize programs with:
 - **Intigriti**: Login at login.intigriti.com, researcher programs at app.intigriti.com/researcher/programs
 - **Intigriti rules**: Some programs require @intigriti.me email, custom UA, X-Intigriti-Username header, rate limits
 - **Browser login**: Intigriti has aggressive bot detection (reCAPTCHA triggers on automated login)
+
+### IssueHunt (Japan-focused)
+- **URL pattern**: `https://issuehunt.io/programs/{uuid}` (programs use UUIDs, not slugs)
+- **Public programs list**: `https://issuehunt.io/programs` (SPA — requires browser rendering, curl gets empty shell)
+- **API**: No documented public API for program listing; the site is a React SPA that fetches data client-side
+- **Program page structure**: Overview tab has Introduction, Rewards (by severity), In Scope (targets + vuln categories), Guideline (rules in English/Japanese toggle)
+- **Scope format**: Lists specific domains + vulnerability categories with reward ranges per category
+- **Key programs**: bitbank (crypto exchange), other Japanese fintech companies
+- **Report format**: Submit via platform after sign-in
+- **Scraping**: `document.body.innerText.substring(start, end)` via browser_console to extract full page content (snapshot truncates)
+- **Discovery tip**: If you know the company name but not UUID, check their website footer/security page for the direct IssueHunt link, or find the program via the "Public Programs" navigation link on issuehunt.io

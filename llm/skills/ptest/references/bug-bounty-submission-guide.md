@@ -4,6 +4,43 @@
 
 Bug bounty submissions differ fundamentally from formal pentest reports. They're self-contained, platform-specific, and optimized for triage speed. This reference covers submission writing, disclosure policy, scope decisions, and multi-finding strategy.
 
+## Platform-Specific Notes
+
+- **IssueHunt**: Program URLs use UUID format: `https://issuehunt.io/programs/<uuid>` (not org/slug). Page is a JS SPA requiring browser rendering; curl gets empty HTML. Use browser_navigate + browser_console(`document.body.innerText.substring(N, M)`) to extract scope text in chunks.
+
+## Submission Budget Strategy (Limited Submissions)
+
+When a program limits remaining submissions (e.g., 2 left after rejections):
+
+1. **Combine related findings into attack chains** — merge info disclosure + exploitation into one narrative
+2. **Prioritize by chain strength** — submit the chain with highest combined severity first
+3. **Chain structure:** Step 1 reveals intelligence → Step 2 uses that intelligence for exploitation → Impact shows combined blast radius
+4. **Per-asset grouping** — combine findings on the same asset/subdomain into one chain report
+5. **Cross-reference within chain** — show how finding A enables/amplifies finding B (not just "two bugs on same host")
+
+**Example (GoPay, May 2026):**
+- Had 6 split reports, 2 rejected (source maps), 2 submissions remaining
+- Combined: ArgoCD config disclosure (Medium) + device code flow (High) = one High chain report
+- Combined: Debug mode (Medium) + CORS wildcard (Medium) + source map tokens = one High chain report
+- Each chain tells a complete attack story with escalating impact
+
+**Re-submitting rejected findings as chain steps:**
+- A finding rejected individually (e.g., "source map is informational") can be included as a STEP in a larger chain
+- The rejection was for the standalone severity, not for the technique itself
+- When embedded in a chain, the rejected finding becomes "Step 1: reconnaissance" that enables higher-impact exploitation
+- Frame it as: "source map → token extraction → verified write access" (chain) not "source map exposed" (standalone)
+- Include the interactive HTML PoC as an attachment showing the full chain in action
+- The PoC demonstrates that individual "informational" findings combine into real exploitation
+
+**Report structure for chains:**
+- Title mentions both vulnerabilities and the combined impact
+- Description explains the chain logic (A enables B)
+- Exploitation shows sequential steps (recon → weaponize → exploit)
+- PoC demonstrates the full chain in one script
+- Risk section has a "chain summary" table showing step-by-step escalation
+
+**Output delivery:** Write chain reports in sections across multiple messages to avoid truncation. Never dump the full report in one message.
+
 ---
 
 ## Submission Structure (Platform-Agnostic)
@@ -218,6 +255,174 @@ Always include CVSS vector string, but also explain in business terms:
 | "Debug mode is just information disclosure" | "Combined with CORS *, any website can extract this information cross-origin without user interaction. This is active exploitation, not passive disclosure." |
 | "We'll fix it, but severity is Low" | "The CVSS vector accounts for [specific factors]. Happy to discuss, but the write access confirmation elevates this beyond information disclosure." |
 | "Out of scope" | "The finding directly impacts in-scope assets [explain how]. Even if the specific host is borderline, the security implication for [in-scope asset] is clear." |
+| "Public API key" (excluded) | Reframe: "This isn't about the key being public — it's about the key granting unauthorized write access to production infrastructure. The vulnerability is broken access control on the endpoint, not the key exposure itself." |
+
+---
+
+## Program Exclusion Avoidance
+
+### Reframing Findings to Avoid Exclusion Triggers
+
+Programs exclude certain bug classes (e.g., "public API keys", "rate limiting", "user enumeration", "staging environments"). A finding that TOUCHES an excluded class can still be valid if the IMPACT goes beyond it.
+
+**Reframing strategy:**
+
+| Excluded Class | Your Finding | Reframe As |
+|---------------|-------------|-----------|
+| Public API keys | Token in JS grants write access | **Broken Access Control** — unauthorized write to production endpoint |
+| Information disclosure | Debug mode + CORS chain | **CORS Misconfiguration** — cross-origin data extraction at scale |
+| Rate limiting | No rate limit on OTP endpoint | **Authentication Bypass** — brute-force 2FA codes |
+| Staging environments | Staging ArgoCD exposed | **Production impact** — staging manages same K8s cluster as prod |
+| User enumeration | Login response differentiates users | **Account Takeover prerequisite** — enables targeted credential stuffing |
+
+**Key principle:** The bug type in the submission form determines which exclusion filter the triager applies. Choose the bug type that reflects the IMPACT, not the attack vector.
+
+**Example (GoPay, May 2026):**
+- ❌ Rejected as: "Information Disclosure" (source map exposed) — triager applied "public API keys" exclusion
+- ✅ Resubmitted as: "Broken Access Control" (unauthorized write to event pipeline) — same token, different framing
+- The vulnerability didn't change. The classification did.
+
+### Multi-Domain Chain Limitation
+
+YesWeHack (and most platforms) expect **one primary asset per report**. When your chain spans multiple domains:
+
+1. **Pick the domain where the IMPACT lands** as the primary asset (not where the recon starts)
+2. Other domains appear in exploitation steps as "how the attacker got there"
+3. The "Vulnerable part" field should be the endpoint with the highest-impact action
+
+**Cross-program chains (CRITICAL):**
+
+When a chain spans assets belonging to DIFFERENT bug bounty programs (even if same company), you CANNOT submit as one report. Each program has its own scope, exclusions, and submission limits.
+
+**Example (GoTo, May 2026):**
+- `cms-website.gopay.co.id` → GoTo Financial program
+- `gopay-web-raccoon.gojekapi.com` → Gojek program
+- These are separate programs on YesWeHack with separate scopes
+
+**Decision:** Split into separate reports per program. Each report must be self-contained within that program's scope. Don't reference assets from another program's scope — the triager only sees their own program.
+
+**Before writing a chain report, verify:**
+- [ ] All assets in the chain belong to the SAME program
+- [ ] The primary asset matches a scope entry in THAT program
+- [ ] No exploitation step requires testing an out-of-scope asset
+
+**Example:**
+- Chain: `gopay-web-page.gopayapi.com` (source map) → `gopay-web-raccoon.gojekapi.com` (write access) → `cms-website.gopay.co.id` (debug+CORS)
+- ❌ Wrong: submit against source map domain (that's just recon)
+- ✅ Right: submit against `gopay-web-raccoon.gojekapi.com` with "Broken Access Control" — that's where unauthorized write happens
+- The source map is mentioned in Step 1 of exploitation as "how the token was obtained"
+
+### Resubmission After Rejection
+
+When a finding is rejected and you have limited submissions remaining:
+
+1. **Don't resubmit the same finding with the same framing** — it will be auto-rejected as duplicate
+2. **Embed the rejected finding as a STEP in a larger chain** — the rejection was for standalone severity
+3. **Change the bug type** — if rejected as "Information Disclosure", resubmit the chain as "Broken Access Control"
+4. **Change the primary asset** — if the rejected asset triggers exclusions, lead with a different asset in the chain
+5. **Add new exploitation proof** — show that the "informational" finding enables real impact (write access, RCE, data modification)
+6. **Never reference the rejected report** — treat the new submission as completely independent
+
+### Replying to Rejection (Rebuttal Strategy)
+
+When a report is rejected with RTFS/"Read The Fine Scope" but you believe the finding is valid beyond the excluded class, reply directly on the existing report thread instead of burning a new submission:
+
+**Rebuttal structure:**
+1. **Acknowledge** — "Thank you for the review"
+2. **Distinguish** — explain precisely why your finding differs from the excluded class
+3. **Evidence table** — side-by-side comparison (excluded class vs your finding)
+4. **Proof** — include the specific curl/response showing the non-excluded impact
+5. **Attach PoC** — interactive HTML or script demonstrating the full chain
+6. **Request** — "I'd appreciate a re-evaluation as [correct bug type]"
+
+**Example rebuttal (GoPay, May 2026):**
+- Rejected as: "Disclosed or misconfigured public API keys (e.g. Google Maps, Firebase, analytics tools...)"
+- Rebuttal argument: "This is not a read-only analytics key. It grants **write access** to production."
+- Evidence: comparison table showing read-only analytics keys vs unauthorized write access
+- Proof: `curl -X POST` returning HTTP 200 with `sent_time` (confirmed write)
+- Result: forces triager to re-evaluate under "Broken Access Control" instead of "public API keys"
+
+**Key principles:**
+- Replying costs NO submission slots — always try rebuttal before burning a new submission
+- Keep it concise (under 500 words) — triagers won't read essays
+- Lead with the distinction, not the complaint
+- Include ONE copy-pasteable command that proves the non-excluded impact
+- Attach supporting PoC files (HTML, Python scripts) for visual proof
+- If both reports in a split pair got the same rejection, reply to both (same argument applies)
+
+### When NOT to reply:**
+- The finding genuinely falls under the exclusion (accept and move on)
+- The report was rejected for a different reason (duplicate, out of scope)
+- You've already replied once and been rejected again (don't spam)
+- The triager's logic is correct and you can't disprove it (e.g., "impact flows backwards" — see below)
+
+### Accepting Valid Rejections Gracefully
+
+Sometimes the triager is RIGHT. Signs you should accept and close:
+
+| Triager Argument | Valid If | Accept When |
+|-----------------|---------|-------------|
+| "Impact flows backwards" (victim gains control of attacker's account) | You can't prove the action REMOVES something from victim | Email/phone bind without proving unbind from original account |
+| "This is by design" | The behavior is documented and intentional | Feature works as specified, no security boundary crossed |
+| "Convenience feature, not security" | The bypass doesn't cross an auth boundary | Skipping email verification on YOUR OWN account |
+| "No demonstrated impact on other users" | You only proved self-harm | Binding unverified email to your own account |
+
+**Response template for graceful acceptance:**
+```
+Hi [triager],
+
+Thank you for the detailed explanation. You're right — without proving [specific missing piece], 
+the actual security impact is limited to [what it actually is]. I appreciate the clarification. 
+Happy to close this one.
+
+Regards.
+```
+
+**Why graceful acceptance matters:**
+- Preserves reputation with triagers (they remember difficult researchers)
+- No reputation point loss on RTFS/Informational closures
+- Saves time for findings with real impact
+- Triager may be more generous on your next submission
+
+### Pre-Submission Impact Verification (Prevent Invalid Submissions)
+
+Before submitting ANY finding, verify the impact direction:
+
+```
+Who is harmed by this vulnerability?
+├── Only the ATTACKER (self-harm)
+│   └── NOT a valid finding (e.g., binding unverified email to YOUR account)
+│
+├── The VICTIM (other users)
+│   └── VALID — proceed with submission
+│   └── Verify: can you PROVE harm to victim with evidence?
+│
+└── UNCLEAR (could go either way)
+    └── Test with 2 accounts before submitting
+    └── If you can't prove victim harm → don't submit
+```
+
+**Common "impact flows backwards" patterns:**
+- Email/phone bind without verification → attacker binds victim's email to ATTACKER's account → victim can now reset ATTACKER's password
+- Adding unverified recovery method → weakens YOUR account, not victim's
+- Linking external account without verification → gives the external account owner access to YOUR account
+
+**Fix:** Prove the action REMOVES the identifier from the victim's account, or prove you can perform the action on the VICTIM's account (not your own).
+
+### Report Accuracy: Verify Real PoC Values
+
+**CRITICAL:** When writing reports from session history, always verify the exact values used in successful exploitation:
+
+| Field | Common mistake | How to verify |
+|-------|---------------|---------------|
+| Endpoint path | `/v1/batch` vs `/api/v1/events` | Check session_search for the actual curl that returned 200 |
+| Auth scheme | `Bearer` vs `Basic` | Check source code pattern (`Authorization: Basic ${token}`) |
+| Token encoding | Raw UUID vs base64-encoded | Check what was actually sent in the working request |
+| Response body | Fabricated vs actual | Use the real `{"status":1,"code":1,"sent_time":...}` response |
+
+**Rule:** Never write a PoC from memory. Always pull the exact endpoint, headers, and response from the session where it was tested. One wrong detail (wrong auth scheme, wrong path) makes the entire report non-reproducible during triage.
+
+**GoPay lesson (May 2026):** Report initially used `POST /v1/batch` with `Bearer` token — wrong. Actual working request was `POST /api/v1/events` with `Basic` auth (base64-encoded UUID). Had to patch the report 8 times to fix all occurrences.
 
 ---
 
@@ -673,6 +878,17 @@ JS. Check the current bundle for the replacement token.
 - File attachments: screenshots, PoC files, videos
 - Severity: you propose, program adjusts
 - Asset: must match a listed scope entry (dropdown or free text depending on program)
+
+**YWH Form Fields (quick reference):**
+
+| Field | Guidance |
+|-------|----------|
+| Title | Short, impact-focused. Avoid mentioning excluded classes in title |
+| Bug type | Pick the IMPACT class, not the attack vector (e.g., "Broken Access Control" not "Information Disclosure") |
+| Vulnerable part | The endpoint where the highest-impact action occurs (e.g., `POST https://target.com/api/write`) |
+| Payload | The key input that triggers the vuln. For access control: the auth header. For CORS: `Origin: https://evil.com`. For exposed files: just the path |
+| Technical environment | `Browser: Any, OS: Any, No authentication required` for unauthenticated findings |
+| HTTP method | GET/POST/PUT matching the vulnerable endpoint |
 
 ### HackerOne
 

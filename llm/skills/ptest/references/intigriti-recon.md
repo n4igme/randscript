@@ -50,6 +50,37 @@ When targets are behind Cloudflare/CloudFront:
 - Vercel/DatoCMS for marketing sites
 - AWS SES for email infrastructure
 
+## DigitalOcean Engagement Lessons (2026-05-27)
+
+**Program:** https://www.intigriti.com/programs/digitalocean/digitalocean/detail
+**Max bounty:** $10,000 | **Scope:** *.digitalocean.com, *.snapshooter.com, api, cloud, metadata (169.254.169.254), GitHub repos
+
+**What worked:**
+- S3 bucket listing on `repos-droplet.digitalocean.com` and `repos.insights.digitalocean.com` (open listing, no write)
+- GenAI Agent API OpenAPI spec exposed at `agent-*.ondigitalocean.app/openapi.json`
+- CSP header on `cloud.digitalocean.com` leaks extensive internal infrastructure (localdev, staging, sentry DSN)
+- **Stripe webhook signature bypass on app.snapshooter.com** — highest-value finding (High, CWE-345)
+- hackathon-tracker JWT verbose errors reveal library (jsonwebtoken)
+
+**What didn't work:**
+- JWT brute-force (500 secrets from SecLists) — secret is strong
+- GenAI API auth bypass — properly gated (403)
+- Snapshooter Laravel debug tools (telescope, ignition, log-viewer) — all 404
+- Registration on Snapshooter — needs email verification, can't get authenticated session
+- GlobalProtect VPN (clienteng-*.digitalocean.com) — version obfuscated, no exploitable CVE
+- MCP subdomains — all redirect to docs
+- Open redirect on cloud.digitalocean.com/login?next= — renders page, doesn't redirect
+- DO API CORS `*` — no credentials allowed, not exploitable
+
+**Key insight:** For heavily-Cloudflare'd targets, the highest ROI is finding subsidiary/acquired apps (Snapshooter) with weaker security posture. Main DO infrastructure is well-hardened. Authenticated testing (DO account + Snapshooter verified email) needed for deeper findings.
+
+**Out-of-scope traps:**
+- `*.ondigitalocean.app` — customer resources (OOS)
+- `*.digitaloceanspaces.com` — customer resources (OOS)
+- `*.db.ondigitalocean.com` — customer resources (OOS)
+- `registry.digitalocean.com/*` — customer resources (OOS)
+- 18 specific subdomains listed as OOS (anchor, brand, deploy, email, events, etc.)
+
 ## Intigriti XSS Challenges
 
 Monthly challenges at `challenge-MMDD.intigriti.io`. Pattern:

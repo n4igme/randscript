@@ -30,3 +30,21 @@ When hunting for bounties (not doing comprehensive internal pentest), optimize f
 **Time budget:** 4-8 hours per app. If no High+ finding by hour 6, move to next target.
 
 ---
+
+## When to Bail: Hardened App Indicators
+
+Some apps (Meta, banking with server-side sig validation) are not viable for unauthenticated mobile-only testing. Bail early if ALL of these are true:
+
+1. **Server-side APK signature validation** — repackaged APK can't login
+2. **No exploitable deep link → WebView → JS bridge chain** — deep links route to native UI or sanitize URLs
+3. **Content providers signature-protected at runtime** — even if `exported=true`
+4. **No IDOR testable** — can't intercept authenticated traffic
+
+**Decision point:** After Phase 2 static + Phase 6 deep link testing (max 4 hours), if no High+ vector found, pivot to:
+- Web scope of the same program (*.domain.com)
+- Different target app in the same program
+- Different bug bounty program entirely
+
+**Meta/Instagram specifically:** Server-side sig validation + native UI deep links + signature-protected providers = mobile app is a dead end without insider access or novel bypass. Web targets are more productive.
+
+---

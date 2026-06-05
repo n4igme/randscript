@@ -62,6 +62,44 @@ For engagements with 50+ subdomains/hosts, maintain a coverage matrix in `scope.
 
 Without coverage tracking, a 221-subdomain engagement resulted in only 13% active testing coverage with no record of what was done where. Reconstructing this required parsing zone files and relying on compacted session memory — unreliable. Always maintain the matrix.
 
+### Pitfall (BFI Finance lesson)
+
+186 live hosts but nuclei only ran on 15 (8% coverage). Discovered only when manually checking `nuclei-targets.txt` vs `live-subs.txt`. The phase checklist said "DONE" because the tool was executed — but not against all hosts. **Tool execution ≠ full coverage.**
+
+### Mandatory Coverage Verification (Phase 5/6 Exit Gate)
+
+Before signing off Phase 5 or Phase 6, run this diff:
+
+```bash
+# Generate untested hosts list
+comm -23 \
+  <(cat live-subs.txt | awk -F'|' '{print $1}' | sort) \
+  <(cat nuclei-targets.txt | sed 's|https\?://||' | sort) \
+  > untested-hosts.txt
+
+# If non-empty → phase is NOT complete
+wc -l untested-hosts.txt
+# Must be 0 before sign-off
+```
+
+**Exit criteria addition:**
+- Phase 5: `diff(master_live_hosts, nuclei_targets) == 0`
+- Phase 5: `diff(master_live_hosts, cors_tested_hosts) == 0`
+- Phase 6: `diff(accessible_hosts, exploitation_tested_hosts) == 0`
+
+If any diff is non-zero, batch-test the remaining hosts before requesting gateway sign-off. Use:
+
+```bash
+# Batch nuclei on missed hosts
+nuclei -l untested-hosts.txt -severity critical,high,medium -o nuclei-remaining.txt -rate-limit 50
+
+# Batch CORS on missed hosts
+cat untested-hosts.txt | while read host; do
+  cors=$(curl -sk --max-time 3 -H "Origin: https://evil.com" "https://$host/" -D- 2>/dev/null | grep -i "access-control-allow-origin")
+  [ -n "$cors" ] && echo "$host | $cors"
+done > cors-remaining.txt
+```
+
 ## Fast-Exit Heuristics
 
 - Identical Istio RBAC 403 on all paths → "RBAC-blocked", move on (5 min max)

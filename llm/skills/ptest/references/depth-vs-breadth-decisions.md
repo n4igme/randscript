@@ -11,7 +11,7 @@ Quick decision criteria for penetration testing: when to dig deeper, when to mov
 | Service is broken/non-functional | n8n with broken DB | Note finding, move on — limited exploit value |
 | Default creds already changed + no known CVEs | Patched admin panel | Move on after 15min |
 | Rate limiting + account lockout active | Login brute-force blocked after 5 attempts | Switch to other vectors |
-| Target returns identical responses regardless of input | WAF normalizing all requests | Abandon fuzzing |
+| Target returns identical responses regardless of input AND path | WAF normalizing all requests, confirmed on 3+ distinct path prefixes with gobuster | Abandon fuzzing (but ONLY after directory fuzzing proves no unique paths exist) |
 | mTLS or client cert required | API gateway requiring mutual TLS | Abandon unless you have valid cert |
 
 ## When to Go DEEPER
@@ -55,6 +55,42 @@ Stop investing time when you observe:
 - Reality: DB connection broken, workflows non-functional
 - Time wasted if ignored: 30+ min trying to exploit non-working features
 - **Rule: If core functionality is broken (DB errors, service unavailable), document and move on. Broken services rarely yield useful access.**
+
+## PITFALL: "Third-Party" Dismissal Without Verification (LINE WORKS, June 2026)
+
+**What happened:** `mkt.line-works.com` and `mkt.tw.line-works.com` were dismissed as "Pardot/Salesforce = third-party, skip." Reality: they 302 redirect to `line-works.com` (the main target), meaning they're controlled by the target org. Had they hosted content, it would be in-scope.
+
+**Rule:** A subdomain pointing to a third-party CNAME (Pardot, Marketo, HubSpot, etc.) still needs a single HTTP request to verify behavior. If it redirects back to an in-scope domain or serves custom content, it's testable. Only dismiss if it serves purely the third-party platform's default content with no target branding/config.
+
+## PITFALL: Gobuster Without Manual Follow-Up (LINE WORKS, June 2026)
+
+**What happened:** `lp.line-works.com` was gobuster'd (file exists in enumeration/) but never manually investigated. The gobuster output was "done" but nobody checked what it found or probed the WP-specific attack surface.
+
+**Rule:** Gobuster is DISCOVERY, not ASSESSMENT. After every gobuster run, the results MUST be triaged:
+1. Read the output file
+2. Identify unique responses (non-404, non-catch-all)
+3. Manually probe each unique path
+4. For WordPress hosts: run the full WP checklist (plugins, xmlrpc, REST API, user enum, admin-ajax)
+
+## PITFALL: Catch-All Response ≠ Empty Target (LINE WORKS, June 2026)
+
+**What happened:** `cxtalk-service.line-works.com` returned a generic "Invalid Path" (12 bytes) on root and a catch-all error page (14975 bytes) on random paths. Initial probe concluded "nothing here" and skipped fuzzing. Reality: under the `/jp1/` prefix, the service exposed:
+- Full AngularJS app with internal infrastructure URLs (21 alpha/dev endpoints)
+- Unauthenticated GraphQL endpoint with introspection (43 types, write operations)
+- NELO logging injection (arbitrary log writes to internal Naver systems)
+- Chat history API, customer service endpoints, bot APIs
+
+**Root cause:** Checked only the root path and one random path. Never ran directory fuzzing (gobuster/ffuf) against the host.
+
+**Rule: EVERY in-scope subdomain that returns ANY HTTP response (even 400/403/catch-all) MUST receive at least ONE gobuster run with raft-medium-directories.txt BEFORE being dismissed.** Filter out the catch-all response size and look for size/status deviations.
+
+**Mandatory pre-dismissal checks for hosts with catch-all responses:**
+1. ✅ Gobuster with `--exclude-length <catch-all-size>` on root path
+2. ✅ Test common prefixes: `/api/`, `/v1/`, `/v2/`, `/internal/`, `/admin/`, `/p/`, region codes (`/jp1/`, `/kr1/`, `/sg1/`)
+3. ✅ Test with POST method (catch-alls are often GET-only)
+4. ✅ Check if different Content-Type headers produce different responses
+
+**Time cost:** 5 minutes per host with gobuster. Skipping this "saved" 5 minutes but missed 3 reportable findings.
 
 ## DNS Expansion Stop Criteria
 

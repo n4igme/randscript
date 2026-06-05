@@ -133,11 +133,15 @@ Score each asset from the inventory using the prioritization matrix:
 
 **Before dismissing ANY subdomain group, verify:**
 
-1. ✅ Tested `/actuator`, `/actuator/env`, `/actuator/heapdump` on at least 5 hosts
-2. ✅ Tested `/swagger-ui.html`, `/api-docs`, `/v3/api-docs` on at least 3 hosts
-3. ✅ Tested `/admin`, `/console`, `/login`, `/graphql` on at least 3 hosts
-4. ✅ Baselined with random path to detect SPA catch-alls
-5. ✅ Documented what was tested in the dismissal entry
+1. ✅ Ran gobuster/ffuf with raft-medium-directories against EACH host (filter catch-all response sizes)
+2. ✅ Tested `/actuator`, `/actuator/env`, `/actuator/heapdump` on at least 5 hosts
+3. ✅ Tested `/swagger-ui.html`, `/api-docs`, `/v3/api-docs` on at least 3 hosts
+4. ✅ Tested `/admin`, `/console`, `/login`, `/graphql` on at least 3 hosts
+5. ✅ Tested common path prefixes: `/api/`, `/v1/`, `/v2/`, `/internal/`, `/p/`, region codes (`/jp1/`, `/kr1/`, `/sg1/`)
+6. ✅ Baselined with random path to detect SPA catch-alls
+7. ✅ Documented what was tested in the dismissal entry
+
+**CRITICAL: A catch-all on the root path (400/403/generic error) does NOT mean the host is empty. Hidden path prefixes routinely expose entire applications behind otherwise "blank" hosts. The 5-minute gobuster run is NON-NEGOTIABLE.**
 
 **Dismissal format:**
 ```markdown
@@ -210,10 +214,21 @@ Write `./ptest-output/attack-surface/checklist.md`:
 
 ## Exit Criteria
 - [ ] Asset inventory documented (all hosts, tech, auth, business function).
+- [ ] **Coverage verification: asset inventory count ≥ 80% of Phase 1/2 live subdomain count.** If the inventory has significantly fewer entries than the live-hosts list, the phase is NOT complete — you're cherry-picking, not mapping.
 - [ ] Scope explicitly confirmed by user (sign-off received).
 - [ ] Entry points mapped and categorized (unauth, auth, upload, input).
 - [ ] Dismissed assets documented with reasons.
 - [ ] Priority targets identified for Phase 5 threat modeling.
+
+## Pitfall: Wildcard Grouping Hides Coverage Gaps
+
+**BFI lesson (May 2026):** Phase 4 was marked DONE with 22 assets inventoried, but the actual live subdomain count was 186. The gap was hidden by grouping entire environments as single line items (e.g., `*.dev.bravo.bfi.co.id` as one row, `*.mock.bravo.bfi.co.id` as one row). This caused:
+- 7 business apps (pinjaman, sobat, merchantacq, surveyor, spvcockpit, dfplatform, mbeat) listed but never entry-point mapped
+- `e-pmo2.bfi.co.id` completely missed — later found to have Critical SQLi
+- Sharia variants (pembiayaan-syariah, operation-syariah, surveyor-syariah) never inventoried
+- `auth.bfi.co.id`, `agency.bfi.co.id`, `e-doc.bfi.co.id` skipped entirely
+
+**Rule:** Every subdomain that returned HTTP 200/302/401/500 in Phase 2 gets its OWN row in the asset inventory — no wildcard grouping for accessible hosts. Wildcards are only acceptable for hosts confirmed unreachable (private IPs, no DNS resolution). When the inventory has <50% of live hosts individually listed, flag it as incomplete before requesting sign-off.
 
 ## Lessons Learned Capture
 

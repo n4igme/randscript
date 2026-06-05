@@ -1,13 +1,13 @@
 ---
 name: w3hunt
-version: 1.0.1
+version: 1.4.0
 description: "Web3 bug bounty hunting on Immunefi and similar platforms. Target selection, scope verification, DeFi-specific recon, and attack vector prioritization for hybrid web+contract programs."
 tags: [web3, bug-bounty, immunefi, defi, smart-contract, recon]
 trigger: "immunefi, web3 hunting, defi bug bounty, smart contract bounty, web3 recon"
 argument-hint: "<command: start|next|recon|scope|targets|status|resume|report|abort|cleanup>"
 notes:
   - "v2.1.0: Hub model — SKILL.md is routing + strategy + framework. Phase content in references/phase*.md"
-  - "NEVER rewrite full SKILL.md in one tool call — use strReplace for edits"
+  - "NEVER rewrite full SKILL.md in one tool call — use strReplace/patch for edits. Large write_file calls hit output token limits and get truncated."
 metadata:
   hermes:
     tags: [web3, bug-bounty, immunefi, defi, smart-contract]
@@ -64,7 +64,29 @@ Oracle prerequisite check (all 3 required — see Strategy section):
 ### `next` Procedure
 
 1. Read state.yaml → determine `current_phase`.
-2. Verify gate condition:
+2. Run gate check:
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/w3hunt/scripts"))
+from gate_check import check_gate, print_gate_status
+
+result = check_gate(os.path.expanduser("~/PenTest/Hunting/Immunefi/<target>"), phase=None)
+print_gate_status(result)
+```
+3. Verify gate condition:
+
+**Gate Enforcement (run before advancing):**
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/w3hunt/scripts"))
+from gate_check import check_gate, print_gate_status
+
+result = check_gate(os.path.expanduser("~/PenTest/Hunting/Immunefi/<target>"), phase=None)
+print_gate_status(result)
+# Only advance if result["passed"] is True
+```
+
+Gate conditions per phase:
    - Phase 1: GO/NO-GO decision documented
    - Phase 2: minimum viable recon checklist complete (5 items)
    - Phase 3: quick-kill checklist done, OR "web layer hardened" documented
@@ -112,7 +134,37 @@ Run after every engagement closes (accepted, rejected, abandoned, duplicate).
 2. Answer lessons: what worked, what wasted time, transferable pattern?, skill gaps?
 3. Script appends to `references/engagement-roi-metrics.md` automatically.
 4. If new pitfall discovered → patch `references/operational-rules.md`.
-5. If pattern transferable → add to `references/proven-patterns.md`.
+5. If finding generalizes → patch ptest `references/attack-recipes.md` with new recipe.
+
+## Cross-Skill Handoffs
+
+**Into w3hunt (from other skills):**
+- atest finds smart contract interaction via API → invoke w3hunt
+- scode finds Solidity/Vyper code in repo → invoke w3hunt + scode (web3 scope)
+- ptest discovers DeFi webapp → invoke w3hunt for contract-level testing
+
+**Out of w3hunt (to other skills):**
+- Web frontend found on DeFi app → hand to ptest (standard web pentest)
+- API layer between frontend and contracts → hand to atest
+- Contract source code needs review → hand to scode (web3 scope type)
+- Off-chain oracle/keeper exploitable → hand to ctest (if cloud-hosted)
+
+### Gate Enforcement (MANDATORY before `next`)
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/w3hunt/scripts"))
+from gate_check import check_gate, print_gate_status
+
+result = check_gate(".", phase=None)
+print_gate_status(result)
+```
+
+### Target Refresh
+
+```bash
+python3 ~/.hermes/skills/security/w3hunt/scripts/target_refresh.py --min-payout 10000 --output ~/PenTest/Hunting/Immunefi/targets.md
+```
 
 ```python
 import sys, os
@@ -124,6 +176,27 @@ postmortem.run(os.path.expanduser("~/PenTest/Hunting/Immunefi/<target>"), lesson
 })
 ```
 
+### Gate Enforcement (MANDATORY before `next`)
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/w3hunt/scripts"))
+from gate_check import check_gate, print_gate_status
+
+result = check_gate(os.path.expanduser("~/PenTest/Hunting/Immunefi/<target>"), phase=None)
+print_gate_status(result)
+```
+
+### Target List Refresh
+
+```bash
+# Refresh Immunefi target shortlist (run weekly or when >7 days stale)
+python3 ~/.hermes/skills/security/w3hunt/scripts/target_refresh.py --output ~/PenTest/Hunting/Immunefi/targets.md
+
+# Custom minimum payout threshold
+python3 ~/.hermes/skills/security/w3hunt/scripts/target_refresh.py --min-payout 25000
+```
+
 ### `scope` Procedure
 
 Use when: resuming after >24h, before submitting, or when unsure about asset coverage.
@@ -131,6 +204,26 @@ Use when: resuming after >24h, before submitting, or when unsure about asset cov
 1. Re-fetch program page — check if assets were added/removed.
 2. Diff against saved `scope.txt` — flag changes.
 3. Update `scope.txt` with changes and timestamp.
+
+### Gate Enforcement (MANDATORY before `next`)
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/w3hunt/scripts"))
+from gate_check import check_gate, print_gate_status
+
+result = check_gate(os.path.expanduser("~/PenTest/Hunting/Immunefi/<target>"), phase=None)
+print_gate_status(result)
+```
+
+### Target Refresh
+
+```bash
+# Refresh Immunefi target shortlist from bounty-targets-data
+python3 ~/.hermes/skills/security/w3hunt/scripts/target_refresh.py \
+  --min-payout 10000 \
+  --output ~/.hermes/skills/security/w3hunt/references/immunefi-targets-v3.md
+```
 
 ### `status` Procedure
 
@@ -364,9 +457,9 @@ See `references/immunefi-report-template.md` for report format and impact framin
 2. Document in `recon-summary.txt`: what was tested, why it's hardened/dead
 3. Move to Next Target Decision Tree (fresh target criteria: payout × novelty × recency × hybrid)
 
-### Pitfalls
+## Pitfalls
 
-> Full rules: `references/operational-rules.md`
+> Full pitfalls and operational rules: `references/operational-rules.md`
 
 **Top 5 instant-rejection rules:**
 1. **NEVER claim impact you haven't proven end-to-end** — theoretical = rejected

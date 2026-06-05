@@ -52,6 +52,29 @@ When targets are behind Cloudflare/CloudFront:
 - Focus on: API endpoint discovery, CSP/header analysis, bucket misconfigs
 - Look for non-CDN subdomains (staging, internal) that bypass WAF
 
+## Firebase Password Provider → Full ATO (Medium → Critical)
+
+**Chain:** Medium (pre-registration squatting) → Critical (full ATO + victim lockout)
+
+Initial finding "password provider enabled on passwordless app" looks Medium — attacker squats email but victim can recover via email-link. Escalation:
+
+1. **accounts:update email change** — Change email without verification. Firebase allows `setAccountInfo` with just an idToken (no re-auth for email change). `emailVerified` resets to `false` but the email IS changed.
+2. **accounts:update deleteProvider** — Unlink victim's `emailLink` provider client-side. After this, only `password` (attacker's) remains. Victim has NO way to sign in.
+3. **App token exchange** — If backend accepts any Firebase provider token, attacker gets valid app session with victim's UID.
+
+**Escalation checklist (run when password provider is found):**
+```
+[ ] Can attacker sign in with password after victim uses emailLink? (shared UID)
+[ ] Does accounts:update allow email change without verification?
+[ ] Does accounts:update allow deleteProvider:["emailLink"]?
+[ ] Does app backend accept password-provider tokens at token exchange endpoint?
+[ ] Is there rate limiting on signUp? (mass pre-registration)
+```
+
+**Key insight:** Firebase "by design" behaviors (shared UID, client-side provider management) become vulnerabilities when the app relies on a single provider. The platform-level design is fine for multi-provider apps, but creates ATO chains on single-provider apps that forgot to disable others.
+
+**Severity jump:** Medium (squatting) → Critical (ATO + permanent lockout + exclusive access)
+
 ## Config Endpoint Information Leverage
 
 When you find unauthenticated config endpoints (e.g., `/api/v0/config/settings`):

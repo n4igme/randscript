@@ -2,6 +2,11 @@
 // Works for Flutter 3.19+ where standard patterns fail
 // Scans only executable ranges to avoid access violations on unmapped pages
 // Hooks all candidates matching the verify function prologue
+//
+// CONFIRMED WORKING:
+//   - Jago Prod v8.86.0 (build 9805), compileSdk 36, Flutter 3.22-3.24
+//     Pattern 0: 4 hooks at r-x range, libflutter.so ~11MB
+//     Device: Mi MIX 2 (arm64), Frida 16.1.8
 
 function bypass() {
     var m = Process.findModuleByName('libflutter.so');

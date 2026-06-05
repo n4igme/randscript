@@ -86,6 +86,93 @@ if tools["testssl"] and priority_targets:
         if r["exit_code"] == 0 and r["output"].strip():
             ssl_issues.append(f"{host}: {r['output'].strip()[:200]}")
 
+# 6b. JWT Weakness Detection (on auth endpoints from Phase 3)
+jwt_findings = []
+auth_eps = []
+try:
+    auth_data = read_file(f"{WORKDIR}/enumeration/checklist.md")
+    # Also try to get auth endpoints from phase3 output
+    auth_ep_data = read_file(f"{WORKDIR}/enumeration/auth-endpoints.txt")
+    auth_eps = [l.strip().split(" ")[0] for l in auth_ep_data["content"].split("\n") if l.strip()]
+except:
+    pass
+
+# Test JWT none algorithm on any endpoint that returns a JWT
+for endpoint in test_endpoints[:15]:
+    r = terminal(f'curl -sk -D - --max-time 5 "{endpoint}"', timeout=10)
+    resp = r.get("output", "")
+    # Look for JWTs in response headers/body
+    import re as re5
+    jwt_matches = re5.findall(r'eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+', resp)
+    if jwt_matches:
+        jwt = jwt_matches[0]
+        # Decode header to check algorithm
+        import base64
+        try:
+            header_b64 = jwt.split(".")[0] + "=="
+            header = json.loads(base64.urlsafe_b64decode(header_b64))
+            alg = header.get("alg", "unknown")
+            jwt_findings.append(f"{endpoint} → JWT found (alg={alg})")
+            # Flag weak algorithms
+            if alg in ("HS256", "HS384", "HS512"):
+                jwt_findings.append(f"  ⚠️ HMAC-based — test key confusion (RS→HS) and weak secret brute")
+            elif alg == "none":
+                jwt_findings.append(f"  🔴 NONE ALGORITHM — immediate bypass")
+        except:
+            jwt_findings.append(f"{endpoint} → JWT found (decode failed)")
+
+# 6c. Open Redirect Validation (from auth endpoints)
+redirect_findings = []
+redirect_params = ["redirect", "redirect_uri", "return", "returnTo", "next", "url", "continue", "dest", "destination", "redir", "return_url", "callback"]
+for host in hosts[:10]:
+    for param in redirect_params:
+        test_url = f"https://{host}/login?{param}=https://evil.attacker.com"
+        r = terminal(f'curl -sk -o /dev/null -D /tmp/redir_headers.txt -w "%{{http_code}}|%{{redirect_url}}" --max-time 5 "{test_url}"', timeout=10)
+        parts = r.get("output", "").split("|")
+        code = parts[0] if parts else ""
+        redir_target = parts[1] if len(parts) > 1 else ""
+        if code in ("301", "302", "303", "307") and "evil.attacker.com" in redir_target:
+            redirect_findings.append(f"https://{host}/login?{param}= → OPEN REDIRECT to attacker domain")
+            break  # One hit per host is enough
+        # Also test path-based bypass
+        test_url2 = f"https://{host}/login?{param}=//evil.attacker.com"
+        r2 = terminal(f'curl -sk -o /dev/null -w "%{{http_code}}|%{{redirect_url}}" --max-time 5 "{test_url2}"', timeout=10)
+        parts2 = r2.get("output", "").split("|")
+        if len(parts2) > 1 and "evil" in parts2[1]:
+            redirect_findings.append(f"https://{host}/login?{param}=//evil → OPEN REDIRECT (protocol-relative)")
+            break
+
+# 6d. Header Injection / CRLF Check
+crlf_findings = []
+for host in hosts[:10]:
+    payloads = [
+        ("%0d%0aInjected-Header:%20true", "Injected-Header"),
+        ("%0aSet-Cookie:%20hacked=1", "Set-Cookie"),
+    ]
+    for payload, sig in payloads:
+        r = terminal(f'curl -sk -D - -o /dev/null --max-time 5 "https://{host}/?param=test{payload}"', timeout=10)
+        if sig.lower() in r.get("output", "").lower() and "test" in r.get("output", "").lower():
+            crlf_findings.append(f"https://{host}/?param= → CRLF injection ({sig} reflected in response headers)")
+            break
+
+# 6e. Race Condition Signal Detection (identify state-changing endpoints)
+race_candidates = []
+# Look for endpoints that modify state (transfer, redeem, apply, vote, like, follow, checkout)
+state_change_keywords = ["transfer", "redeem", "coupon", "apply", "vote", "like", "follow",
+                         "checkout", "purchase", "withdraw", "send", "claim", "activate"]
+try:
+    js_eps_data = read_file(f"{WORKDIR}/enumeration/js-endpoints.txt")
+    all_endpoints = js_eps_data["content"].split("\n")
+except:
+    all_endpoints = []
+
+for ep in all_endpoints + test_endpoints:
+    ep_lower = ep.lower()
+    for keyword in state_change_keywords:
+        if keyword in ep_lower:
+            race_candidates.append(f"{ep} → state-changing ({keyword}) — TEST FOR RACE CONDITION")
+            break
+
 # 7. Write results
 terminal(f"mkdir -p {WORKDIR}/vuln-assessment")
 
@@ -94,6 +181,18 @@ if cors_findings:
 
 if ssl_issues:
     write_file(f"{WORKDIR}/vuln-assessment/ssl-quick-results.txt", "\n".join(ssl_issues))
+
+if jwt_findings:
+    write_file(f"{WORKDIR}/vuln-assessment/jwt-findings.txt", "\n".join(jwt_findings))
+
+if redirect_findings:
+    write_file(f"{WORKDIR}/vuln-assessment/open-redirect.txt", "\n".join(redirect_findings))
+
+if crlf_findings:
+    write_file(f"{WORKDIR}/vuln-assessment/crlf-injection.txt", "\n".join(crlf_findings))
+
+if race_candidates:
+    write_file(f"{WORKDIR}/vuln-assessment/race-condition-candidates.txt", "\n".join(race_candidates))
 
 # Write CDN classification
 cdn_md = "# CDN/WAF Classification\n\n"
@@ -115,9 +214,13 @@ checklist_items = [
     ("3", "OAuth/OIDC redirect_uri Validation (MANDATORY)", "PENDING"),
     ("4", "Nikto Scan", "PENDING" if tools.get("nikto") else "SKIPPED (nikto not installed)"),
     ("5", "SSL/TLS Assessment", "DONE" if ssl_issues else ("DONE (no issues)" if tools["testssl"] else "SKIPPED (testssl not installed)")),
-    ("6", "CVE Mapping", "PENDING"),
-    ("7", "Manual Verification of Findings", "PENDING"),
-    ("8", "Prioritized Vector List", "PENDING"),
+    ("6", "JWT Weakness Detection", "DONE" if jwt_findings else "DONE (0 JWTs found)"),
+    ("7", "Open Redirect Validation", "DONE" if redirect_findings else "DONE (0 redirects found)"),
+    ("8", "CRLF / Header Injection", "DONE" if crlf_findings else "DONE (0 CRLF found)"),
+    ("9", "Race Condition Candidates", "DONE" if race_candidates else "DONE (0 state-changing endpoints)"),
+    ("10", "CVE Mapping", "PENDING"),
+    ("11", "Manual Verification of Findings", "PENDING"),
+    ("12", "Prioritized Vector List", "PENDING"),
 ]
 
 checklist_md = "# Vulnerability Assessment Checklist\n\n| # | Technique | Status | Notes |\n|---|-----------|--------|-------|\n"
@@ -149,15 +252,18 @@ print(json.dumps({
     },
     "cors_findings": cors_findings,
     "ssl_issues": ssl_issues,
+    "jwt_findings": jwt_findings,
+    "redirect_findings": redirect_findings,
+    "crlf_findings": crlf_findings,
+    "race_condition_candidates": race_candidates[:10],
     "nuclei_commands": nuclei_cmds,
     "remaining_manual": [
         "5A: Threat modeling — build attack trees for priority targets",
         "1: Run nuclei on direct hosts (commands generated in summary)",
         "3: OAuth/OIDC redirect_uri validation on all auth endpoints",
-        "4: Nikto scan on direct hosts (if available)",
-        "6: CVE mapping — searchsploit for each identified technology/version",
-        "7: Manual verification of all scanner findings (eliminate false positives)",
-        "8: Build prioritized vector list for Phase 6 (vectors-prioritized.md)",
+        "10: CVE mapping — searchsploit for each identified technology/version",
+        "11: Manual verification of all scanner findings (eliminate false positives)",
+        "12: Build prioritized vector list for Phase 6 (vectors-prioritized.md)",
     ],
     "next": "Run nuclei on direct hosts, then build threat models for priority targets",
 }, indent=2))

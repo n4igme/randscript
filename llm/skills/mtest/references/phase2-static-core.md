@@ -42,6 +42,17 @@
    - Also extract: base URLs, package paths, JSON field names, IDOR path templates
    - SSL bypass requires `flutter_ssl_bypass.js` + iptables DNAT (standard hooks don't work)
 
+   **JADX + Split APK pitfall:**
+   - If you merged splits via zip overlay, JADX may load the WRONG AndroidManifest.xml (from last split)
+   - ALWAYS open `base.apk` directly in JADX — it has all DEX classes + the correct manifest
+   - The merged APK is only needed for native lib analysis (libs are in split_config.arm64_v8a.apk)
+   - Extract native libs separately: `unzip -o split_config.arm64_v8a.apk 'lib/arm64-v8a/*' -d extracted/`
+   - PITFALL: For split APKs, libapp.so is in split_config.arm64_v8a.apk, NOT base.apk
+     Extract: `unzip split_config.arm64_v8a.apk lib/arm64-v8a/libapp.so -d extracted/`
+   - PITFALL: zip-merging splits overwrites AndroidManifest.xml with split manifest
+     (has android:hasCode="false", no activities). Open base.apk directly in JADX for code analysis.
+   - Dart package paths in libapp.so reveal full module structure (grep "^package:")
+
 3. **[Android]** Manifest analysis / **[iOS]** Info.plist analysis:
    - Android: debuggable, allowBackup, exported components, network security config
    - iOS: ATS exceptions, URL schemes, entitlements
@@ -67,5 +78,13 @@
    - See `deeplink-webview-hijack.md` for full exploitation patterns and severity rating matrix
 
 **After fast-path complete → load `references/phase2-extended-checks.md` for steps 7-15.**
+
+**Native Library Analysis (when .so files present):**
+- Extract libs: `unzip -o target.apk "lib/arm64-v8a/*" -d native-libs/`
+- For each lib, use `execute_code` with `nm -D`, `strings`, and r2 batch commands
+- Focus on: JNI exports, dangerous imports (malloc/realloc/memcpy without bounds), attacker-reachable input paths
+- Key checks: NULL after realloc? Integer overflow in size calculations? Attacker-controlled InputStream?
+- Use r2: `r2 -q -c 'aaa; axt @ sym.imp.realloc' lib.so` to find all callers of dangerous functions
+- **Do NOT delegate native analysis to subagents** — use `execute_code` with batch terminal() calls (35+ calls in <2s vs subagent timeout at 10 calls)
 
 **References:** `static-analysis.md`, `native-re-mcp.md`, `android-path-traversal-rce.md`, `crypto-key-cracking.md`, `native-buffer-overflow.md`, `deserialization-attacks.md`, `content-provider-attacks.md`, `yaml-deserialization-rce.md`, `deeplink-webview-hijack.md`

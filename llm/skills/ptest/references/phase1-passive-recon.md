@@ -1,4 +1,20 @@
-# Phase 1: Passive Reconnaissance
+# Phase 1: Passive Recon
+
+## Completion Criteria (ALL must be done on ALL accessible subdomains)
+
+Before advancing to Phase 2, verify these are done for EVERY accessible target (not just the main domain):
+- [ ] Subdomain enumeration (full list)
+- [ ] Accessibility scan (HTTP status on ALL subdomains — not just a sample)
+- [ ] Tech stack fingerprinting (headers on all accessible targets)
+- [ ] JS bundle analysis (all SPA/React/Vue apps — extract API URLs, keys, Keycloak config)
+- [ ] Security headers audit (all accessible targets)
+- [ ] robots.txt + .well-known paths (all accessible targets)
+- [ ] OSINT (Google dorks, GitHub code search, Wayback Machine)
+- [ ] Certificate transparency analysis
+
+**Common mistake:** Doing deep analysis on 5-10 targets and calling Phase 1 "done" while 20+ accessible targets remain unchecked. The user expects COMPLETE coverage before advancing. When asked "did we do all the activities to all subdomains?" — the answer must be yes.
+
+**WinTicket lesson (June 2026):** Phase 1 was marked PASSED with TLS cert analysis, security headers audit, and robots.txt checks only done on the main site. User caught this at review — forced backtrack to complete ALL techniques on ALL 14 live hosts. Rule: every technique row in the checklist must be executed against EVERY live host, not just the primary target. If a technique is N/A for a host type (e.g., JS analysis on a GCS placeholder), mark it explicitly N/A with reason.
 
 ## Automated Setup
 
@@ -130,7 +146,24 @@ done < ./ptest-output/recon-passive/resolving-subs.txt
 # - tags[] → cloud, starttls, etc.
 ```
 
-#### 1c. Wayback Machine (Historical URLs)
+#### 1c. App Association Files (MANDATORY for mobile-capable targets)
+```bash
+# Android Digital Asset Links (reveals package names, signing certs)
+# Often accessible even when .well-known/ paths return WP 404
+r = httpx.get("https://target.com/.well-known/assetlinks.json", verify=False)
+# Also check root path (iOS prefers this):
+r2 = httpx.get("https://target.com/apple-app-site-association", verify=False)
+
+# What to extract:
+# assetlinks.json: package_name (prod/stage/debug variants), sha256_cert_fingerprints
+# apple-app-site-association: appIDs (TeamID.bundleID), components (deep link paths)
+# Deep link paths reveal app-handled URL patterns: /line-auth/*, /invite/*, /meeting/*
+# These paths may have server-side behavior or reveal internal service structure
+```
+
+**Why this matters (LINE WORKS, June 2026):** `assetlinks.json` revealed 12 Android packages including debug/staging variants. `apple-app-site-association` (at root, NOT .well-known) revealed 9 iOS bundle IDs and 20 deep link paths including `/line-auth/*` — exposing the auth flow structure. Always check BOTH files, and check both `/.well-known/` and root paths.
+
+#### 1d. Wayback Machine (Historical URLs)
 ```bash
 # Fetch all archived URLs for the domain
 curl -s "https://web.archive.org/cdx/search/cdx?url=*.target.com&output=text&fl=original&collapse=urlkey&limit=200" > wayback-urls.txt

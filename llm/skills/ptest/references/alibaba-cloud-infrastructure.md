@@ -1,138 +1,168 @@
-# Alibaba Cloud Infrastructure Patterns
+# Alibaba Cloud / Ant Group Infrastructure Patterns
 
-Reference for testing targets hosted on Alibaba Cloud (Aliyun). Common in Southeast Asian fintech (GoTo, Gojek, GoPay, Findaya).
+## Fingerprinting
 
-## Detection Signals
+| Header/Indicator | Meaning |
+|-----------------|---------|
+| `server: Tengine` | Alibaba's nginx fork (CDN/edge) |
+| `server: Spanner` | Ant Group internal proxy/load balancer |
+| `server: ESA` | Edge Security Acceleration (Alibaba CDN) |
+| `server: nginx/1.6.2` | Legacy nginx behind Spanner (Ant Group backend) |
+| `x-oss-request-id` | Alibaba Object Storage Service |
+| `x-oss-cdn-auth: success` | OSS with CDN auth enabled |
+| `x-fc-request-id` | Alibaba Function Compute (serverless) |
+| `via: ispanner-internet-*` | Spanner internal routing (leaks region/node) |
+| `via: ens-cache*` | Alibaba CDN edge cache nodes |
+| CNAME `*.w.cdngslb.com` | Alibaba CDN Global SLB |
+| CNAME `*.spanner.alipaydns.com` | Alipay/Ant DNS infrastructure |
 
-| Signal | Indicator |
-|--------|-----------|
-| DNS | `*.alidns.com` (vip7/vip8 for premium), `*.aliyuncsslbintl.com` (NLB) |
-| WAF | `server: Tengine`, `acw_tc` cookie (30min TTL), 405 page with Chinese/English text referencing `errors.aliyun.com` |
-| CDN | `*.cdn.gtflabs.io` (GoTo Financial CDN on Alibaba) |
-| Object Storage | `*.oss-ap-southeast-5.aliyuncs.com` (Jakarta region) |
-| IP ranges | `8.215.x.x`, `147.139.x.x` (Alibaba Cloud Indonesia/Singapore) |
-| NLB hostname | `nlb-*.ap-southeast-5.nlb.aliyuncsslbintl.com` |
+## Ant Group SPA Framework (Tern)
 
-## WAF Behavior (Alibaba Cloud WAF / Tengine)
+Ant Group SPAs use a `tern-site-config` JSON blob in the HTML `<script type="tern-site-config">`:
 
-### Block Response Pattern
-```
-HTTP/2 405
-server: Tengine
-content-type: text/html; charset=utf-8
-
-<!doctypehtml><html lang="zh-cn">...<title>405</title>...
-"Sorry, your request has been blocked as it may cause potential threats to the server's security."
-```
-
-Contains `traceid` in a hidden textarea: `{"traceid":"...","lang":"en"}`
-
-### WAF Cookie
-```
-set-cookie: acw_tc=<hex>;path=/;HttpOnly;Max-Age=1800
-```
-This is Alibaba Cloud WAF's session tracking cookie. Present on all WAF-fronted services.
-
-### WAF vs Istio RBAC (Differentiation)
-- **Alibaba WAF block:** 405 + Tengine + Chinese/English HTML page (2657 bytes)
-- **Istio RBAC block:** 403 + `server: istio-envoy` + `RBAC: access denied` (19 bytes)
-- **Both can coexist:** WAF at edge, Istio inside the mesh
-
-## Kubernetes Cluster Naming Convention (GoTo/Findaya)
-
-Pattern: `al-mg-id-{p|s}` = Alibaba Managed - Indonesia - {Production|Staging}
-
-| Prefix | Meaning |
-|--------|---------|
-| `al-mg-id-p` | Alibaba Managed K8s, Indonesia, Production |
-| `al-mg-id-s` | Alibaba Managed K8s, Indonesia, Staging |
-| `al-mg-id-s-waf-lb` | Staging cluster WAF load balancer |
-| `p-*-k8s-lb` | Production K8s load balancer |
-| `s-*-k8s-lb` | Staging K8s load balancer |
-| `p-*-k8s-waf-lb` | Production K8s WAF load balancer |
-
-### Subdomain Routing Pattern
-```
-{service}.{product}.{cluster}.findaya.co.id
-  api.cashloans.al-mg-id-p.findaya.co.id  → prod cluster
-  api.cashloans.al-mg-id-s.findaya.co.id  → staging cluster
-  api.cashloans.findaya.co.id             → main ingress (NLB)
+```json
+{
+  "authType": "antbuservice",
+  "mode": "cloud",
+  "yuyanId": "180020010201248959",
+  "name": "antom-workbench-site",
+  "iframeImplantEnable": true,
+  "metadata": { "links": [{"href": "https://dashboard-apiv2.antom.com", "rel": "dns-prefetch"}] }
+}
 ```
 
-**Key insight:** The `al-mg-id-p`/`al-mg-id-s` direct cluster gateways enforce Istio RBAC strictly. The main ingress (without cluster prefix) may have DIFFERENT auth policies — this is where misconfigurations are found (e.g., actuator exposed on main ingress but blocked on direct cluster gateway).
+Key fields:
+- `yuyanId` — uniquely identifies the micro-app; JS bundles hosted at `render-intl.alipayobjects.com/p/yuyan/{yuyanId}/`
+- `name` — internal app identifier
+- `metadata.links` with `crossOrigin: "use-credentials"` — reveals backend API hosts
 
-## Port Exposure Pattern
+## Referer-Based Access Control Bypass
 
-Alibaba Cloud security groups sometimes allow TCP handshake on internal service ports but the services don't respond to external application-layer traffic (bound to internal interfaces).
+Ant Group APIs commonly enforce Referer checks instead of (or before) token auth. Known working Referers:
 
-**Observed on 8.215.152.172 (Findaya, May 2026):**
-- Ports open (TCP SYN-ACK): 80, 443, 2379, 2380, 3000, 4443, 5432, 5601, 6379, 8080, 8443, 8888, 9090, 9200, 9300, 10250, 10255
-- Ports responding to HTTP: only 80, 443 (via correct hostname/SNI)
-- All other ports: TCP open but application-layer filtered
+| Referer | Bypasses |
+|---------|----------|
+| `https://dashboard.antom.com/` | PROD dashboard-apiv2 endpoints |
+| `https://global-testpre.alipay.com/` | PRE env endpoints + some PROD endpoints (broader) |
+| `https://render-intl.alipay.com/` | CDN-origin paths |
 
-**Implication:** Document as "defense-in-depth failure" (security group too permissive) but note it's not directly exploitable from external. The real attack surface is the HTTP/HTTPS ingress.
+**Pattern:** Different Referers work for different endpoint groups. Test each separately. Some endpoints (like `getPubKey.json`) need NO Referer at all on certain hosts.
 
-## Spring Boot on Alibaba Cloud
+## Cloud Metadata
 
-### Actuator Discovery via Metrics Tags
+Alibaba Cloud uses `100.100.100.200` (NOT `169.254.169.254`) for instance metadata:
+```bash
+curl http://100.100.100.200/latest/meta-data/
+curl http://100.100.100.200/latest/meta-data/ram/security-credentials/
+```
 
-When `/actuator/metrics/http.server.requests` is accessible, the `uri` tag reveals ALL API routes:
+## OSS Bucket Patterns
 
 ```bash
-curl -sk "https://target/actuator/metrics/http.server.requests" | \
-  python3 -c "import sys,json; d=json.load(sys.stdin); [print(v) for t in d.get('availableTags',[]) if t['tag']=='uri' for v in t['values']]"
+# Format: {bucket}.{region}.aliyuncs.com
+# Common regions: oss-ap-southeast-1, oss-cn-hangzhou, oss-cn-shanghai
+curl -s 'https://{name}.oss-ap-southeast-1.aliyuncs.com/'
+# Check via CNAME too (may have different ACL)
+curl -s 'https://subdomain.target.com/'  # if CNAME → bucket
 ```
 
-This is MORE valuable than directory brute-force — it shows the exact routes the application serves, including:
-- Internal callback endpoints (often unauthenticated)
-- Integration endpoints (server-to-server, may lack auth)
-- Admin/actuator paths
-- Versioned API routes
+OSS POST returns XML `MethodNotAllowed` with `webapp-origin.marmot-cloud.com` as HostId — confirms static CDN bucket (dead end for API testing).
 
-### Additional Metric Tags to Extract
+## Session Cookies
 
-| Tag | Intelligence Value |
-|-----|-------------------|
-| `uri` | Complete API route map |
-| `host` | Internal hostname |
-| `team` | Owning team name |
-| `env` | Environment confirmation (production/staging) |
-| `exception` | Error types (reveals framework internals) |
-| `status` | Which HTTP codes are returned (429 = rate limiting exists) |
-| `method` | Which HTTP methods are accepted |
-| `outcome` | Success/error ratios |
+Ant Group dashboard sets cookies on `.antom.com` (broad domain scope):
+- `ALIPAYINTLJSESSIONID` — session token, Domain=.antom.com, NO HttpOnly
+- `ctoken` — CSRF-like token, Domain=.antom.com, NO HttpOnly  
+- `spanner` — routing cookie, Secure only, NO HttpOnly
+- `JSESSIONID` — backend session, HttpOnly (this one is protected)
 
-## Integration/Callback Endpoint Pattern (HIGH VALUE)
+## API Error Patterns
 
-Server-to-server integration endpoints often LACK authentication because they're designed to be called by trusted internal services or partner APIs.
+| Error | Meaning |
+|-------|---------|
+| `{"stat":"fail","msg":"RefererCheckFailed"}` | Wrong/missing Referer header |
+| `{"redirectURL":"https://global.alipay.com/ilogin/..."}` | Needs authenticated session |
+| `{"resultCode":"IPAY_RS_510000400","resultMessage":"..."}` | Processed without auth but validation failed |
+| `{"success":true,"data":{...}}` | Fully processed, no auth needed |
+| `{"errormsg":"security error!","success":"false"}` | Security check failed (different from Referer) |
 
-### Detection
-- Path contains: `/integration/`, `/callback`, `/webhook`, `/notify`, `/hook`
-- Discovered via actuator metrics tags (e.g., `/integration/gopay/kyc/v1/{gopay_account_id}/callback`)
-- Returns 405 (Method Not Allowed) on GET instead of 401 (Unauthorized) — indicates no auth middleware
+Key insight: `IPAY_RS_510000400` means the endpoint PROCESSES without authentication — it reached business logic validation. The auth layer was skipped entirely.
 
-### Testing
+## Function Compute (FC) Probing
+
+js.antom.com exposes Alibaba FC. Fingerprints:
+- `x-fc-request-id` header on responses
+- GET requests return OSS XML (`NoSuchKey`) — FC fronted by OSS
+- POST `/invoke` returns FC internal errors (HTTP 599):
+  ```
+  unhandled error(13485,13477)@<internal>: PackInfoNotInitError: pack info not init
+  ```
+- Adding `X-Fc-Invocation-Type: Sync` header triggers same error
+
+FC is not exploitable for SSRF or code exec from external — the function is broken/uninitialized. Document as info-level (internal error disclosure).
+
+## Dead-End Classification (Fast Triage)
+
+Use these fingerprints to quickly dismiss hosts during Phase 3 enumeration:
+
+| Fingerprint | Classification | Action |
+|-------------|---------------|--------|
+| POST → XML `<Error><Code>MethodNotAllowed` + `webapp-origin.marmot-cloud.com` | CDN/OSS bucket | Dead end |
+| HTTP 204, size 0, `server: ESA` on all paths | Tracking beacon | Dead end |
+| Body = "success" (7 bytes), all paths identical | Health/proxy stub | Dead end |
+| 302 → /platform or /index.html, body = "index page" | Empty OSS app | Dead end |
+| All paths return same size + `server: Spanner` + 302→/error | SPA catch-all (no backend paths exposed) | Extract tern-site-config, skip path fuzzing |
+| `x-oss-cdn-auth: success` + `x-oss-request-id` | CDN-authenticated OSS | No listing, no write |
+
+## Multi-Host Same-Backend Detection
+
+Ant Group apps often have multiple hostnames pointing to the same backend:
+- `dashboard-apiv2.antom.com` = `dashboard-api.antom.com` = `dashboard-apiv2-pre.antom.com` (same API surface)
+- All SPAs (`dashboard`, `2c2p-portal`, `demo`) proxy to `dashboard-apiv2` backend
+
+Verify by testing one endpoint on both. Report all affected hosts but don't duplicate enumeration effort. Same tern-site-config `yuyanId` = same JS bundles = same frontend.
+
+## CORS Classification (4 tiers across Ant Group hosts)
+
+Ant Group subdomains have inconsistent CORS policies. Always test each host individually:
+
+| Tier | Behavior | Hosts (Antom example) | Severity |
+|------|----------|----------------------|----------|
+| 1: Arbitrary origin | Reflects ANY external origin + `credentials: true` | navigator.antom.com, js.antom.com | High (if data endpoint exists) |
+| 2: Null origin | Reflects `Origin: null` + credentials | navigator.antom.com | High (iframe sandbox exploit) |
+| 3: Subdomain pattern | Reflects `*.antom.com` only + credentials | docs.antom.com, 2c2p-portal.antom.com | Medium (needs XSS on sibling subdomain) |
+| 4: No CORS | No ACAO header returned | dashboard-apiv2.antom.com | N/A |
+
+**nuclei false-positive (CRITICAL):** nuclei CORS templates report Tier 3 (subdomain-pattern) as `[cors-misconfig:arbitrary-origin]` because they test with a generated subdomain like `https://dlnot.antom.com`. This looks like arbitrary origin in nuclei output but is actually subdomain-only reflection. ALWAYS manually verify with a fully external origin (`https://evil.attacker.com`) before reporting. In Antom testing (June 2026): nuclei flagged 4 hosts, only 2 were truly arbitrary-origin (Tier 1).
+
+**Exploitation note:** Tier 1 hosts (navigator, js) return 405 on all paths — no data-returning endpoint found. Tier 3 hosts (docs) have `/api` backend (403). The `.antom.com` cookie scope (ALIPAYINTLJSESSIONID without HttpOnly) means a Tier 1 CORS + any future API endpoint on that host = instant session theft.
+
+## Antom v2 Payment API (/ams/api/v1/)
+
+`open-sectest-sg.antom.com` hosts the Antom v2 payment gateway alongside the legacy `gateway.do` (RSA2 signed). The v2 API uses `client-id` header authentication instead of request-body RSA signatures:
+
 ```bash
-# If GET returns 405 (not 401), try POST — callbacks are typically POST
-curl -sk -X POST "https://target/integration/partner/callback" \
-  -H "Content-Type: application/json" -d '{}'
-
-# Common responses:
-# 500 + verbose error → internal service discovery (service names, internal domains)
-# 200 + data → unauthenticated data access (CRITICAL)
-# 400 + field validation → reveals expected payload structure
-# 401 → auth IS enforced (safe)
+# Discover live endpoints (return 200 with JSON errors, not 404)
+for path in payments/pay payments/inquiryPayment payments/cancel payments/refund payments/capture authorizations/consult customs/declare; do
+  curl -sk -X POST "https://open-sectest-sg.antom.com/ams/api/v1/$path" \
+    -H 'Content-Type: application/json' -H 'client-id: test' -d '{}' -m 5
+done
 ```
 
-### Real-World Case Study: Findaya KYC (May 2026)
+Error progression:
+- No `client-id` header: `"client-id not found: null"`
+- Invalid `client-id`: `"client-id not found: test"` (PARAM_ILLEGAL)
+- Valid `client-id` + no signature: would get signature error (not reached)
 
-**Discovery path:**
-1. `/actuator/metrics/http.server.requests` exposed route: `/integration/gopay/kyc/v1/{gopay_account_id}/callback`
-2. GET returned 405 (not 401) → no auth on this path
-3. POST returned 500 with internal service name: `"api.kyc.loanplatform.findaya.com: Name or service not known executing POST http://kyc-service/..."`
-4. Tested adjacent endpoint: `/legalEntityKYC/v1/onboarding-doc`
-5. POST with empty body `{}` returned **signed GCS URLs to production KYC documents** (Critical!)
+**Key insight:** The endpoint looks up client-id in a database. Format is unknown (not in JS bundles). Sandbox IDs (e.g., `SANDBOX_5Y...`) don't work on this host. If a valid client-id is ever leaked (GitHub, JS, API response), the payment API becomes directly accessible for testing.
 
-**Key lesson:** When actuator reveals integration/callback routes, ALWAYS test them with POST. They frequently lack auth because the original design assumed only internal services would call them. The API gateway may not enforce auth on `/integration/*` paths.
+Required headers for full request:
+```
+client-id: <merchant_client_id>
+request-time: 2026-06-03T12:00:00+08:00
+signature: algorithm=RSA256,keyVersion=1,signature=<base64>
+```
 
-**Severity escalation:** A 500 error disclosing internal service names is Medium. But testing ADJACENT endpoints on the same path prefix (`/legalEntityKYC/v1/`) revealed a Critical data leak. Don't stop at the first error — enumerate the entire path namespace.
+## TLS Configuration
+
+Ant Group wildcard certs (*.antom.com via DigiCert) commonly support TLS 1.0/1.1 across all hosts. This is infrastructure-level — unlikely accepted as a bounty finding but worth documenting for internal pentests.

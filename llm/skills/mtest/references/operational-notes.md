@@ -194,6 +194,26 @@ When regular frida-server is detected (port 27042, /proc/self/maps strings), use
 frida -U -f <package> -l script.js
 ```
 
+**Frida CLI output buffering pitfall:** When running `frida -U -p PID -l script.js` in background with `tee` or output redirection, console.log output is heavily buffered and may never appear in the file. The `-o` flag also buffers until session ends. **Solution:** Use Python frida bindings with `send()` + `on_message` callback — messages arrive immediately and reliably:
+
+```python
+import frida, subprocess, time
+device = frida.get_usb_device()
+session = device.attach(pid)
+messages = []
+script = session.create_script(js_with_send_calls)
+script.on('message', lambda m, d: messages.append(m['payload']) if m['type']=='send' else None)
+script.load()
+time.sleep(2)
+# Trigger actions via subprocess (adb shell am start ...)
+subprocess.run(['adb', '-s', 'SERIAL', 'shell', 'am', 'start', ...])
+time.sleep(3)
+session.detach()
+for m in messages: print(m)
+```
+
+This is the ONLY reliable method when you need to: (1) inject hooks, (2) trigger external actions (deep links, broadcasts), (3) capture hook output — all in one automated sequence. CLI frida cannot do steps 1+2+3 together because it blocks on stdin.
+
 **Starting frida-server:** Required for `frida -U -f <package>` on rooted devices:
 ```bash
 adb shell "su -c '/data/local/tmp/frida-server -D'"

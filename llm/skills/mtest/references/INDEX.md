@@ -19,6 +19,7 @@ Quick lookup for which reference file to load based on what you're working on.
 | Exported ContentProvider | `content-provider-attacks.md` |
 | Hardcoded encryption keys / small keyspace | `crypto-key-cracking.md` |
 | Banking/fintech app patterns | `banking-app-patterns.md` |
+| Jago app (Ory Kratos auth, HTTP Toolkit interception) | `jago-auth-flow.md` |
 | API endpoints extracted | `api-testing.md` |
 | SSL pinning / proxy setup needed | `traffic-analysis.md`, `dynamic-setup.md`, `flutter-ssl-bypass.md` |
 | Eversafe SDK / device attestation | `eversafe-attestation.md` |
@@ -60,6 +61,7 @@ Quick lookup for which reference file to load based on what you're working on.
 | `eversafe-attestation.md` | Eversafe SDK token architecture, replay technique, staging vs production behavior |
 | `flutter-ssl-bypass.md` | Flutter BoringSSL pinning bypass via pattern scanning in libflutter.so |
 | `frida-scripts.md` | Reusable Frida script templates for common hooks |
+| `jago-auth-flow.md` | Jago app Ory Kratos auth flow, token lifecycle, HTTP Toolkit interception setup |
 | `ghidra-mcp-workflow.md` | Ghidra MCP workflow for AppFence native library RE |
 | `native-buffer-overflow.md` | Buffer overflow exploitation in Android native libraries |
 | `native-re-mcp.md` | Native library reverse engineering using Ghidra/r2 MCP integration |

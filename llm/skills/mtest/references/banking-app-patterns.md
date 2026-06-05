@@ -217,6 +217,43 @@ Indonesian financial apps regulated by OJK must implement:
 - **MFA:** Test if second factor can be skipped or brute-forced
 - **Data protection:** Check for PII exposure (UU PDP compliance)
 - **Audit trail:** Check if actions are properly logged (useful for reporting impact)
+- **Consent/Riplay:** Test if consent approval can be submitted without viewing the legal document (see below)
+
+---
+
+## Multi-Step Flow Prerequisite Testing (Consent/Approval Bypass)
+
+Banking apps have sequential approval flows mandated by regulation. Common pattern:
+
+```
+Step A: Generate document → Step B: Show to user → Step C: Record consent
+```
+
+**Test methodology:**
+1. Map the full flow from traffic capture (identify all sequential API calls)
+2. Call Step C directly WITHOUT calling Step A or B — does it succeed?
+3. Call steps OUT OF ORDER — does the server enforce sequence?
+4. Replay consent (submit same approval twice) — is idempotency enforced?
+5. Manipulate consent fields (version, key, type) — are arbitrary values accepted?
+
+**Common flows to test:**
+
+| Flow | Steps | Bypass Impact |
+|------|-------|---------------|
+| Riplay (loan disclosure) | compliance-check → view PDF → consent/stage | OJK violation — loan without informed consent |
+| KYC | upload-id → selfie → liveness → verify | Account opening without identity verification |
+| Transfer | initiate → OTP → confirm | Unauthorized fund transfer |
+| Card activation | request → verify-identity → activate | Card fraud |
+| Account closure | request → cooling-period → confirm | Forced account closure |
+
+**What to look for:**
+- No one-time token linking steps (Step A should return a token required by Step C)
+- No server-side session state tracking step completion
+- No timestamp validation (Step C should only work within N minutes of Step A)
+- Consent replay accepted (same approval recorded multiple times)
+
+**Indonesian regulatory context:**
+OJK POJK No. 6/POJK.07/2022 requires customers to receive AND acknowledge loan information documents (Riplay) before contract execution. A consent bypass means the bank's audit trail shows compliance, but the customer never saw the document — regulatory fraud risk.
 
 ---
 

@@ -4,18 +4,31 @@ from hermes_tools import terminal
 
 
 PLATFORMS = [
+    # Developer / Security
     {"name": "GitHub", "url": "https://github.com/{}", "check": "200"},
     {"name": "GitHub API", "url": "https://api.github.com/users/{}", "check": "200"},
+    {"name": "GitLab", "url": "https://gitlab.com/{}", "check": "200"},
+    {"name": "Bitbucket", "url": "https://bitbucket.org/{}/", "check": "200"},
     {"name": "HackerOne", "url": "https://hackerone.com/{}", "check": "200"},
     {"name": "Bugcrowd", "url": "https://bugcrowd.com/{}", "check": "200"},
     {"name": "TryHackMe", "url": "https://tryhackme.com/r/p/{}", "check": "200"},
+    {"name": "HackTheBox", "url": "https://app.hackthebox.com/users/{}", "check": "200"},
+    {"name": "CTFtime", "url": "https://ctftime.org/team/{}", "check": "200"},
+    {"name": "npm", "url": "https://www.npmjs.com/~{}", "check": "200"},
+    {"name": "PyPI", "url": "https://pypi.org/user/{}/", "check": "200"},
+    {"name": "Docker Hub", "url": "https://hub.docker.com/u/{}", "check": "200"},
+    {"name": "Keybase", "url": "https://keybase.io/{}", "check": "200"},
+    # Social / Content
     {"name": "YouTube", "url": "https://youtube.com/@{}", "check": "200"},
     {"name": "TikTok", "url": "https://tiktok.com/@{}", "check": "200"},
     {"name": "Medium", "url": "https://medium.com/@{}", "check": "200"},
-    {"name": "Reddit", "url": "https://reddit.com/user/{}", "check": "200"},
+    {"name": "Reddit", "url": "https://www.reddit.com/user/{}", "check": "200"},
     {"name": "Telegram", "url": "https://t.me/{}", "check": "200"},
-    {"name": "Keybase", "url": "https://keybase.io/{}", "check": "200"},
     {"name": "LinkedIn", "url": "https://linkedin.com/in/{}", "check": "200"},
+    {"name": "Twitch", "url": "https://twitch.tv/{}", "check": "200"},
+    {"name": "SoundCloud", "url": "https://soundcloud.com/{}", "check": "200"},
+    {"name": "Gravatar", "url": "https://en.gravatar.com/{}", "check": "200"},
+    {"name": "Dev.to", "url": "https://dev.to/{}", "check": "200"},
 ]
 
 

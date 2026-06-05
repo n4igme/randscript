@@ -213,5 +213,131 @@ def scan_from_openapi(base_url, openapi_path, token_a, token_b, user_a_id, user_
     return scan(base_url, endpoints, token_a, token_b, user_a_id, user_b_id, **kwargs)
 
 
+def scan_from_recon(base_url, recon_dir, token_a, token_b, user_a_id, user_b_id, **kwargs):
+    """
+    Auto-discover endpoints from ptest/atest recon output and batch-test for BOLA.
+
+    Reads:
+      - js-analysis.json (endpoints extracted from JS bundles)
+      - enumeration/*.txt (gobuster/feroxbuster output)
+      - Any swagger/openapi JSON found in recon
+
+    Args:
+        recon_dir: Path to recon output (e.g., ./ptest-output/recon-passive)
+        (other args same as scan())
+    """
+    import os
+    import re
+
+    endpoints = []
+    seen_paths = set()
+
+    # 1. JS analysis endpoints
+    js_path = os.path.join(recon_dir, "js-analysis.json")
+    if os.path.isfile(js_path):
+        with open(js_path) as f:
+            js_data = json.loads(f.read())
+        for ep in js_data.get("endpoints", []):
+            # Only keep paths with ID-like parameters
+            if re.search(r'/\d+|/\{[^}]+\}|/[a-f0-9-]{36}', ep):
+                normalized = re.sub(r'/\d+', '/{id}', ep)
+                normalized = re.sub(r'/[a-f0-9-]{36}', '/{id}', normalized)
+                if normalized not in seen_paths:
+                    seen_paths.add(normalized)
+                    endpoints.append({"method": "GET", "path": normalized})
+
+    # 2. Enumeration output (look for paths with numeric IDs)
+    enum_dir = os.path.join(os.path.dirname(recon_dir), "enumeration")
+    if os.path.isdir(enum_dir):
+        for fname in os.listdir(enum_dir):
+            fpath = os.path.join(enum_dir, fname)
+            if os.path.isfile(fpath):
+                with open(fpath) as f:
+                    for line in f:
+                        # Extract paths from gobuster/feroxbuster output
+                        match = re.search(r'(/[^\s]+)', line)
+                        if match:
+                            path = match.group(1)
+                            if re.search(r'/\d+', path):
+                                normalized = re.sub(r'/\d+', '/{id}', path)
+                                if normalized not in seen_paths:
+                                    seen_paths.add(normalized)
+                                    endpoints.append({"method": "GET", "path": normalized})
+
+    # 3. Look for swagger/openapi files
+    for root, dirs, files in os.walk(recon_dir):
+        for f in files:
+            if f in ("swagger.json", "openapi.json") or "api-docs" in f:
+                return scan_from_openapi(base_url, os.path.join(root, f),
+                                         token_a, token_b, user_a_id, user_b_id, **kwargs)
+
+    if not endpoints:
+        print("No endpoints with ID parameters found in recon output.")
+        print("Provide endpoints manually or run JS bundle analysis first.")
+        return {"vulnerable": [], "safe": [], "errors": [], "summary": "No endpoints found"}
+
+    # Add common write methods for discovered endpoints
+    expanded = []
+    for ep in endpoints:
+        expanded.append(ep)
+        # Also test PUT/DELETE on same paths
+        expanded.append({"method": "PUT", "path": ep["path"], "body": {"test": "bola"}})
+        expanded.append({"method": "DELETE", "path": ep["path"]})
+
+    print(f"Auto-discovered {len(endpoints)} endpoints → expanded to {len(expanded)} tests")
+    return scan(base_url, expanded, token_a, token_b, user_a_id, user_b_id, **kwargs)
+
+
+def scan_batch_ids(base_url, path_template, token, id_range=range(1, 50),
+                   auth_header="Authorization", auth_prefix="Bearer", timeout=10):
+    """
+    Enumerate IDs on a single endpoint to find accessible resources.
+    Useful when you have one user's token and want to see what else is accessible.
+
+    Args:
+        base_url: API base URL
+        path_template: Path with {id} placeholder (e.g., "/api/users/{id}")
+        token: Auth token to test with
+        id_range: Range of IDs to try
+        auth_header/auth_prefix: Auth header configuration
+        timeout: Per-request timeout
+
+    Returns:
+        dict with: accessible (list of IDs that returned 200), denied (count), errors (count)
+    """
+    results = {"accessible": [], "denied": 0, "errors": 0}
+
+    print(f"ID Enumeration: {path_template}")
+    print(f"  Range: {id_range.start}-{id_range.stop-1} ({len(id_range)} IDs)")
+    print(f"{'='*60}")
+
+    for id_val in id_range:
+        path = path_template.replace("{id}", str(id_val))
+        url = f"{base_url}{path}"
+        cmd = (f'curl -sk -o /dev/null -w "%{{http_code}}" -X GET '
+               f'-H "{auth_header}: {auth_prefix} {token}" '
+               f'--max-time {timeout} "{url}"')
+
+        resp = terminal(cmd, timeout=timeout + 5)
+        code = resp.get("output", "").strip()
+
+        if code == "200":
+            results["accessible"].append(id_val)
+            print(f"  ✓ ID {id_val} → 200 (accessible)")
+        elif code in ("401", "403"):
+            results["denied"] += 1
+        elif code == "404":
+            pass  # Resource doesn't exist
+        else:
+            results["errors"] += 1
+
+    print(f"\n{'='*60}")
+    print(f"  Accessible: {len(results['accessible'])} | Denied: {results['denied']} | Errors: {results['errors']}")
+    if results["accessible"]:
+        print(f"  IDs: {results['accessible'][:20]}")
+
+    return results
+
+
 if __name__ == "__main__":
     pass

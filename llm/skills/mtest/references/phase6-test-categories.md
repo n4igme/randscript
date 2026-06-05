@@ -55,6 +55,48 @@ adb shell am start -a android.intent.action.VIEW -d "scheme://path?param=INJECTE
 ```
 
 - **Parameter name fuzzing:** When a deep link handler fails to extract a value despite correct URI format, the parameter name may differ from what hardcoded URLs suggest. Enumerate candidate names from: (1) field names in decompiled source/metadata, (2) method names, (3) common variants (`url=`, `server=`, `target=`, `endpoint=`, `addr=`).
+
+### 2a. BROWSABLE Deep Link Action Triggering (CSRF-like)
+
+Deep links with `android.intent.category.BROWSABLE` can be triggered from web pages via `<a href="scheme://...">` or JS redirect. Test if they can trigger user-facing actions:
+
+**Content injection (pre-fill):**
+```bash
+# Test if deep links pre-fill user content (posts, messages, search)
+adb shell am start -a android.intent.action.VIEW -d "scheme://create?text=attacker-controlled-text"
+adb shell am start -a android.intent.action.VIEW -d "scheme://compose?body=phishing-link"
+adb shell am start -a android.intent.action.VIEW -d "scheme://search?query=attacker-term"
+adb shell am start -a android.intent.action.VIEW -d "scheme://share?text=spam-content"
+```
+
+**Action triggering (follow, join, send):**
+```bash
+# Test if deep links trigger actions without confirmation
+adb shell am start -a android.intent.action.VIEW -d "scheme://user?username=X&action=follow"
+adb shell am start -a android.intent.action.VIEW -d "scheme://group_invite?id=X&auto_join=true"
+adb shell am start -a android.intent.action.VIEW -d "scheme://send_message?to=X&text=Y"
+```
+
+**Validation:** Use `uiautomator dump` to check if:
+- Text fields are pre-filled with attacker content
+- Action buttons (Post, Send, Follow) are immediately visible
+- Link previews render for attacker URLs
+- No confirmation dialog before action
+
+**Severity guide:**
+- Auto-action (no user tap): High
+- Pre-fill + one tap to execute: Low-Medium
+- Pre-fill + multiple steps: Informational
+- Navigation only (no action): Not a finding
+
+**Full chain validation:** Host PoC HTML on HTTP server, open in device browser, tap link, confirm app opens with pre-filled content:
+```bash
+# Host PoC
+python3 -m http.server 8889
+# Open in Chrome on device
+adb shell am start -a android.intent.action.VIEW -d "http://<host-ip>:8889/poc.html"
+# Tap link → verify app opens with attacker content
+```
 - **Deep link parameters leaked to analytics:** After triggering any deep link, check logcat for analytics SDK logging:
   ```bash
   adb shell am start -d "scheme://app/transfer?amount=1000000&to=9999999999" <package>
@@ -96,3 +138,66 @@ adb shell content query --uri content://<package>.provider/table
 ## References
 
 `runtime-testing.md`, `frida-scripts.md`, `deep-link-path-traversal.md`
+
+## Appendix: Frida-less Dynamic Analysis (When Instrumentation Fails)
+
+When Frida/hluda cannot attach (Meta apps, heavy anti-instrumentation), use these alternatives:
+
+**Activity/navigation tracing:**
+```bash
+# What's in foreground?
+adb shell dumpsys window | grep mCurrentFocus
+adb shell dumpsys activity activities | grep topResumedActivity
+
+# Full activity stack (detect Custom Tabs, WebViews, external browser launches)
+adb shell dumpsys activity activities | grep -E "ActivityRecord.*<package>"
+
+# Check if Chrome/external browser opened
+adb shell dumpsys activity activities | grep -E "chrome|browser"
+```
+
+**UI state inspection (replaces Frida hooks on UI):**
+```bash
+# Dump current UI tree — shows all visible text, buttons, input fields
+adb shell uiautomator dump /sdcard/ui.xml
+adb shell cat /sdcard/ui.xml | grep -oE 'text="[^"]*"' | grep -v 'text=""'
+
+# Get element bounds for tap simulation
+adb shell cat /sdcard/ui.xml | grep "target_text" | grep -oE 'bounds="[^"]*"'
+
+# Simulate tap at coordinates
+adb shell input tap <x> <y>
+```
+
+**Screenshot size heuristic:**
+```bash
+# Take screenshot and check file size
+adb shell screencap -p /sdcard/screen.png && adb pull /sdcard/screen.png /tmp/
+ls -la /tmp/screen.png
+# ~14KB = screen off/locked
+# ~100-200KB = simple UI (feed, profile)
+# ~500KB+ = rich content (WebView, media, new screen)
+# ~1MB+ = external browser with content loaded
+```
+
+**Logcat (limited but sometimes useful):**
+```bash
+# Filter by app PID
+adb logcat --pid=$(adb shell pidof <package>) -v time | tee /tmp/logcat.txt
+# Trigger action, then grep
+grep -iE "url|redirect|webview|intent|deeplink" /tmp/logcat.txt
+```
+
+**Intent verification (did the app launch something?):**
+```bash
+# Check intent data in activity records
+adb shell dumpsys activity activities | grep -A5 "chrome\|browser\|CustomTab" | grep "dat="
+```
+
+**Limitations:**
+- Cannot hook internal method calls or return values
+- Cannot bypass client-side checks
+- Cannot trace URL parameter extraction logic
+- Cannot monitor network requests at app level
+
+**When to accept these limitations:** For bug bounty, if you can demonstrate impact via UI state (pre-filled content, navigation to attacker URL, action triggered), that's sufficient evidence. You don't need Frida traces to prove a finding — screenshots + `uiautomator dump` showing attacker-controlled content in the UI is valid PoC.

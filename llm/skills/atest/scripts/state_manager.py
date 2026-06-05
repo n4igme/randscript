@@ -59,6 +59,7 @@ def init_state(workdir, name, api_type="rest", auth_mechanism="jwt",
             "4_reporting": "LOCKED",
         },
         "findings_count": 0,
+        "findings_by_severity": {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0},
         "current_phase": 1,
         "config": {
             "base_urls": base_urls,
@@ -238,6 +239,11 @@ def add_finding(workdir, finding_id, title, severity, category, endpoint):
         return
 
     state["findings_count"] += 1
+    sev_key = severity.lower()
+    if "findings_by_severity" not in state:
+        state["findings_by_severity"] = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+    if sev_key in state["findings_by_severity"]:
+        state["findings_by_severity"][sev_key] += 1
     save_state(workdir, state)
 
     # Append to findings log

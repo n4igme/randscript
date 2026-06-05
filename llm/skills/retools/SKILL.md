@@ -170,24 +170,68 @@ mcp_ghidra_list_imports()
 mcp_ghidra_list_exports()
 ```
 
+**Pitfalls:**
+- REST API (port 8080) ONLY starts when a binary is opened in CodeBrowser — just launching Ghidra GUI is not enough. Double-click a binary in the project to open it.
+- Duplicate extension in BOTH system (`/opt/homebrew/Cellar/ghidra/.../Extensions/`) AND user (`~/Library/ghidra/.../Extensions/`) dirs causes crash: "Multiple modules collided with same name". Remove one.
+- `Module.manifest` format: Ghidra 12+ only accepts `MODULE DIR: lib` style lines. Arbitrary key-value pairs cause parse errors.
+- Headless mode (`analyzeHeadless`) does NOT start the REST server. Use headless Java scripts for automated analysis, GUI+MCP for interactive exploration.
+
 **Reference:** `references/ghidramcp-api.md`
 
 ### Ghidra Scripting (Headless)
 
 ```bash
-# Run Ghidra headless analysis
-analyzeHeadless /tmp/ghidra_project proj_name \
+# Import + analyze + run script (one-shot)
+/opt/homebrew/Cellar/ghidra/<ver>/libexec/support/analyzeHeadless \
+  /tmp/ghidra_project proj_name \
   -import ./binary \
+  -processor AARCH64:LE:64:v8A \
   -postScript MyScript.java \
-  -scriptPath /path/to/scripts \
-  -deleteProject
+  -scriptPath /tmp \
+  -overwrite 2>&1 | tail -20
 
-# Common headless scripts:
-# - Export function list
-# - Find cross-references
-# - Decompile all functions to file
-# - Search for patterns (bytes, strings)
+# Re-run script on already-imported binary (no re-analysis)
+analyzeHeadless /tmp/ghidra_project proj_name \
+  -process binary_name \
+  -noanalysis \
+  -postScript MyScript.java \
+  -scriptPath /tmp
 ```
+
+**Headless script pattern (Java):**
+```java
+import ghidra.app.script.GhidraScript;
+import ghidra.program.model.listing.*;
+import ghidra.program.model.symbol.*;
+
+public class MyScript extends GhidraScript {
+    @Override
+    public void run() throws Exception {
+        FunctionManager funcMgr = currentProgram.getFunctionManager();
+        // Get function at address (add 0x100000 for Ghidra's default image base)
+        Address addr = currentProgram.getAddressFactory()
+            .getDefaultAddressSpace().getAddress(0x581938);
+        Function func = funcMgr.getFunctionContaining(addr);
+        println("Function: " + func.getName() + " at " + func.getEntryPoint());
+        println("Size: " + func.getBody().getNumAddresses());
+        // Count BLR (indirect calls)
+        InstructionIterator iter = currentProgram.getListing()
+            .getInstructions(func.getBody(), true);
+        int blr = 0;
+        while (iter.hasNext()) {
+            if (iter.next().getMnemonicString().equals("blr")) blr++;
+        }
+        println("BLR count: " + blr);
+    }
+}
+```
+
+**Pitfalls:**
+- Class name MUST match filename (e.g., `FindVerify.java` → `public class FindVerify`)
+- `getReferencesTo()` returns `ReferenceIterator`, NOT `Reference[]` (Ghidra 12+)
+- Default image base for shared libs is 0x100000 — add this to file offsets for Ghidra addresses
+- Headless mode does NOT start the GhidraMCP REST server — use headless scripts OR open GUI for MCP
+- Parse output with `grep -E "(pattern)"` since headless prints INFO/WARN noise
 
 ---
 
@@ -415,6 +459,16 @@ For in-the-wild malware samples, obfuscated loaders, and supply chain implants.
 
 ---
 
+## Pitfalls
+
+- Ghidra auto-analysis on large binaries (>50MB) takes 30+ min — disable unused analyzers
+- radare2 `aaa` on stripped binaries misidentifies functions — use `aaaa` or manual `af` on known entry points
+- IDA Free doesn't support ARM64 — use Ghidra or Binary Ninja for mobile native libs
+- Frida on rooted Android: SELinux enforcing blocks injection — `setenforce 0` or use Magisk Hide
+- Stripped Go binaries: use `GoReSym` to restore symbol table before loading in Ghidra
+- JNI native methods: match `Java_package_Class_method` naming or you'll miss the bridge functions
+- Anti-debug checks (ptrace, timing): patch them out early or you'll waste hours on false behavior
+
 ## Verification
 
 After tool setup, verify with:
@@ -430,4 +484,17 @@ r2 -q -c 'e asm.arch=arm; e asm.bits=64; pa mov x0, 0' --  # test ARM64 assembly
 curl http://localhost:8080/methods  # should return JSON (when Ghidra + plugin running)
 ```
 
-**Reference:** `references/ghidramcp-api.md`, `references/native-ssl-pinning-analysis.md`
+**References:**
+- `references/ghidramcp-api.md` — GhidraMCP REST API endpoints
+- `references/native-ssl-pinning-analysis.md` — SSL pinning RE in native libs
+- `references/frida-scripting.md` — Frida patterns: Java hooks, native intercept, SSL bypass, root bypass, Python API
+- `references/debugger-workflows.md` — LLDB, GDB, remote debugging (Android/iOS), pwndbg/GEF
+- `references/unknown-binary-triage.md` — 15-min triage: identify, metadata, strings, dynamic, tool selection, `references/frida-scripting.md`, `references/debugger-workflows.md`, `references/unknown-binary-triage.md`
+
+---
+
+## Additional References
+
+- `references/frida-scripting.md` — Frida hook patterns (Java, native, SSL bypass, root bypass, Python API)
+- `references/debugger-workflows.md` — LLDB, GDB, GEF/pwndbg, remote debugging (Android/iOS)
+- `references/unknown-binary-triage.md` — 15-min methodology for approaching unfamiliar binaries, `references/frida-scripting.md`, `references/debugger-workflows.md`, `references/unknown-binary-triage.md`

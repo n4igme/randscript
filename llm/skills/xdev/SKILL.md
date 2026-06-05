@@ -36,6 +36,25 @@ Key rules:
 Phase 1: Vuln Analysis → Phase 2: Primitive Dev → Phase 3: Mitigation Bypass → Phase 4: Exploit Construction → Phase 5: Documentation
 ```
 
+## Scripts
+
+Scripts in `~/.hermes/skills/security/xdev/scripts/`:
+- **state_manager.py**: `init_state()`, `status()`, `advance_phase()`, `set_primitive()`, `add_bypass()`, `add_dead_end()`, `set_reliability()`, `abandon()`
+- **gate_check.py**: `check_gate(workdir, phase)`, `print_gate_status(result)` — run before advancing
+- **rop_builder.py**: ROP chain construction helpers
+- **heap_spray.py**: Heap spray primitives
+
+### Gate Enforcement (MANDATORY before `next`)
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/xdev/scripts"))
+from gate_check import check_gate, print_gate_status
+
+result = check_gate(".", phase=None)
+print_gate_status(result)
+```
+
 ## Commands
 
 | Command | Action |
@@ -199,201 +218,18 @@ Firmware/embedded (no allocator / flat memory)
 
 ---
 
-## Phase 1: Vulnerability Analysis
 
-### Gate: root cause identified, trigger conditions documented, exploitability assessed
+## Phases (load reference for full methodology)
 
-**Techniques:**
+| Phase | Gate | Reference |
+|-------|------|-----------|
+| 1 Vulnerability Analysis | root cause understood, crash PoC reproducible, exploitability assessed | `references/phase1-vuln-analysis.md` |
+| 2 Primitive Development | at least one useful primitive (read/write/exec) achieved from the bug | `references/phase2-primitive-dev.md` |
+| 3 Mitigation Assessment & Bypass | all relevant mitigations identified, bypass strategy documented | `references/phase3-mitigation-bypass.md` |
+| 4 Exploit Construction | reliable exploit achieving target capability (code exec, priv esc, etc.) | `references/phase4-exploit-construction.md` |
+| 5 Documentation & Delivery | full writeup + exploit code delivered | see below |
 
-1. **Crash Triage:**
-   ```bash
-   # ASAN output analysis
-   # Register state at crash (RIP/PC, RSP/SP, controlled registers)
-   # Signal type: SIGSEGV (read/write?), SIGBUS, SIGABRT
-   # Faulting instruction context
-   ```
-
-2. **Root Cause Classification:**
-   - UAF: object freed, dangling pointer dereferenced — what allocator? what size?
-   - OOB: buffer bounds exceeded — by how much? controlled length?
-   - Type confusion: wrong vtable/type used — what types are confused?
-   - Integer overflow: arithmetic wraps — where does the result flow?
-   - Race condition: TOCTOU window — how wide? can it be widened?
-   - Format string: user input as format — stack read/write primitive?
-
-3. **Constraint Mapping:**
-   - What bytes are controlled in the overflow/write?
-   - What's the allocation size? (heap exploitation strategy depends on this)
-   - What's the time window? (race conditions)
-   - What code paths reach the vulnerability from attacker input?
-   - Are there size/character/alignment restrictions?
-
-4. **Exploitability Assessment:**
-   | Rating | Criteria |
-   |--------|----------|
-   | Trivial | Direct PC control, no mitigations, large controlled buffer |
-   | Moderate | Requires info leak + heap shaping, standard mitigations |
-   | Complex | Tight constraints, multiple bugs needed, modern mitigations |
-   | Theoretical | Proven vulnerable but no practical path to exploitation |
-
-**Reference:** `references/linux-userland.md`, `references/windows-userland.md` (crash triage sections)
-
----
-
-## Phase 2: Primitive Development
-
-### Gate: at least one useful primitive demonstrated (read, write, or exec)
-
-**Techniques:**
-
-1. **Info Leak (ASLR/KASLR Defeat):**
-   - Heap spray + OOB read to leak adjacent object pointers
-   - UAF: read freed object's fd/bk pointers (heap base), vtable pointers (code base)
-   - Side channels: timing, cache, branch prediction (speculative execution)
-   - Partial overwrite: corrupt low bytes of pointer (no ASLR on low 12 bits)
-   - `/proc/self/maps` if accessible (Android pre-hardening, debug builds)
-
-2. **Arbitrary Read:**
-   - Corrupted length field → OOB read
-   - Fake object with controlled data pointer → read through object interface
-   - Format string `%s` with controlled pointer on stack
-
-3. **Arbitrary Write:**
-   - Heap overflow into adjacent object's function pointer
-   - UAF: replace freed object with controlled data, trigger virtual call
-   - Format string `%n` with controlled pointer
-   - Integer overflow in size → undersized allocation → heap overflow
-
-4. **Code Execution:**
-   - Overwrite return address (stack overflow)
-   - Overwrite vtable/function pointer (heap corruption)
-   - Overwrite GOT entry (format string / arbitrary write)
-   - JIT spray (browser/JS engine targets)
-
-5. **Heap Shaping (allocator-specific):**
-
-   **Linux glibc (ptmalloc2):**
-   - tcache: LIFO, per-thread, no integrity checks (< 2.32) → tcache poisoning trivial
-   - fastbin: single-linked, size check only → fastbin dup, double-free
-   - Unsorted bin: fd/bk leak → libc base. Corrupt bk → unsorted bin attack (write)
-
-   **Linux kernel (SLUB):**
-   - Cross-cache attack: free target object, reclaim slab page with different cache
-   - Spray objects: `msg_msg` (variable size), `pipe_buffer` (1024), `sk_buff`, `tty_struct`
-   - `userfaultfd` / `FUSE`: stall page faults to widen race windows
-
-   **Windows (LFH / Segment Heap):**
-   - LFH: randomized within bucket, spray heavily (256+ objects) for adjacency
-   - Segment heap (Win10+): VS/LFH subsegments, less predictable → need larger spray
-   - Pool (kernel): `NtCreateNamedPipeFile`, `IoCompletionPort` for pool spray
-
-   **Browser (PartitionAlloc / jemalloc):**
-   - PartitionAlloc (Chrome/WebKit): bucket-based, same-size guarantee → spray same-type objects
-   - jemalloc (Firefox): region-based, predictable adjacency with large sprays
-   - ArrayBuffer/TypedArray for controlled data placement
-
-   **iOS/macOS (kalloc / zone):**
-   - Zone allocator: spray with mach messages (`mach_msg` OOL descriptors)
-   - kalloc zones: size-segregated, spray IOKit objects or `ipc_kmsg`
-   - Cross-zone: free in one zone, reclaim from another (harder post-iOS 15)
-
-   ```
-   # General strategy:
-   # 1. Spray objects of target size to fill holes
-   # 2. Free strategic objects to create holes
-   # 3. Trigger vulnerable allocation into the hole
-   # 4. Adjacent object is now your target for corruption
-   ```
-
-**Reference:** `references/linux-userland.md`, `references/linux-kernel.md`, `references/arm64-exploitation.md`, `references/ios-webkit-chain.md`
-
----
-
-## Phase 3: Mitigation Assessment & Bypass
-
-### Gate: all relevant mitigations identified, bypass strategy selected
-
-**Techniques:**
-
-1. **Mitigation Enumeration:**
-   ```bash
-   # Linux
-   checksec --file=./binary
-   cat /proc/sys/kernel/randomize_va_space  # ASLR level
-   cat /proc/sys/kernel/kptr_restrict       # KASLR leak protection
-   dmesg | grep -i "SMEP\|SMAP\|CET"
-   
-   # Windows
-   # Check PE headers: ASLR, DEP, CFG, CET, ACG
-   # Process mitigation policies via Get-ProcessMitigation
-   
-   # macOS/iOS
-   # PAC (arm64e), PPL, AMFI, sandbox profile
-   ```
-
-2. **Bypass Selection Matrix:**
-   | Mitigation | Bypass Strategy |
-   |-----------|-----------------|
-   | ASLR | Info leak, partial overwrite, brute force (32-bit) |
-   | DEP/NX | ROP/JOP chain, mprotect/VirtualProtect, JIT page abuse |
-   | Stack canary | Info leak canary, overwrite past canary to other target, format string |
-   | CFI | Counterfeit objects (COOP), valid-but-wrong targets, JIT |
-   | CET (shadow stack) | Overwrite non-return control flow, signal frame abuse |
-   | SMEP/SMAP | Kernel ROP, physmap spray, ret2dir |
-   | PAC (ARM64) | PAC oracle, signing gadgets, PAC-less code paths, dyld interposing abuse |
-   | MTE (ARM64) | Brute force (16 tags), use-before-tag-check, speculative bypass |
-   | Sandbox | Escape via IPC, shared memory, permitted syscalls, GPU process pivot |
-   | SELinux | Transition to permissive domain, exploit allowed operations |
-
-3. **Gadget Discovery:**
-   ```bash
-   # ROP gadgets
-   ROPgadget --binary ./target --ropchain
-   ropper -f ./target --search "pop rdi"
-   # JOP gadgets
-   ROPgadget --binary ./target --jop
-   # Kernel gadgets
-   ROPgadget --binary vmlinux --ropchain
-   ```
-
-**Reference:** `references/mitigation-bypass.md`, `references/arm64-exploitation.md`, `references/ios-webkit-chain.md`
-
----
-
-## Phase 4: Exploit Construction
-
-### Gate: working exploit with documented reliability
-
-**Techniques:**
-
-1. **Payload Development:**
-   - ROP chain construction (stack pivot → mprotect → shellcode)
-   - Kernel payload (commit_creds(prepare_kernel_cred(0)), namespace escape)
-   - Shellcode (see `references/shellcode-dev.md`)
-   - Return-to-libc / one_gadget (glibc)
-
-2. **Reliability Engineering:**
-   - Heap spray density calculation (target allocation probability)
-   - Race condition timing (CPU pinning, priority manipulation, userfaultfd)
-   - Retry logic (non-destructive failure mode → retry without crash)
-   - Cross-version support (offset tables, heuristic-based offset finding)
-
-3. **Post-Exploitation Stability:**
-   - Fix corrupted heap metadata (prevent crash on next allocation/free)
-   - Restore overwritten kernel structures
-   - Clean up spray objects (prevent OOM)
-   - Fork before exploit (parent survives crash)
-
-4. **Target Adaptation:**
-   ```python
-   # Offset table pattern
-   OFFSETS = {
-       "5.15.0-generic": {"commit_creds": 0xdeadbeef, "prepare_kernel_cred": 0xcafebabe},
-       "5.19.0-generic": {"commit_creds": 0x12345678, "prepare_kernel_cred": 0x87654321},
-   }
-   ```
-
-**Reference:** `references/shellcode-dev.md`, `references/linux-kernel.md`, `references/windows-kernel.md`, `references/ios-webkit-chain.md`
+**Usage:** `skill_view(name='xdev', file_path='references/phase1-vuln-analysis.md')` when entering that phase.
 
 ---
 
@@ -507,3 +343,143 @@ Firmware/embedded (no allocator / flat memory)
 - **Responsible Disclosure** — if developing for a real vulnerability, follow coordinated disclosure timelines. Don't publish before vendor patch.
 - **Data Safety** — kernel exploits can corrupt filesystems. Always snapshot before testing. Document destructive failure modes.
 - **Scope Creep** — if exploitation requires chaining 3+ separate bugs, reassess whether the complexity is justified for the engagement. Document the chain even if you can't complete it.
+
+
+---
+
+## Gate Enforcement (MANDATORY before `next`)
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/xdev/scripts"))
+from gate_check import check_gate, print_gate_status
+
+result = check_gate(".", phase=None)
+print_gate_status(result)
+# Only advance if result["passed"] is True
+```
+
+## Script Invocation
+
+**state_manager.py — engagement lifecycle:**
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/xdev/scripts"))
+import state_manager
+
+workdir = "."
+state_manager.init_state(workdir, "CVE-2024-XXXX", platform="linux",
+    architecture="x86_64", vuln_class="uaf", target_version="6.1.0", goal="lpe")
+
+state_manager.status(workdir)
+state_manager.set_primitive(workdir, "info_leak", True)
+state_manager.add_bypass(workdir, "KASLR")
+state_manager.add_dead_end(workdir, "tcache poison fails due to safe-linking")
+state_manager.set_reliability(workdir, "8/10")
+state_manager.advance_phase(workdir)
+```
+
+## Gate Enforcement (MANDATORY before `next`)
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/xdev/scripts"))
+from gate_check import check_gate, print_gate_status
+
+result = check_gate(".", phase=None)
+print_gate_status(result)
+```
+
+## Script Invocation
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/xdev/scripts"))
+import state_manager
+
+state_manager.init_state(".", "CVE-2024-XXXX", platform="linux", architecture="x86_64",
+    vuln_class="uaf", target_version="6.1.0", goal="lpe")
+state_manager.status(".")
+state_manager.advance_phase(".")
+state_manager.set_primitive(".", "info_leak")
+state_manager.add_bypass(".", "ASLR")
+state_manager.set_reliability(".", "85% (17/20)")
+state_manager.add_dead_end(".", "tcache poisoning blocked by safe-linking")
+state_manager.abandon(".", "Target patched")
+```
+
+---
+
+## Gate Enforcement (MANDATORY before `next`)
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/xdev/scripts"))
+from gate_check import check_gate, print_gate_status
+
+result = check_gate(".", phase=None)
+print_gate_status(result)
+# Only advance if result["passed"] is True
+```
+
+## Script Invocation
+
+Scripts are in `~/.hermes/skills/security/xdev/scripts/`. Invoke via `execute_code`.
+
+**state_manager.py — engagement lifecycle:**
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/xdev/scripts"))
+import state_manager
+
+workdir = "."
+state_manager.init_state(workdir, "CVE-2024-XXXX", platform="linux",
+    architecture="x86_64", vuln_class="uaf", target_version="6.1.0", goal="lpe")
+state_manager.status(workdir)
+state_manager.advance_phase(workdir)
+state_manager.set_primitive(workdir, "info_leak")
+state_manager.add_bypass(workdir, "KASLR")
+state_manager.add_dead_end(workdir, "tcache poisoning blocked by safe-linking")
+state_manager.set_reliability(workdir, "85% (9/10 attempts)")
+state_manager.abandon(workdir, "Target patched")
+```
+
+## Gate Enforcement (MANDATORY before `next`)
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/xdev/scripts"))
+from gate_check import check_gate, print_gate_status
+
+result = check_gate(".", phase=None)
+print_gate_status(result)
+```
+
+## Script Invocation
+
+**state_manager.py:**
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/xdev/scripts"))
+import state_manager
+
+state_manager.init_state(".", "CVE-2024-XXXX", platform="linux", architecture="x86_64",
+    vuln_class="uaf", target_version="6.1.0", goal="lpe")
+state_manager.status(".")
+state_manager.set_primitive(".", "info_leak")
+state_manager.add_bypass(".", "KASLR")
+state_manager.add_dead_end(".", "tcache poisoning blocked by safe-linking")
+state_manager.set_reliability(".", "85% (9/10 attempts)")
+state_manager.advance_phase(".")
+```
+
+---
+
+## Pitfalls
+
+- Kernel exploits: always check target kernel version + config (KASLR, SMEP, SMAP, kCFI) before investing time
+- Heap exploits: glibc version matters enormously — tcache (2.26+), safe-linking (2.32+), per-thread cache changes
+- Race conditions: timing windows vary wildly across hardware — PoC must demonstrate reliability percentage
+- ASLR bypass: don't assume info leak exists — document the leak primitive separately from the main bug
+- iOS: PAC bypass is mandatory for code exec on A12+ — budget time for this or downgrade scope to data-only
+

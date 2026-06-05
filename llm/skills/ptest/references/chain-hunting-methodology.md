@@ -35,6 +35,8 @@ A $500 IDOR becomes a $15,000 ATO chain. A medium SSRF becomes a critical RCE. T
 | 8 | Debug endpoint exposed | Environment variables leaked | Cloud credentials → infra access | Critical |
 | 9 | CORS reflects arbitrary Origin | credentials: include in response | Credentialed cross-origin data theft | High |
 | 10 | Host header injection | Password reset link poisoning | ATO via reset token theft | Critical |
+| 11 | Firebase password provider enabled (on passwordless app) | accounts:update email change + deleteProvider | Pre-register → steal UID → unlink victim → full ATO + lockout | Critical |
+| 12 | Unverified email change (accounts:update) | Provider unlinking (deleteProvider) | Victim permanently locked out, attacker exclusive access | Critical |
 
 ---
 
@@ -199,6 +201,7 @@ Map feature intersections. Test what happens when Feature A's output becomes Fea
 | Any CORS misconfiguration | Credentialed requests, data exfiltration |
 | Any header injection | Email poisoning, cache poisoning, request smuggling |
 | Any race condition | Double-spend, privilege escalation, limit bypass |
+| Firebase password provider on passwordless app | accounts:update (email change, deleteProvider), pre-registration ATO, provider confusion |
 
 ---
 

@@ -382,8 +382,11 @@ masscan -p1-65535 --rate=1000 -oL ./ptest-output/recon-active/masscan.txt 10.0.0
 
 **Requirements:**
 - Scan ALL unique public IPs discovered in Phase 1 (not just the primary target)
+- This includes NO_HTTP hosts (e.g., email infrastructure) — use -Pn if host seems down
 - Document every open port with service version
 - If nmap is unavailable, document the gap and use alternative (masscan + banner grab)
+
+**WinTicket lesson (June 2026):** Phase 2 was marked PASSED without scanning the email host (137.22.240.193, SparkPost). User caught this gap at review. Even if a host is expected to be locked down, scan it and document the result (e.g., "all filtered" is still a valid documented outcome).
 
 ### 2. Service Detection & Banner Grabbing
 Detailed version fingerprinting on discovered open ports.
@@ -453,9 +456,106 @@ Write `./ptest-output/recon-active/checklist.md`:
 | 2 | Service Detection & Banner Grabbing | PENDING | |
 | 3 | OS Fingerprinting | PENDING | |
 | 4 | Network Topology Mapping | PENDING | |
+| 5 | Subdomain Takeover Check (dangling CNAMEs) | PENDING | |
+| 6 | WAF Fingerprinting (XSS/SQLi probes, header analysis) | PENDING | |
+| 7 | HTTP Methods Enumeration (OPTIONS/PUT/DELETE/TRACE) | PENDING | |
+| 8 | CORS Misconfiguration Check (Origin reflection + credentials) | PENDING | |
+| 9 | Security Headers Audit (CSP, XFO, HSTS, X-Content-Type) | PENDING | |
+| 10 | SSL/TLS SAN Analysis (discover new subdomains from certs) | PENDING | |
 ```
 
 Mark each technique as `DONE`, `SKIPPED (reason)`, or `FAILED (reason)` after execution.
+
+### 5. Subdomain Takeover Check
+```bash
+# Check all CNAMEs for dangling pointers
+for sub in $(cat subdomains-all.txt); do
+  cname=$(dig +short CNAME "$sub" 2>/dev/null)
+  if [ -n "$cname" ]; then
+    ip=$(dig +short "$sub" 2>/dev/null | grep -E "^[0-9]" | head -1)
+    [ -z "$ip" ] && echo "⚠️ DANGLING: $sub → $cname"
+  fi
+done
+```
+Check CNAMEs pointing to: HubSpot, GitHub Pages, Heroku, AWS S3, Azure, Shopify, Fastly, etc.
+
+### 6. WAF Fingerprinting
+Send benign attack payloads to detect WAF presence and type:
+```bash
+# XSS probe
+curl -sk "https://target/?q=<script>alert(1)</script>" -o /dev/null -w "%{http_code}"
+# SQLi probe  
+curl -sk "https://target/?id=1'%20OR%201=1--" -o /dev/null -w "%{http_code}"
+# If 200/302 (not 403/406) → NO WAF
+# Check response headers for WAF signatures (x-waf, x-sucuri, cf-ray, etc.)
+```
+
+### 7. HTTP Methods Enumeration
+```bash
+for method in OPTIONS PUT DELETE PATCH TRACE; do
+  code=$(curl -sk -X $method -o /dev/null -w "%{http_code}" "https://target/")
+  echo "$method → $code"
+done
+# PUT/DELETE returning 200 on API endpoints = potential write access
+```
+
+### 8. CORS Misconfiguration Check
+```bash
+# Test origin reflection
+curl -sk -H "Origin: https://evil.com" "https://target/" -D - -o /dev/null | grep -i "access-control"
+# CRITICAL: If access-control-allow-origin reflects + allow-credentials: true → exploitable
+# Wildcard * without credentials = low impact (browsers block credentialed requests)
+```
+
+### 9. Security Headers Audit
+```bash
+curl -sk -I "https://target/" | grep -iE "^(x-frame|x-content|content-security|strict-transport|x-xss)"
+# Missing all headers = no WAF/security middleware → payloads won't be blocked in Phase 5/6
+```
+
+### 10. SSL/TLS SAN Analysis
+```bash
+echo | openssl s_client -connect target:443 -servername target 2>/dev/null | \
+  openssl x509 -noout -text | grep -A1 "Subject Alternative Name"
+# Look for *.subdomain.target.com wildcards and unknown hostnames
+```
+
+## Pitfall: Shell-based parallel DNS resolution fails on macOS
+
+**Problem (Ant Group, June 2026):** `xargs -P 20` with `dig` inside `sh -c` silently fails (exit 1, no output) on macOS due to shell quoting and subshell issues with the dig pipeline.
+
+**Fix:** Use Python `concurrent.futures.ThreadPoolExecutor` for DNS brute-force:
+```python
+import subprocess, concurrent.futures
+
+def resolve(sub):
+    try:
+        r = subprocess.run(['dig', '+short', '+time=2', '+tries=1', f'{sub}.target.com'],
+                          capture_output=True, text=True, timeout=5)
+        ip = r.stdout.strip().split('\n')[0]
+        if ip and ip[0].isdigit():
+            return f'{sub}.target.com|{ip}'
+    except:
+        pass
+    return None
+
+with concurrent.futures.ThreadPoolExecutor(max_workers=30) as ex:
+    results = [r for r in ex.map(resolve, subs) if r]
+```
+This is 3-5x faster than sequential and actually works cross-platform.
+
+## Pitfall: Incomplete live-hosts.txt
+
+**Problem (Bank Jago, May 2026):** Phase 2 live-hosts.txt contained only 67 entries when the master subdomain list had 343. This caused Phase 3 to miss 184 subdomains entirely until the user caught it at sign-off.
+
+**Root cause:** HTTP probing was done in batches but not all batches were consolidated into live-hosts.txt. Some subdomains were only in batch result files (http-probe-batch1.txt, http-probe-batch2.txt) but never merged.
+
+**Prevention:** Before requesting Phase 2 sign-off, run:
+```bash
+# Verify all master subs were probed
+diff <(sort -u subdomains-master.txt) <(sort -u live-hosts.txt) | grep "^<" | wc -l
+# If > 0, there are unprobed subdomains — batch-probe them before advancing
+```
 
 ## Exit Criteria
 - [ ] Active DNS expansion performed (pattern permutation brute-force executed).

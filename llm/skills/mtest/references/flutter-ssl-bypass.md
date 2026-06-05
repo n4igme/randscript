@@ -126,6 +126,126 @@ strings libflutter.so | grep "boringssl"
 # Expected: ../../../flutter/third_party/boringssl/src/ssl/handshake_client.cc
 ```
 
+## Fallback: Ghidra RE + Frida Backtrace (Flutter 3.22+, compileSdk 36)
+
+When ALL pattern-based approaches fail (hooks install but never trigger during TLS), use this control-flow-based approach to find the real `ssl_verify_peer_cert`:
+
+### Step 1: Identify the TLS call chain via Frida backtrace
+
+Hook `writev`/`write`/`sendto` syscalls and capture backtraces from libflutter.so during TLS handshake. The handshake sends ClientHello via these syscalls.
+
+```javascript
+function doHook() {
+    var flutter = Process.findModuleByName('libflutter.so');
+    if (!flutter) { setTimeout(doHook, 500); return; }
+    var flutterBase = flutter.base;
+    var flutterEnd = flutter.base.add(flutter.size);
+    var logged = 0;
+    function hookSyscall(name) {
+        var ptr = Module.findExportByName(null, name);
+        if (!ptr) return;
+        Interceptor.attach(ptr, {
+            onEnter: function(args) {
+                if (logged >= 5) return;
+                var bt = Thread.backtrace(this.context, Backtracer.FUZZY);
+                var hasFlutter = false;
+                for (var i = 0; i < bt.length; i++) {
+                    if (bt[i].compare(flutterBase) >= 0 && bt[i].compare(flutterEnd) < 0) {
+                        hasFlutter = true; break;
+                    }
+                }
+                if (hasFlutter) {
+                    logged++;
+                    var offsets = [];
+                    for (var i = 0; i < bt.length; i++) {
+                        if (bt[i].compare(flutterBase) >= 0 && bt[i].compare(flutterEnd) < 0)
+                            offsets.push('0x' + bt[i].sub(flutterBase).toString(16));
+                    }
+                    send({type: 'bt', name: name, offsets: offsets});
+                }
+            }
+        });
+    }
+    hookSyscall('write');
+    hookSyscall('writev');
+    hookSyscall('sendto');
+    hookSyscall('sendmsg');
+}
+doHook();
+```
+
+Run with redsocks active (so TLS handshake actually happens). The deepest offset in the backtrace is closest to the handshake entry point.
+
+### Step 2: Analyze candidates in Ghidra headless
+
+Import libflutter.so into Ghidra, then use a script to analyze the functions from the backtrace. The verify function has these characteristics:
+- **Size:** 150-250 bytes (small wrapper)
+- **BLR count:** Exactly 1 (calls `custom_verify_callback` via function pointer)
+- **Called from:** 5-10 locations (various handshake states)
+- **Calls:** 8-12 functions (SSL struct accessors + the callback)
+
+```java
+// Ghidra headless script: check BLR count and callee count
+// The function with exactly 1 BLR in the handshake call chain = ssl_verify_peer_cert
+Function func = funcMgr.getFunctionContaining(addr);
+InstructionIterator iter = program.getListing().getInstructions(func.getBody(), true);
+int blrCount = 0;
+while (iter.hasNext()) {
+    if (iter.next().getMnemonicString().equals("blr")) blrCount++;
+}
+// blrCount == 1 → strong indicator of verify function
+```
+
+### Step 3: Replace with Interceptor.replace
+
+Once identified, use `Interceptor.replace` (NOT `Interceptor.attach` with `onLeave`). The function takes `(SSL_HANDSHAKE*, uint8_t* out_alert)` and returns enum `ssl_verify_result_t` (0 = ok).
+
+```javascript
+var verifyFunc = m.base.add(OFFSET);  // e.g., 0x4819e8
+Interceptor.replace(verifyFunc, new NativeCallback(function(hs, out_alert) {
+    return 0;  // ssl_verify_ok
+}, 'int', ['pointer', 'pointer']));
+```
+
+### Key insight: why pattern matching fails on 3.22+
+
+The function prologue changed from `FF 03 05 D1 FD 7B 0F A9` (SUB SP, #0x140; STP X29, X30) to build-specific variants like `FF 83 01 D1 FE 67 02 A9` (SUB SP, #0x60; STP X30, X25). The register allocation and stack frame size vary per build. The BLR-based identification via Ghidra is build-independent.
+
+### Confirmed working example (Jago Banking, Flutter 3.22+, June 2026)
+
+- **libflutter.so:** 11MB, ARM64, fully stripped (no SSL exports)
+- **String `CERTIFICATE_VERIFY_FAILED`:** found at 0x36a7ca (rodata) but NO xrefs in Ghidra (referenced via error code table, not direct pointer)
+- **Backtrace offsets from `writev` hook:** `0x4b4630 → 0x4a6078 → 0x4a5640 → 0x4819e8`
+- **Verified function:** Ghidra address `0x00581938` (file offset `0x481938`, runtime offset from base `0x481938`)
+  - Prologue: `FF 83 01 D1 FE 67 02 A9` (SUB SP, #0x60; STP X30, X25, [SP, #0x20])
+  - Size: 212 bytes, exactly 1 BLR instruction, called from 7 locations, calls 11 functions
+- **Frida offset for `Interceptor.replace`:** `base + 0x481938` (NOT the backtrace return address `0x4819e8`)
+- **Important:** Frida backtrace gives RETURN ADDRESSES (after BL), not function entries. Subtract to find the containing function's entry point via Ghidra.
+
+### Eversafe anti-tampering interaction
+
+Eversafe (kr.co.everspin) detects Frida via thread name scanning (`/proc/self/task/*/comm`) on a ~10s cycle. Without mitigation, app is killed at ~10-15s.
+
+**Full bypass:** Load `anti_eversafe.js` (thread rename script) BEFORE `device.resume()` and again 3s after. App survives indefinitely. See `references/eversafe-frida-bypass.md` for the script.
+
+**Additional notes:**
+- **Binary patching does NOT work** — Eversafe or Flutter engine checks .so integrity at load time (SIGSEGV at unrelated address 0x6a8 during FlutterJNI.performNativeAttach)
+- **hluda-server alone is NOT sufficient** — hides some indicators but not thread names
+- **Load order:** anti_eversafe.js → resume → anti_eversafe.js again (3s) → wait for libflutter.so (12s) → SSL bypass
+
+### Redsocks requirement
+
+This approach requires redsocks running on-device to generate actual TLS handshake traffic through Burp. Without it, the backtrace hook never fires (no network I/O from libflutter.so).
+
+```
+redsocks config: type = http-connect, ip = <host_ip>, port = <burp_port>
+iptables: -t nat -A OUTPUT -p tcp -m owner --uid-owner <APP_UID> --dport 443 -j REDIRECT --to-port 12345
+```
+
+**Critical:** verify Burp's actual listening port with `lsof -i -P | grep java | grep LISTEN`. Default may be 8081 or 8082, not 8080/8888.
+
+---
+
 ## Pitfalls
 
 1. **Access violations** — NEVER scan the full module range (`m.base, m.size`). Flutter's memory layout has unmapped pages between sections. Always use `Process.enumerateRanges('r-x')` filtered to the module.

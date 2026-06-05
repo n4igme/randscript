@@ -121,6 +121,8 @@ When a provider does NOT auto-revoke, the finding is reportable as a **platform 
 ## Pitfalls
 - **Geo-blocking**: Many APIs (especially SEA companies like Grab, Gojek) return 502 from outside their region. Need VPN to SG/ID/MY to test.
 - **Token audience**: A MEXUSERS token won't work on passenger endpoints. Match the `aud` claim to the right API.
+- **Truncated hashes in breach data**: Some apps store truncated hashes (e.g., 31 chars instead of 32 for MD5). Standard cracking tools won't match. Always check hash length first — if it's 31 chars, compare `hashlib.md5(pwd).hexdigest()[:31]` against stored value. BFI 2026-05: credentials.csv had 31-char MD5 hashes; 15/42 users had password "123" (`202cb962ac59075b964b07152d234b7` = first 31 of MD5("123")).
+- **Breach creds vs Keycloak**: Leaked passwords from internal apps often don't work on SSO/Keycloak — different credential stores. Test both `user@domain.com` and `user` formats, but don't waste time if first 5 fail.
 - **Ethical boundary**: Only use leaked tokens to prove the vulnerability exists (e.g., confirm it's not expired). Don't access other users' data.
 - **GitHub rate limits**: Unauthenticated API search returns 0 results. Use `gh` CLI (authenticated) for code search.
 - **False positives**: Many repos contain redacted tokens or test fixtures. Always decode and verify before testing.

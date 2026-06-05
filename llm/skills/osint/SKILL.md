@@ -4,6 +4,7 @@ description: "Offensive person/organization OSINT reconnaissance — handle corr
 version: 1.0.1
 author: n4igme
 license: MIT
+trigger: "osint, recon person, find handles, email discovery, platform enumeration, breach check, identity correlation, dox"
 argument-hint: "<command: start|status|resume|next|handles|emails|platforms|domains|social|breaches|chain|report|abort|cleanup>"
 notes:
   - "v1.1.0: Added Quick Reference, state.yaml schema, gates, command procedures, output path, staleness check"
@@ -250,34 +251,44 @@ for cert in json.load(sys.stdin):
 
 ## Phase 4: Domain Recon
 
-```bash
-dig +short {domain} A
-dig +short {domain} MX
-dig +short {domain} TXT
-dig +short {domain} NS
-whois {domain}
-```
+**Full methodology:** `skill_view(name='osint', file_path='references/domain-recon.md')`
 
-Plus crt.sh subdomain enumeration (see Phase 3).
+Quick checklist:
+1. DNS full record pull (A, AAAA, MX, TXT, NS, SOA, DMARC)
+2. ASN lookup → CIDR range mapping → reverse DNS on entire range
+3. Subdomain enumeration: crt.sh + subfinder + amass passive, then active brute
+4. Cloud asset discovery (S3, GCP buckets, Azure blobs with company name permutations)
+5. HTTP probe all discovered hosts (httpx with tech detection)
+6. Historical data: Wayback Machine for deleted pages, old endpoints, exposed files
+7. Correlation triggers → feed findings to ptest/ctest/scode
 
 ---
 
 ## Phase 5: Social Media Profiling
 
-**LinkedIn:** Public profile at `/in/{slug}`. Auth wall vs 404 = existence confirmation.
-**YouTube:** Channel about page — join date, subscribers, linked sites.
-**Instagram/TikTok:** Bio, follower counts, linked accounts. Page title reveals display name without login.
+**Full methodology:** `skill_view(name='osint', file_path='references/social-media-profiling.md')`
+
+Quick checklist:
+1. GitHub (richest source): profile metadata, repos, orgs, stars, SSH/GPG keys, gists, commit emails
+2. LinkedIn via Google dorks: `site:linkedin.com/in/ "{name}" "{company}"`
+3. Reddit comment history: subreddit participation reveals location, employer, interests
+4. Telegram/Discord: public group membership, channel ownership
+5. Cross-platform correlation: handle reuse, timezone triangulation, photo reverse search
+6. Network graph: who they interact with, shared connections across platforms
 
 ---
 
 ## Phase 6: Breach & Paste Checks
 
-```bash
-# HaveIBeenPwned (requires API key)
-curl -s -H "hibp-api-key: {key}" "https://haveibeenpwned.com/api/v3/breachedaccount/{email}"
-```
+**Full methodology:** `skill_view(name='osint', file_path='references/breach-correlation.md')`
 
-Also check: DeHashed, IntelX (paid services).
+Quick checklist:
+1. HIBP: email → breaches list + paste search
+2. HIBP domain search: all breached emails for target domain
+3. DeHashed/IntelX/Snusbase: full credential lookup (if authorized)
+4. Password pattern analysis: identify base words, rotation schemes, reuse risk
+5. Cross-breach correlation: trace alternate emails, phone numbers, IP addresses
+6. Feed actionable intel: valid creds → ctest, API keys → atest, internal URLs → ptest
 
 ---
 
@@ -364,10 +375,118 @@ Always distinguish: **Publicly derived** vs **Prior knowledge** vs **Inferred**.
 import sys, os
 sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/osint/scripts"))
 import handle_check
+import state_manager
 
-# Check single handle across all platforms
+# Initialize engagement
+workdir = "."
+state_manager.init_state(workdir, "target_handle",
+    handles=["n4igme"], emails=["test@example.com"])
+
+# Check status
+state_manager.status(workdir)
+
+### Gate Enforcement (MANDATORY before `next`)
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/osint/scripts"))
+from gate_check import check_gate, print_gate_status
+
+result = check_gate(".", phase=None)
+print_gate_status(result)
+# Only advance if result["passed"] is True
+```
+
+### Script Invocation
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/osint/scripts"))
+import handle_check
+import state_manager
+
+# Initialize engagement
+### Script Invocation
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/osint/scripts"))
+import handle_check
+import state_manager
+
+# Initialize engagement
+state_manager.init_state(".", target="handle", handles=["n4igme"], emails=["x@y.com"])
+
+# Check handle across platforms
 results = handle_check.check("n4igme")
 
-# Check variations (base + common suffixes/prefixes)
-all_found = handle_check.check_variations("n4igme")
+# Advance phase
+state_manager.advance_phase(".")
+
+# Gate check
+from gate_check import check_gate, print_gate_status
+result = check_gate(".", phase=None)
+print_gate_status(result)
+```
+
+**state_manager.py — engagement lifecycle:**
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/osint/scripts"))
+import state_manager
+
+state_manager.init_state(".", "target_handle", handles=["handle1"], emails=["a@b.com"])
+state_manager.status(".")
+state_manager.advance_phase(".")
+state_manager.add_finding(".", "GitHub", "handle1", source="public", confidence="high")
+state_manager.add_chain_link(".", "handle1", "real_email@x.com", "git_commit", "strong")
+state_manager.increment_platforms(".", count=5)
+```
+
+**gate_check.py — phase gate enforcement:**
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/osint/scripts"))
+from gate_check import check_gate, print_gate_status
+
+result = check_gate(".", phase=None)
+print_gate_status(result)
+```
+
+### State Management
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/osint/scripts"))
+import state_manager
+
+state_manager.init_state(".", "target_handle", handles=["handle1"], emails=["x@y.com"])
+state_manager.status(".")
+state_manager.advance_phase(".")
+state_manager.add_finding(".", "GitHub", "handle1", source="public", confidence="high")
+state_manager.add_chain_link(".", "handle1", "real@email.com", "git commit", "strong")
+state_manager.abandon(".", "No unique identifier available")
+```
+
+### Gate Enforcement (MANDATORY before `next`)
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/osint/scripts"))
+from gate_check import check_gate, print_gate_status
+
+result = check_gate(".", phase=None)
+print_gate_status(result)
+```
+
+### Gate Enforcement (MANDATORY before `next`)
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/osint/scripts"))
+from gate_check import check_gate, print_gate_status
+
+result = check_gate(".", phase=None)
+print_gate_status(result)
+# Only advance if result["passed"] is True
 ```

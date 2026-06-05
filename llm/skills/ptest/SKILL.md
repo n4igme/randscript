@@ -4,6 +4,7 @@ description: "Structured penetration testing framework with gated phases. Guides
 version: 1.0.1
 author: n4igme
 license: MIT
+trigger: "pentest, penetration test, web pentest, infrastructure pentest, network pentest, external pentest, internal pentest, red team"
 argument-hint: "<command: start|preflight|status|resume|next|escalate|abort|cleanup|recon-passive|recon-active|enumerate|attack-surface|vuln-assess|exploit|post-exploit|report>"
 notes:
   - "v4.6.0: Hub model — SKILL.md handles routing + framework rules. Phase techniques in references/phase*.md. Tool tables, scope matrix, finding template, heuristics extracted to references/."
@@ -34,7 +35,8 @@ Mandatory tools by phase:
 Key guardrails:
   • Authorization required before ANY testing
   • Human sign-off required at every gateway transition
-  • Every finding needs reproducible evidence (not theoretical)
+  - Every finding needs reproducible evidence (not theoretical)
+  - SPA catch-all: if 5+ paths return identical status+size → frontend routing, not real endpoints (see `references/spa-recon-techniques.md`)
   • Pre-Report Gate 0: (1) attacker can do this NOW? (2) victim loses WHAT? (3) reproducible in 10 min?
   • Environment tag required on all findings (prod/nonprod/experiment)
   • Never skip phases — even for bug bounties
@@ -68,6 +70,30 @@ Key guardrails:
 | `report` | Generate final pentest report |
 
 If no command is given, show current status and suggest next action.
+
+## Phase Completion Criteria (Large Scope)
+
+When scope has 100+ subdomains, define "phase complete" explicitly:
+
+**Phase 1 (Recon) is complete when:**
+- ALL subdomains resolved and accessibility-checked (not just a sample)
+- ALL accessible targets have: tech stack identified, JS bundles analyzed, security headers checked, robots.txt/.well-known checked
+- Google dorking, Wayback Machine, GitHub code search done for the domain
+- Pattern-based subdomain brute-force done (e.g., if `e-doc` exists, try `e-pmo`, `e-line`, `e-*`)
+- Recon summary written with prioritized Phase 2 targets
+
+**Phase 2 (Enumeration) is complete when:**
+- ALL accessible non-static targets have: path fuzzing, login form identification, credential testing
+- ALL API endpoints discovered from JS bundles tested for auth status
+- Service discovery exhaustive on API gateways (try 50+ common prefixes)
+- CORS, verb tampering, header injection tested on all non-CDN targets
+- Credential wordlist built and tested against all login endpoints
+
+**Phase 3 (Vuln Scanning) is complete when:**
+- Nuclei run against all accessible targets (critical+high+medium)
+- Manual CVE checks for identified tech (Pimcore, Keycloak, Spring Boot versions)
+- JWT attacks, SSRF, path traversal, CRLF tested on relevant endpoints
+- Actuator/debug endpoint bypass attempts exhausted
 
 ---
 
@@ -181,7 +207,12 @@ findings_count: 0
 escalations_count: 0
 ```
 
-**Time tracking:** Record ISO timestamps when each phase starts and ends. At cleanup, calculate total duration and per-phase time.
+**Time tracking:** Timestamps are recorded automatically as part of the Phase Entry Protocol:
+- `phase_N_start` — written when the phase checklist is created (Phase Entry Protocol step 4)
+- `phase_N_end` — written when the gateway is set to PASSED (Gateway Transition step 7)
+- `total_duration` — calculated at cleanup from first start to last end
+
+Do NOT rely on the operator to manually fill these. The mechanical gates (create checklist → record start, write PASSED → record end) handle it. If timestamps are empty at cleanup, it means the Phase Entry Protocol was not followed — flag as a process gap.
 
 ---
 
@@ -227,10 +258,10 @@ Staleness is calculated from the most recent timestamp in `state.yaml` (last pha
 
 | Gateway | Phase | Reference File | Exit Criteria |
 |---------|-------|-----------|---------------|
-| 1 | Passive Reconnaissance | `references/phase1-passive-recon.md` | Attack surface mapped, subdomains validated, technologies identified. OSINT completeness verified. **Env-prefix quick-win check completed.** No packets sent to target — only third-party sources (DNS records, Shodan InternetDB, GitHub, Google, CT logs). |
+| 1 | Passive Reconnaissance | `references/phase1-passive-recon.md` | Attack surface mapped, subdomains validated, technologies identified. OSINT completeness verified. **Env-prefix quick-win check completed.** No packets sent to target — only third-party sources (DNS records, Shodan InternetDB, GitHub, Google, CT logs). **Scope Viability Assessment completed.** |
 | 2 | Active Reconnaissance | `references/phase2-active-recon.md` | All hosts HTTP-probed, port-scanned, technology-fingerprinted, path discovery on every live host, services detected, network topology mapped |
-| 3 | Enumeration | `references/phase3-enumeration.md` | Applications enumerated, APIs mapped, parameters discovered, Prometheus metrics mined for hidden services |
-| 4 | Attack Surface Mapping | `references/phase4-attack-surface.md` | Asset inventory confirmed with user, scope finalized, entry points mapped |
+| 3 | Enumeration | `references/phase3-enumeration.md` | Applications enumerated, APIs mapped, parameters discovered, Prometheus metrics mined for hidden services. **ALL subdomains from master list probed (not just Phase 2 live-hosts.txt).** |
+| 4 | Attack Surface Mapping | `references/phase4-attack-surface.md` | Asset inventory confirmed with user (≥80% of live hosts individually listed — no wildcard grouping for accessible hosts), scope finalized, entry points mapped |
 | 5 | Threat Modeling & Vuln Assessment | `references/phase5-vuln-assessment.md` | Attack trees documented, vuln scans complete, CORS reflection tested on all auth endpoints, vectors prioritized |
 | 6 | Exploitation | `references/phase6-exploitation-framework.md` | All mandatory techniques executed, credential inventory validated, top 5 vectors attempted, attack chains documented. **Local verification passed.** |
 | 7 | Post-Exploitation | `references/phase7-post-exploitation-framework.md` | Access type classified, appropriate playbook completed, data scope documented, attack path diagram created, credentials added to inventory |
@@ -238,60 +269,13 @@ Staleness is calculated from the most recent timestamp in `state.yaml` (last pha
 
 ---
 
+
 ## Mandatory Quality Gates
 
-### Pre-Report Gate 0 (MANDATORY before writing any finding)
-
-Before drafting any finding report, answer these 3 questions. One NO = KILL the finding and move on.
-
-1. **Can the attacker do this RIGHT NOW with a real HTTP request?**
-   - Not "theoretically possible" — demonstrate with an actual request/response
-   - If it requires external conditions outside attacker control (Chainlink malfunction, sequencer downtime, specific server load), it's borderline
-
-2. **What does the victim LOSE?**
-   - Map to CIA triad: confidentiality (data exposed), integrity (data modified), availability (data deleted/DoS)
-   - "The server responds differently" is NOT impact. Quantify: how many users, what data, what dollar value
-   - If the answer is only "information disclosure of non-sensitive data" — severity is Low at best
-
-3. **Can it be reproduced in 10 minutes from scratch?**
-   - Fresh browser, no prior state, following only your written steps
-   - If it requires lucky timing, specific victim behavior beyond "click a link", or network position — document those dependencies explicitly
-   - If you can't demo it reproducibly at least 3/5 attempts, do not file
-
-**Kill signals (instant NO):**
-- Finding requires privileged access an attacker can't obtain
-- Finding is already known/documented behavior (check program policy)
-- Finding is on the program's "never submit" list (self-XSS, logout CSRF, missing headers without impact)
-- Impact is purely theoretical with no concrete demonstration
-
-**PoC script quality (MANDATORY):**
-- Every PoC script MUST run without errors (`python3 script.py` → no SyntaxError, no KeyError)
-- Test the script locally before including in report — f-strings with dicts inside don't work in Python < 3.12, API responses may be rate-limited or return unexpected status codes
-- Handle error cases: rate limiting (429), missing keys in response, connection timeouts
-- Hardcode fallback values (e.g., previously registered client_id) when rate limits prevent fresh registration
-- If the attack chain requires user interaction (OAuth consent, clicking a link), document exactly what the tester should do to complete the proof
-
-### Local Exploit Verification Gate (Phase 6 → 7 transition, MANDATORY)
-
-Before advancing from Phase 6, every confirmed exploit MUST be locally verified when possible.
-
-**Verification procedure:**
-1. **Re-read the actual source/target behavior** — don't rely on notes from earlier analysis. Re-fetch/re-read the code.
-2. **Simulate the environment locally** — install the same libraries (yauzl, express, spring-boot, etc.), replicate the file structure, run the exploit against your local simulation.
-3. **Verify each chain link independently** — test validation bypass, test payload delivery, test execution separately before combining.
-4. **Compare your assumptions vs actual code** — check function signatures, required interfaces, return value handling, error paths.
-5. **Document verification result** — add "Locally verified: YES/NO (reason)" to the finding.
-
-**When local verification is NOT possible:**
-- Target uses proprietary/closed-source backend (no source available)
-- Environment requires specific cloud services that can't be replicated
-- Exploit depends on race conditions or timing that can't be simulated
-
-In these cases, document: "Local verification not possible: {reason}. Confidence level: HIGH/MEDIUM/LOW based on {evidence}."
-
-**Real-world save (Dojo #51, May 2026):** Initial exploit had wrong plugin interface (`module.exports = { result: flag }` instead of required `get()`, `getName()`, `run()` methods). Also had wrong first-nibble constraint (`0xA || 0xB` instead of actual `0xA || 0xC`). Local simulation caught both before submission.
-
----
+See `references/quality-gates.md` for full gate criteria per phase. Key rules:
+- Every phase exit requires documented evidence (not just "tested")
+- Findings must have PoC before phase advances
+- Phase 6 requires credential-inventory.md + checklist.md BEFORE exploitation
 
 ## Effort Allocation
 
@@ -326,43 +310,28 @@ Adjust based on scope size:
 
 Every finding uses `FINDING-{ID}` (auto-incremented from `state.yaml`). Must include: severity, CVSS, affected asset, environment tag, steps to reproduce, evidence, impact, and remediation. Only **Confirmed** findings (with direct proof) go into the final report.
 
+### Out-of-Scope Validation (MANDATORY before marking any finding as Confirmed)
+
+**Before adding a finding to findings-log.md, cross-reference it against `scope.md` Out of Scope section.**
+
+**WinTicket lesson (June 2026):** Two findings (Firebase email enumeration, DMARC p=none) were investigated, PoC'd, and documented as "Confirmed" before realizing both were explicitly listed in the program's Out of Scope exclusions. This wasted significant exploitation time.
+
+**Procedure:**
+1. Before marking a finding Confirmed, re-read the "Out of Scope" section in `scope.md`
+2. Check if the finding's CLASS is excluded (e.g., "Vulnerabilities allowing enumeration of usernames and emails" excludes ALL email enum regardless of technique)
+3. If excluded → mark as `OUT_OF_SCOPE` in findings-log, do NOT invest exploitation time
+4. If borderline → document WHY it's different from the exclusion before proceeding
+
 ---
+
 
 ## Operational Lifecycle
 
-### Execution Loop
-
-1. **Read State** — check `./ptest-output/state.yaml` to determine active gateway.
-2. **Read Checklist** — check the phase's `checklist.md` for pending techniques.
-3. **Pick Technique** — select next pending technique.
-4. **Execute** — run the technique using the tools specified in the phase skill file.
-5. **Document** — record findings using the Finding Template above.
-6. **Update Checklist** — mark technique status in `checklist.md`:
-   - `DONE` — technique executed successfully (findings or no findings)
-   - `SKIPPED (reason)` — technique not applicable or tool unavailable
-   - `FAILED (reason)` — technique attempted but did not succeed
-7. **Update Findings Log** — append to `./ptest-output/findings-log.md`.
-8. **Repeat** until phase exit criteria are met.
-
-### Gateway Transition (`next`)
-
-1. **Coverage Audit** — verify checklist shows sufficient technique coverage.
-2. **Mandatory Tool Check** — confirm all mandatory tools for the phase were executed.
-3. **Evidence Check** — confirm all findings have supporting evidence.
-4. **Exit Criteria** — evaluate against the phase's exit criteria (see Gateway Map).
-5. **Sign-off** — ask user: *"Phase [X] complete. [N] findings documented. Ready to advance to [next phase]?"*
-6. **Update State** — update `./ptest-output/state.yaml`: mark gateway as PASSED, unlock next.
-
-**If exit criteria are NOT met:**
-1. List specific unmet criteria.
-2. Suggest which techniques to run to satisfy them.
-3. Do NOT advance — gateway remains OPEN.
-4. Ask: *"Want to address these gaps, or override with justification?"*
-5. If user overrides, record justification in checklist and proceed.
-
-If no sign-off response within the session, continue executing remaining techniques in the current phase rather than blocking.
-
----
+See `references/operational-lifecycle.md` for full protocol. Summary:
+- State tracked in `state.yaml` (phase, findings, timestamps, coverage)
+- Each host gets coverage table + attack chains + re-enum loops at phase end
+- Host timeout: document, retry 30min, mark unreachable
+- Per-phase: load reference → execute → document → gate check → advance
 
 ## Escalation Protocol
 
@@ -421,6 +390,33 @@ When generating phase checklists during `start`, filter techniques by scope type
 
 ---
 
+## Phase Entry Protocol (ALL phases)
+
+When entering ANY phase, before executing techniques:
+1. **Load reference file** — `skill_view(name='ptest', file_path='references/<phase-file>')`
+2. **Create/verify checklist** — `ptest-output/<phase-dir>/checklist.md` must exist with all techniques listed as PENDING
+3. **Create phase-specific mandatory files** — each phase has required output files (see Output File Gate). Create empty templates at entry, populate during execution.
+4. **Record timestamp** — write `phase_N_start` in state.yaml when creating the checklist. Write `phase_N_end` when PASSED is written. This is automatic bookkeeping — no separate action needed.
+
+This prevents the pattern of "execute first, document later" that caused gaps in LINE WORKS (Phases 3-6 all had missing documentation despite work being done). Creating the structure upfront ensures nothing is forgotten.
+
+## Scope Viability Assessment (Phase 1 Exit)
+
+At Phase 1 exit, classify the engagement's expected yield:
+
+| Yield | Signals | Recommendation |
+|-------|---------|----------------|
+| **HIGH** | Real application in scope, multiple APIs/services, auth flows, user-generated content, complex business logic | Full 8-phase engagement, allocate maximum Phase 6 time |
+| **MEDIUM** | Mix of marketing + app surface, some APIs behind auth, limited input points | Standard engagement, focus Phase 6 on authenticated surface |
+| **LOW** | Marketing-only site (WP/Marketo), real app on different domain, all REST locked behind auth, no registration, static content | Flag to user: "Expected yield is low. Real app appears to be on [other domain]. Recommend: (a) fast-track Phases 3-5, (b) pivot to mobile app analysis for API discovery, or (c) confirm with user before investing full effort." |
+
+**LINE WORKS lesson (June 2026):** Phase 1 revealed the real product lives on worksmobile.com (not in scope). line-works.com is a marketing WordPress site. This should have been flagged at Phase 1 exit — instead, full effort was spent on a hardened marketing site yielding only 3 low-medium findings.
+
+**Rules:**
+- LOW yield does NOT mean skip phases — it means inform the user and let them decide
+- If user says "continue anyway" — execute all phases normally
+- Document the assessment in `scope.md` under "Viability Assessment"
+
 ## Phase Routing
 
 When entering a phase, load the corresponding reference file with `skill_view(name='ptest', file_path='references/<file>')`:
@@ -453,74 +449,126 @@ Each target gets independent state tracking. Finding IDs are unique per-target. 
 
 ---
 
+
+## Exploitation Mindset
+
+**Phase 6 objective is TAKEOVER, not proving individual vulnerabilities.** The goal is: "take over the web/system with whatever you've got from each phase before." Chain ALL findings from phases 1-5 into an end-to-end attack path that achieves maximum impact (RCE, admin access, data exfiltration, account takeover). Proving each finding independently is Phase 5 work — Phase 6 is about COMBINING them.
+
+When in Phase 5-6 (vuln assessment through exploitation), DO NOT:
+- Stop to ask user for approval on each attack (they said "just hack")
+- Write theoretical impact assessments instead of running exploits
+- Report findings as "potential" when you can prove them with code
+- Ask "want me to continue?" — always continue until blocked
+- Prove findings in isolation when they could be chained for higher impact
+- **EVER treat "got shell" or "got RCE" as the finish line** — it's the STARTING line for post-exploitation
+
+DO:
+- Chain findings aggressively (credential → access → data → escalation)
+- Run PoC scripts and show real output, not hypothetical chains
+- If a theoretical path exists, TRY IT before documenting
+- Create working PoC scripts with real tested values (never placeholders)
+- Build multi-step attack chains: XSS → cookie steal → API bypass → admin takeover
+- Prove each LINK in the chain independently, then show the full path
+- When a chain link needs victim interaction (e.g., XSS click), prove everything else works and document the chain as "proven minus victim interaction"
+
+## Post-Exploitation Continuation Rule (MANDATORY)
+
+**BFI lesson (June 2026):** Got RCE on a K8s pod, declared victory, and stopped. The human had to manually run `printenv`, test every credential, pivot through Chisel, and prove access to RabbitMQ/Redis/GCS/Slack/WhatsApp — yielding 10 additional Critical/High findings that were sitting ONE COMMAND AWAY. This is unacceptable.
+
+**THE RULE: When you achieve ANY form of access (shell, API token, DB creds, admin panel), the work is STARTING, not ending.**
+
+**Immediate mandatory actions upon achieving access:**
+1. `printenv | sort` (or equivalent) — extract EVERY credential, token, URL, connection string
+2. For EACH credential found → test it against its service (connect to DB, authenticate to API, access bucket)
+3. For EACH internal service reachable → prove access with evidence (response body, record count, data sample)
+4. For EACH third-party integration found (Slack webhooks, WhatsApp APIs, email services) → prove it works
+5. Document EACH proved access as a SEPARATE FINDING with its own severity
+
+**Access ≠ Finding. Proved impact = Finding.**
+- "Got shell on pod" is ONE finding (RCE)
+- "From that shell, accessed RabbitMQ with 3M messages" is ANOTHER finding
+- "From env vars, accessed Redis with full read/write" is ANOTHER finding
+- "From env vars, accessed GCS bucket with 2K PII files" is ANOTHER finding
+- Each proved lateral access is a separate finding that demonstrates blast radius
+
+**Never stop at less than full blast radius.** If `printenv` shows 15 credentials, test ALL 15. If the network has 10 reachable services, probe ALL 10. The total finding count should reflect the REAL damage an attacker can do, not just the entry point.
+
 ## Guardrails
 
-### Disclosure & Platform Rules
+See `references/guardrails.md` for full rules. Critical:
+- No destructive operations without explicit authorization
+- Write Access Response Protocol for proving write without modifying
+- PoC scripts must contain real tested values, never placeholders
+- Scope enforcement: confirm before testing undocumented assets
 
-- **Public Disclosure Prohibition** — NEVER publish PoCs on public URLs before vendor fix (or 90-day deadline). Keep PoCs local in `ptest-output/report/`. See `references/bug-bounty-submission-guide.md`.
-- **YesWeHack Dojo Challenges** — See `references/yeswehack-dojo-interaction.md` for UI interaction patterns.
-
-### Scope Rules
-
-- **Scope Type Interpretation** — "Web application" (e.g., `mokapos.com`) means ONLY that domain, NOT `*.mokapos.com`. Only "Wildcard" targets include subdomains. Confirm BEFORE Phase 1.
-- **Related-Domain Scope Risk** — findings on same-company different-root-domain are borderline. Submit clear-scope findings first, borderline last with scope note.
-- **Scope Enforcement** — never test targets outside defined scope. Re-read `scope.md` before each technique.
-- **Program Exclusion Cross-Check (Phase 4, MANDATORY)** — cross-reference ALL vectors against the program's exclusion list BEFORE scoring them.
-
-### Evidence Rules
-
-- **Evidence Required** — every finding must have reproducible proof.
-- **Verified Findings Only** — DNS resolution or CT log presence alone does NOT constitute a finding. Must include proof of current exploitability.
-- **Environment Tagging** — every finding MUST be tagged: `prod`, `nonprod`, `experiment`, or `all`.
-
-### Workflow Rules
-
-- **Test every asset individually** — do not assume subdomains behave the same because they share infrastructure. Each may have different WAF policies, backends, or exposed paths. "api.jago.com returns 401 so all *.api.jago.com must too" is a BAD assumption that was proven wrong.
-- **Present ALL data first, then prioritize** — never cherry-pick "interesting" results and hide the rest. Show complete picture (all live hosts grouped by response code), then highlight priorities. User needs to see what was tested vs what wasn't.
-- **Track tested vs status-checked** — "Probed" = path discovery, parameter fuzzing, tech-specific tests. "Status-checked" = one curl for HTTP code. Don't conflate them in reports.
-- **When behind WAF/Access control** — don't give up after confirming the wall. Try: different paths, methods, UAs, HTTP versions, direct IP, alternate ports, websocket upgrade, path encoding. Use `xargs -P` with curl for fast parallel path discovery (gobuster often times out on rate-limited targets).
-- **"Try harder" means** — full directory bruteforce (not 20 manual paths), every live subdomain gets path discovery, parameter fuzzing on every input-accepting endpoint, technology-specific CVE testing, multiple bypass techniques per WAF.
-- **Strict Sequence & Self-Audit** — never skip a phase. Never skip steps within a phase. Complete ALL checklist items for the current phase before requesting gateway sign-off. The user explicitly corrected: "we will test all the scope dude, skip the step, then you may lost something." Before requesting sign-off, proactively review what was missed — list gaps honestly and offer to fill them. Do not suggest "pivoting to depth" or "skipping remaining Phase 1 items" — finish the phase completely first.
-- **Phase 1 OSINT Completeness** — verify ALL 10 techniques attempted: (1) WHOIS/DNS/TXT, (2) subdomain enum, (3) Wayback Machine, (4) GitHub/GitLab search, (5) Google dorking, (6) Shodan/Censys, (7) JS bundle analysis, (8) Mobile app identification, (9) Docker Hub check, (10) dark web & breach data OSINT.
-- **Phase 1 is STRICTLY passive** — no packets to target infrastructure. HTTP probing, port scanning, TLS cert grabbing (connecting to target), technology fingerprinting, and path discovery are ALL Phase 2 (Active Recon). Phase 1 uses only third-party data sources: DNS zone files, Shodan InternetDB, GitHub code search, Google dorks, CT logs, WHOIS, SPF/DMARC/TXT record analysis. If you're sending a SYN packet or HTTP request to the target, it's Phase 2.
-- **Mandatory Tool Execution** — mandatory tools per phase must be run. If unavailable, document the gap explicitly.
-- **Human Sign-off** — always request user confirmation before passing a gateway.
-- **No Time/Schedule Commentary** — never comment on the time or suggest stopping. The operator decides their schedule.
-- **Complete Data First, Then Prioritize** — when presenting recon/scan results, show ALL data grouped by category (response codes, service types) before highlighting priorities. Never cherry-pick "interesting" results and omit the rest. The operator needs the full picture to make decisions. No assumptions about what they "already know".
-- **Authorization First** — refuse to begin without confirmed authorization.
-- **No Deployed Persistence** — document persistence techniques but do not deploy backdoors without explicit authorization.
-- **ALWAYS do post-exploitation.** See `references/post-exploitation-rules.md`. Never stop at "proved access exists" — demonstrate actual impact.
-- **Scope Type Awareness** — skip techniques that don't apply to the engagement's scope type.
-
-### Target Assessment Heuristics
-
-> Fast-exit rules, blocker handling, false positive detection: `references/target-heuristics.md`
-> GCP port scan false positives, CF port 8080, Shodan InternetDB, delegation pitfalls: `references/gcp-port-scan-pitfalls.md`
-
-### CTI & Legal
-
-- **CTI-Sourced Credentials** — credentials from breach databases require EXPLICIT authorization to test against production. Document the risk without logging in. May violate local law (e.g., UU ITE in Indonesia) even with general pentest authorization.
-
----
 
 ## Cross-Skill Triggers
 
-See `references/cross-skill-triggers.md` for full table and chains.
+See `references/cross-skill-triggers.md` for full decision tree. Quick ref:
+- API-heavy target → `atest` | Mobile app → `mtest` | Cloud/K8s → `ctest`
+- Source code available → `scode` | Exploit dev needed → `xdev`
+- Web3/smart contracts → `w3hunt` | RE binary → `retools`
 
-| Signal | Trigger Skill |
-|--------|--------------|\
-| Cloud infrastructure (AWS/GCP/Azure) | `ctest` |
-| API-heavy target | `atest` |
-| Mobile app discovered | `mtest` |
-| Web3/blockchain | `w3hunt` |
-| Source code available | `scode` |
-| Istio/service mesh detected | `references/istio-mesh-assessment.md` |
-| Geo-restricted target | `references/geo-restriction-bypass.md` |
-| n8n/workflow automation found | `references/n8n-workflow-assessment.md` — check /rest/settings (unauthenticated config leak), enumerate webhooks (RCE vector via CVE-2026-42231), test telemetry key, check version for CVEs |
-| Tyk API Gateway detected | `references/tyk-gateway-enumeration.md` — check /hello (version+health leak), brute admin secret, enumerate registered APIs via 403 differential |
-| Flutter web app detected | `references/flutter-web-app-analysis.md` — extract JWTs, auth headers, partner IDs, internal domains from main.dart.js |
 
-Cross-skill work runs **parallel** to the current phase (doesn't block gateway). Findings tagged with `source: "{skill-name}"` in findings-log.md. Each skill maintains its own state; only findings flow back to ptest.
+
+## Finding More Vulnerabilities
+
+Load these references at phase transitions to increase finding rate:
+- CDN-fronted targets: `references/cdn-aware-phase5.md` (openssl over testssl, manual over nuclei)
+- Firebase auth targets: `references/firebase-auth-bypass.md` (password provider check, pre-registration ATO, mass account squatting, Flask session emulator pattern)
+
+| When | Load | Purpose |
+|------|------|---------|
+| Phase 5/6, testing SQLi | `references/sqli-payloads-and-bypass.md` | DB-specific payloads, WAF bypass, NoSQL, ORM CVEs |
+| Phase 5/6, testing SSTI | `references/ssti-engine-payloads.md` | Per-engine detection + RCE (Jinja2, Twig, Freemarker, etc.) |
+| Phase 5/6, testing RCE | `references/rce-exploitation-chains.md` | CMDi, EL injection, deserialization, file upload, YAML |
+| Phase 5/6, testing redirects | `references/open-redirect-chains.md` | Bypass techniques, OAuth/SSRF escalation chains |
+| Phase 1 (SPA targets) | `references/spa-config-extraction.md` | Extract routes, env URLs, feature flags from SPA inline config |
+| Phase 1 exit | `references/scope-expansion.md` | Expand attack surface before testing |
+| Phase 2/3 entry | `references/attack-recipes.md` | Proven patterns with trigger conditions |
+| 40-50% budget, zero findings | `references/stuck-playbook.md` | Non-obvious techniques before abandoning |
+| Before full PoC | `references/false-positive-filter.md` | 2-min validation to avoid wasting time |
+| Between Phase 3 and Report | `references/second-look-protocol.md` | Re-enumerate with new access |
+| After every finding | `references/severity-escalation.md` | Escalate or chain before reporting |
+| Before closing engagement | `references/triage-rebuttal.md` | Anti-rejection patterns |
+| Report writing | `references/report-templates-by-platform.md` | Platform-specific format (YWH, H1, Immunefi, IssueHunt, Internal) |
+| Weekly Monday | `references/target-selection.md` | Pick highest-ROI bounty program |
+| Reports in flight | `references/submission-pipeline.md` | Track submissions, follow-up cadence |
+
+**Recipe feedback loop:** Before closing any engagement, ask: "Does this finding generalize into a reusable pattern?" If yes → patch `references/attack-recipes.md` with new recipe (trigger + technique + yield).
+
+## Pitfalls
+
+- **SHELL IS THE STARTING LINE, NOT THE FINISH (critical):** Getting RCE/shell is Phase 6. What you DO with it is Phase 7 — and Phase 7 is where most findings come from. BFI lesson (June 2026): Got pod RCE, stopped. Human manually ran `printenv` and found 15+ credentials → proved access to RabbitMQ (3M messages), Redis (full R/W), GCS (2K PII files), Slack webhook, WhatsApp API, IZI credit APIs — yielding 10 ADDITIONAL Critical/High findings from ONE COMMAND. Rule: Upon ANY access, immediately (1) dump all env vars, (2) test every credential against its service, (3) document each proved access as a separate finding. The finding count should reflect full blast radius, not just the entry point.
+
+- **EXPLOIT FIRST, THEORIZE NEVER (critical):** Don't stop at "this COULD be exploited if..." — actually try it. WinTicket lesson (June 2026): Phase 5 produced 8 "findings" that were all theoretical observations (missing headers, version disclosure, token format). When asked "where is the real hacking?" — none had real exploitation value. A 5-minute actual exploit attempt (Firebase signUp) immediately produced a real auth bypass. Rule: When you identify a potential vector, IMMEDIATELY test the exploit before documenting. The finding is the successful exploit, not the exposed config.
+
+- **NEVER CLAIM COMPLETION FROM SUMMARIES OR STATE FILES (critical):** When the user asks "do all activities in phase X" or "have we done phase X?", you MUST actually EXECUTE the work — run the tests, produce the deliverables, write the output files. **Antom lesson (June 2026):** Claimed Phase 3 "complete" after manual curl probing, but hadn't run ANY of the 12 mandatory techniques from `references/phase3-enumeration.md` (ffuf, GraphQL, WebSocket, deserialization, actuator scan, source maps, etc.). User had to ask THREE times before the reference was loaded and the checklist properly executed. RULE: When user asks "did we miss something?" — ALWAYS load the phase reference file and diff its checklist against what was actually done. Don't answer from memory. UNRELIABLE SOURCES: (a) context compaction summaries, (b) state.yaml gateway status, (c) checklist.md from prior sessions, (d) your own memory of prior turns. ALL of these can be wrong. MANDATORY PROCESS: (1) skill_view the phase reference file FIRST, (2) ls the phase output directory to see what FILES actually exist, (3) compare against the phase's required deliverables list, (4) execute anything missing. If state says PASSED but deliverables don't exist → the phase is NOT done. If the context summary says "Phase X complete" but you haven't verified disk → DO NOT PARROT IT BACK. Lesson: WinTicket (June 2026) — Phase 4 state said PASSED but only a rough checklist existed, not the 6 required deliverables. Phase 3 context summary said "done" but systematic tests hadn't been run. User corrected this pattern twice in the same engagement.
+- **EXCLUSION CROSS-CHECK (critical, bug bounty):** Before exploiting ANY finding, verify it is NOT in the program's Out of Scope list. Common exclusions that waste hours: email enumeration, SPF/DMARC, missing security headers, brute force, CSRF on anonymous forms. Read exclusions during `start` and embed them in scope.md. At Phase 5/6 boundary, cross-check every finding against exclusions BEFORE writing PoCs. Lesson: WinTicket engagement (June 2026) — Firebase email enum + DMARC findings were both explicitly OOS, discovered only after full exploitation.
+- **Auth wall with valid token but incomplete registration:** When you have a valid session token but endpoints return 401 because the account isn't "registered" in the app (common in JP apps requiring identity verification, phone auth, or native WebView flow to complete signup): (1) Extract registration endpoint body format from JS bundles (`grep -oE 'firstName|lastName|birthday|agreementIds'`), (2) Try multiple body shapes on POST /v1/users or equivalent, (3) Check if the pre-auth token still enables OTHER actions (delete account, change email, access public APIs with auth bonus), (4) Test if authenticated-but-unregistered state enables IDOR on other endpoints that check auth but not registration status, (5) If fully blocked, document what the token CAN do and pivot to other attack vectors instead of burning time guessing body fields. WinTicket lesson: spent significant time trying to guess POST /v1/users body format. The valid token still enabled DELETE /v1/auth, email changes via Firebase, and provider unlinking — which led to the main ATO finding.
+- Phase 6 entry WITHOUT credential-inventory.md = wasted exploits (creds expire, lose track)
+- Nmap aggressive scans (-A) on production trigger IDS/WAF blocks — use -sS -sV with rate-limiting
+- Nuclei default templates flood target with 5000+ requests — always use `-tags` to scope
+- Gobuster on CDN-fronted targets returns false 200s — verify with response body diffing
+- Host timeout: document, retry after 30min, mark unreachable — don't burn time on dead hosts
+- Large scope (>20 hosts): track per-host coverage table or you'll miss hosts entirely
+- Phase transitions without re-enum = missed findings — new creds/access may reveal new surface
+
+## Gate Enforcement (MANDATORY before `next`)
+
+Before advancing any phase, run the gate checker:
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/ptest/scripts"))
+from gate_check import check_gate, print_gate_status
+
+result = check_gate(".", phase=None)  # checks current phase from state.yaml
+print_gate_status(result)
+# Only advance if result["passed"] is True
+```
+
+If gate check fails, fix the unmet items before calling `advance_phase()`. Override only with explicit user justification documented in state.yaml notes.
 
 ---
 
@@ -529,6 +577,39 @@ Cross-skill work runs **parallel** to the current phase (doesn't block gateway).
 > Full tier definitions, script table, and usage patterns: `references/execute-code-integration.md`
 
 Phase scripts live in `scripts/`. Two tiers: **Tier 1** (phase setup, run once at entry) and **Tier 2** (batch execution for 20+ targets). Decision heuristic: 1-3 targets → direct calls, 4-6 → delegate_task, 10+ → execute_code with batch script.
+
+**state_manager.py — engagement lifecycle:**
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/ptest/scripts"))
+import state_manager
+
+workdir = "."
+state_manager.init_state(workdir, "Target Corp", scope_type="web",
+    targets=["example.com", "api.example.com"], budget_hours=16)
+state_manager.status(workdir)
+state_manager.advance_phase(workdir)
+state_manager.add_finding(workdir, "FINDING-1", "Stored XSS", "High", "app.example.com")
+state_manager.escalate(workdir, "FINDING-2", "RCE via SSTI", "Critical", "api.example.com")
+should, reason = state_manager.should_abandon(workdir, budget_hours=16)
+state_manager.abandon(workdir, "Authorization revoked")
+```
+
+**state_manager.py — engagement lifecycle:**
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/ptest/scripts"))
+import state_manager
+
+state_manager.init_state(".", "Target Corp", scope_type="web",
+    targets=["*.target.com"], exclusions=["cdn.target.com"], budget_hours=16)
+state_manager.status(".")
+state_manager.advance_phase(".")
+state_manager.add_finding(".", "FINDING-1", "SSRF via PDF export", "High", "app.target.com")
+state_manager.escalate(".", "FINDING-2", "RCE via deserialization", "Critical", "api.target.com")
+should, reason = state_manager.should_abandon(".", budget_hours=16)
+state_manager.abandon(".", "Authorization revoked")
+```
 
 ### Script Failure Protocol
 
@@ -542,3 +623,4 @@ Phase scripts live in `scripts/`. Two tiers: **Tier 1** (phase setup, run once a
 **Never mark a technique as DONE based solely on a failed script.** If the script fails, the technique remains PENDING until manually completed or explicitly SKIPPED with documented reason.
 
 > **Execution pitfalls (parallel probing, terminal backgrounding, tool workarounds):** See `references/operational-pitfalls.md`
+

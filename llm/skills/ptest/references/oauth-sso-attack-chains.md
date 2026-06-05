@@ -445,6 +445,68 @@ curl -sk -X POST "$TOKEN_ENDPOINT" \
 
 **Reporting note:** Frame as "exposed internal service with device code phishing vector" — not as "social engineering." The finding is the exposed service + unauthenticated device code generation. Social engineering is the impact amplifier, not the vulnerability itself.
 
+### Chain 9: Intent:// URI Injection via OAuth Callback (Mobile Login CSRF)
+
+**Prerequisites:** Mobile app uses `intent://` deep links for OAuth callback + server reflects POST body into redirect Location
+**Severity:** Medium-High (Login CSRF on Android, attacker-controlled auth data injected into app)
+
+```
+Attacker crafts POST           Server reflects body into intent://
+       │                                │
+       ▼                                ▼
+┌──────────────┐    ┌──────────────────────────────────────────┐
+│ POST /auth/  │───▶│ 307 → intent://callback?{"code":"EVIL",  │
+│ apple (or    │    │ "id_token":"FORGED"}#Intent;package=      │
+│ google)      │    │ jp.target.app;scheme=signinwithapple;end  │
+│ {code,token} │    │                                           │
+└──────────────┘    └──────────────────────────────────────────┘
+```
+
+**Detection:**
+```bash
+# POST to OAuth provider callback with arbitrary body
+curl -sk -X POST "https://api.target.com/v1/auth/apple" \
+  -H "Content-Type: application/json" \
+  -d '{"code":"INJECTED","id_token":"EVIL","user":"{\"name\":\"hacker\"}"}' -D-
+# Look for: Location: intent://callback?{...reflected body...}#Intent;...
+```
+
+**Key indicators:**
+- HTTP 307 redirect (not 302/301)
+- Location header contains `intent://` scheme
+- Full JSON body reflected unsanitized in the URI
+- No state/nonce parameter required
+- No CSRF token validation on POST
+
+**CORS Preflight Bypass (Critical Technique):**
+Form-encoded POST (`application/x-www-form-urlencoded`) is a "simple" content type — browsers skip CORS preflight. If the server accepts form-encoded AND JSON identically, cross-origin Login CSRF works even when JSON is blocked. Always test form-encoded on OAuth callback endpoints. See `references/intent-injection-login-csrf.md` for full PoC.
+
+**Impact:**
+- Login CSRF: attacker's auth code/token injected into victim's app
+- If app trusts the deep link data without re-validation → session hijack
+- Attacker can inject arbitrary `id_token`, `code`, `user` data
+- No CORS needed (mobile app doesn't enforce same-origin)
+
+**Exploitation chain:**
+1. Attacker creates malicious page/app that triggers POST to `/v1/auth/apple`
+2. Server responds 307 → `intent://callback?{attacker_data}#Intent;...`
+3. Android resolves intent → opens target app with attacker-controlled params
+4. If app processes `code`/`id_token` without verifying origin → ATO
+
+**Limitations:**
+- CORS preflight (OPTIONS 405) blocks browser-based CSRF
+- Exploitable primarily via: malicious Android app, WebView, or app-to-app intent
+- Some apps validate code server-side (code exchange fails for invalid codes)
+
+**WinTicket case study (June 2026):**
+- `POST /v1/auth/apple` → 307 with full body reflection into intent://
+- No state parameter, no CSRF protection
+- `package=jp.winticket.app;scheme=signinwithapple`
+- Attacker controls: code, redirect_uri, id_token, user fields
+- CORS blocks browser exploitation but mobile vector remains
+
+---
+
 ### Keycloak-Specific Chains
 
 ### KC-1: Public Client Enumeration → Redirect Bypass → Code Theft

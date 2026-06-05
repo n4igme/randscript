@@ -12,7 +12,17 @@
 **Asset:** www.tiktok.com
 **Weakness:** CWE-306: Missing Authentication for Critical Function
 **Severity:** High (CVSS 8.1 — AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N)
-**Status:** Submitted 2026-05-27. WalletOnTelegram finding (separate H1 program) marked as duplicate — suspected triager theft. ALL H1 activity postponed indefinitely due to platform distrust (duplicate abuse pattern). Awaiting TIKTOK-001 verdict before deciding whether to return to H1.
+**Status:** Submitted 2026-05-27. Triager responded: "binding email you don't own just makes YOUR account less secure — victim can take over YOUR account." Valid argument — impact flows backwards without proving email gets REMOVED from victim's account. Accepted closure gracefully (2026-05-30).
+
+**Lesson:** For auth bypass / email bind findings, must prove the FULL chain before submitting:
+1. Does binding victim's email REMOVE it from victim's account? (not tested)
+2. Can the attacker then reset victim's password? (depends on #1)
+3. Without proving #1, the finding is just "convenience bypass" not ATO
+
+**Pre-submission gate for email/phone bind bypasses:**
+- [ ] Prove the bind REMOVES the identifier from the original account (need 2 test accounts)
+- [ ] OR prove you can bind to a VICTIM's account (not just your own)
+- [ ] If neither proven, the finding is Low/Informational at best — don't submit as High
 
 **Chain (3 bugs combined):**
 1. `/passport/email/bind/` processes requests without authentication (error_code:1703 = code validation, not session check)
