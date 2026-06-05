@@ -1,0 +1,25 @@
+id: prerequisite-skip-consent
+info:
+  name: Prerequisite Skip - Consent/Approval Endpoints
+  author: n4igme
+  severity: high
+  description: Tests if consent/approval endpoints accept requests without calling prerequisite steps
+  tags: business-logic,consent,prerequisite-skip
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}/api/consent"
+      - "{{BaseURL}}/api/consents/stage"
+      - "{{BaseURL}}/api/v1/consent"
+      - "{{BaseURL}}/api/approve"
+      - "{{BaseURL}}/api/v1/approve"
+    headers:
+      Content-Type: application/json
+    body: '{"consentType":"general","approved":true}'
+    matchers-condition: or
+    matchers:
+      - type: status
+        status:
+          - 200
+          - 201
