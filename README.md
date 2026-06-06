@@ -10,7 +10,6 @@ A personal research lab — utility scripts and tools for AI/LLM development, se
 | [llm/skills/](llm/skills/) | AI security skills — code review, pentest, mobile, finding reports | Structured prompts |
 | [scanner/](scanner/) | XSS scanner — parses OpenAPI specs, tests 9 payloads, generates reports | Python, requests, PyYAML |
 | [winapi/](winapi/) | Windows API research — anti-cheat PoCs, reverse engineering tools | Python, C++, C# |
-| [secops/](secops/) | Email forensics — .eml analyzer with SPF/DKIM/DMARC validation | HTML, JavaScript |
 | [asmin/](asmin/) | Archived Asmaul Husna website (2020) | Static HTML |
 
 ## Getting Started
