@@ -461,6 +461,8 @@ See `references/immunefi-report-template.md` for report format and impact framin
 
 > Full pitfalls and operational rules: `references/operational-rules.md`
 
+**Engagement file naming:** ALWAYS prefix target-specific references with `engagement-` (e.g., `engagement-ens.md`, `engagement-grab-ovo.md`). These patterns are gitignored from public backup repos via `llm/skills/**/engagement-*`. Files without the prefix trigger GitHub secret scanning alerts when they contain contract addresses, API keys, or wallet details found during testing.
+
 **Top 5 instant-rejection rules:**
 1. **NEVER claim impact you haven't proven end-to-end** — theoretical = rejected
 2. **VERIFY EXPLOIT OUTPUT BEFORE WRITING REPORT** — run full chain, confirm output matches claim
@@ -476,7 +478,7 @@ See `references/immunefi-report-template.md` for report format and impact framin
 - `references/immunefi-report-template.md` — Report format
 - `references/operational-rules.md` — Full operational rules
 - `references/immunefi-targets-v3.md` — Target shortlist
-- `references/stakewise-engagement.md` — Signature replay (Critical)
-- `references/ens-engagement.md` — CSP bypass via stale PostHog (Critical)
-- `references/hacken-engagement.md` — SSRF bypassing Cloudflare Access
-- `references/beefy-engagement-lessons.md` — Scope rejection lesson
+- `references/engagement-stakewise.md` — Signature replay (Critical)
+- `references/engagement-ens.md` — CSP bypass via stale PostHog (Critical)
+- `references/engagement-hacken.md` — SSRF bypassing Cloudflare Access
+- `references/engagement-beefy-lessons.md` — Scope rejection lesson

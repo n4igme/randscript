@@ -36,7 +36,7 @@
 - Strength: Fintech programs (Capital.com, Delen Private Bank, Monzo), less competition than HackerOne
 - Caveat: Login triggers reCAPTCHA for bots — use arkadiyt/bounty-targets-data repo for programmatic discovery
 - Spring Heist events are EU/UK residents only (skip events, hunt programs directly)
-- See: references/intigriti-engagement.md
+- See: references/engagement-intigriti.md
 
 ### 6. HackenProof — Parked
 - Web3-focused, decent payouts
