@@ -1,1 +1,9 @@
 .DS_Store
+
+# Engagement-specific and intel files (contain target secrets/keys)
+llm/skills/**/engagement-*
+llm/skills/**/intel-*
+llm/skills/**/jago-auth-flow.md
+
+# Exception: generic ROI tracking (not target-specific)
+!llm/skills/w3hunt/references/engagement-roi-metrics.md
