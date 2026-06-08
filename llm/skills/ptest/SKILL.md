@@ -475,6 +475,16 @@ Load these references at phase transitions to increase finding rate:
 
 **Recipe feedback loop:** Before closing any engagement, ask: "Does this finding generalize into a reusable pattern?" If yes → patch `references/attack-recipes.md` with new recipe (trigger + technique + yield).
 
+## File Naming Convention
+
+Reference files use prefixes to indicate loading rules:
+- **`engagement-*`** — target-specific engagement docs. Only load when testing that specific target. Excluded from public repos via gitignore.
+- **`intel-*`** — program recon/infrastructure intel. Only load during target selection or when hitting that infrastructure stack. Excluded from public repos via gitignore.
+- **`phase*`** — phase methodology docs. Load when entering that phase.
+- Everything else — reusable technique references. Load based on cross-skill-triggers signal matching.
+
+**Public repo safety:** engagement/intel files contain extracted API keys, auth tokens, and target-specific secrets. Always gitignore: `**/engagement-*`, `**/intel-*`, and any file with auth flow captures (e.g., `jago-auth-flow.md`).
+
 ## Pitfalls
 
 > Full pitfalls list: `references/pitfalls.md`
@@ -500,6 +510,14 @@ Key rules (load reference for details):
 - Phase 6 entry WITHOUT credential-inventory.md = wasted exploits
 
 ## Gate Enforcement (MANDATORY before `next`)
+
+**Self-Review Protocol (SoundOn lesson, June 2026):**
+Before running the gate checker, manually verify EACH checklist row:
+1. Read every row marked DONE — does an output artifact exist for it? (file path, terminal output, or explicit N/A reason)
+2. For compound rows (e.g., "OSINT: WHOIS, Wayback, GitHub, Google dorks, Shodan"), verify EACH sub-technique was executed, not just 2-3 of them
+3. If a row says DONE but you cannot point to evidence on disk — it was NOT done. Revert to PENDING.
+
+**Root cause this prevents:** Autopilot momentum — marking grouped items DONE after completing 2-3 sub-techniques, then advancing the gateway without finishing the rest. The user will catch it at review and trust erodes.
 
 Before advancing any phase, run the gate checker:
 
