@@ -179,17 +179,47 @@ Some staging environments run Eversafe in "report-only mode" where tokens with f
 - If server returns JWT errors (not Eversafe errors) → attestation not enforced
 - If server returns 401 regardless → strict enforcement (Jago pattern)
 
-## Staging vs Production Behavior
+## Staging vs Production Behavior (CONFIRMED 2026-06-05)
 
-- **Staging builds:** Often have relaxed detection — app stays alive on rooted devices with Frida attached. Attestation in "report-only mode" (server accepts tokens reporting proxy/root/pin failure).
-- **Production builds:** Likely enforce attestation (reject tokens with failure flags) and kill app on root detection.
+- **Staging builds:** Relaxed — raw TLV token (base64, TOTP-only) accepted. No encryption layer. Server checks version byte + tag 81 (TOTP) only.
+- **Production builds:** STRICT — raw TLV tokens rejected with `TOKEN_VERIFICATION_FAILED`. Production adds a native encryption layer (`encrypt_token`) that wraps the TLV before transmission.
 
-**Testing strategy:** Always test staging builds first before investing in bypass work.
+### PROD encrypt_token Architecture (Jago v8.86.0, Eversafe 3.10.43)
+
+**Native method:** `kr.co.everspin.eversafe.w.encrypt_token([B)[B`
+- Registered dynamically via `RegisterNatives` during `JNI_OnLoad` of `libeversafe.so`
+- Takes raw TLV bytes as input, returns encrypted blob (~298 bytes for 124-byte input)
+- Output starts with `/0af5` header (consistent across calls)
+- Uses random IV — same input produces different output each call
+- **Embeds internal threat detection state** into the encrypted output
+
+**Why forged tokens fail on PROD:**
+1. Raw TLV without encryption → server can't decrypt → `TOKEN_VERIFICATION_FAILED`
+2. Encrypted via `encrypt_token` with Frida attached → native lib re-scans at encrypt time, detects debugger, embeds threat flag in encrypted blob → server decrypts, sees DEBUGGER flag → rejects
+3. Even late-attach (12s after clean boot, Eversafe fully initialized) still produces rejected tokens — the native lib detects hluda on every `encrypt_token` call
+
+**Other native methods in `kr.co.everspin.eversafe.w`:**
+- `decryptAndLoadBasicModule(Object) -> boolean` — unpacks secondary .so
+- `encrypt(String, byte[]) -> byte[]` — general encrypt (in secondary .so)
+- `decrypt(String, byte[]) -> byte[]` — general decrypt (in secondary .so)
+- `register(Context, Handler) -> void` — starts detection loop
+- `diagnosis() -> int` — threat bitmask (only in secondary .so)
+
+**Secondary .so:** `.eversafe_basic_ccd1cecfd1cacb_x2.so` — decrypted + loaded at runtime, contains `register`, `encrypt`, `decrypt`, `launch`, `relaunch`
+
+**Approaches to get valid PROD tokens:**
+1. **Patch native threat state in memory** — zero out threat flags in writable .data section (0x74323ad000, 4KB + 0x74323ae000, 20KB) before calling encrypt_token. Requires reverse engineering the flag location.
+2. **Run app without Frida, capture from Burp** — with SSL pinning bypassed via Frida + connect() redirect, the app sends real encrypted tokens. But this is circular (need Frida to bypass SSL, Frida taints token).
+3. **Two-phase approach** — Phase A: bypass SSL+capture traffic (token will be tainted but you see API structure). Phase B: replay with fresh token from a brief clean window.
+4. **Reverse engineer encrypt_token** — dump the crypto from native lib, replicate in Python without threat flags. Most reliable but time-intensive (stripped binary, no symbols).
+5. **Hook encrypt_token output** — replace the encrypted blob's threat bytes post-encryption but pre-transmission. Requires knowing the offset of threat data within the encrypted output.
+
+**Testing strategy:** Always test staging first (raw forge works). For PROD, the SSL pinning bypass + traffic redirect is sufficient to MAP the API surface (see requests/responses). Token validation bypass requires deeper native RE.
 
 **Detecting enforcement mode:**
-- Send a token with known proxy/pin failure flags
-- If server returns JWT errors (not Eversafe errors) → attestation not enforced
-- If server returns `TOKEN_VERIFICATION_FAILED` → attestation enforced
+- Send raw base64 TLV → accepted = staging-level (TOTP-only)
+- Send raw base64 TLV → `TOKEN_VERIFICATION_FAILED` = PROD-level (encryption required)
+- Send encrypted token from Frida-attached process → rejected = threat state embedded in encryption
 
 ## Report-Only Attestation as a Finding
 

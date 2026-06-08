@@ -330,7 +330,7 @@ done
 
 **Key insight:** Different Referers may work for different endpoint groups. Production frontends bypass prod endpoints; pre-prod Referers bypass PRE endpoints. Some endpoints (like password/key material) may need NO Referer at all — always test without Referer first.
 
-**Ant Group / Antom specifics:** See `references/alibaba-cloud-infrastructure.md` §"Referer-Based Access Control Bypass" for known working values.
+**Ant Group / Antom specifics:** See `references/intel-alibaba-cloud-infrastructure.md` §"Referer-Based Access Control Bypass" for known working values.
 
 ### 7. Authentication Endpoint Mapping
 Document all authentication mechanisms and entry points.

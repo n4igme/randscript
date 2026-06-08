@@ -7,9 +7,11 @@ license: MIT
 trigger: "pentest, penetration test, web pentest, infrastructure pentest, network pentest, external pentest, internal pentest, red team"
 argument-hint: "<command: start|preflight|status|resume|next|escalate|abort|cleanup|recon-passive|recon-active|enumerate|attack-surface|vuln-assess|exploit|post-exploit|report>"
 notes:
+  - "v4.6.1: Removed duplicate state_manager block. Pitfalls section is 9.5K chars (~2.4K tokens) — candidate for extraction to references/pitfalls.md to reduce per-turn context cost."
   - "v4.6.0: Hub model — SKILL.md handles routing + framework rules. Phase techniques in references/phase*.md. Tool tables, scope matrix, finding template, heuristics extracted to references/."
   - "scripts/ contains hermes_tools-based phase scripts for all 8 phases; see references/execute-code-integration.md for tier definitions and usage"
   - "Shell scripts (bulk-actuator-scan.sh, http-probe-parallel.sh) still usable via terminal() for standalone runs"
+  - "TOKEN OPTIMIZATION: Gate Enforcement + Script Invocation appear once each (bottom of file). Do NOT duplicate them during future patches."
 metadata:
   hermes:
     tags: [pentest, penetration-testing, security, recon, exploitation, post-exploitation, red-teaming, offensive-security]
@@ -73,33 +75,9 @@ If no command is given, show current status and suggest next action.
 
 ## Phase Completion Criteria (Large Scope)
 
-When scope has 100+ subdomains, define "phase complete" explicitly:
+> Full criteria: `references/large-scope-guidance.md` — load for 50+ subdomain engagements.
 
-**Phase 1 (Recon) is complete when:**
-- ALL subdomains resolved and accessibility-checked (not just a sample)
-- ALL accessible targets have: tech stack identified, JS bundles analyzed, security headers checked, robots.txt/.well-known checked
-- Google dorking, Wayback Machine, GitHub code search done for the domain
-- Pattern-based subdomain brute-force done (e.g., if `e-doc` exists, try `e-pmo`, `e-line`, `e-*`)
-- Recon summary written with prioritized Phase 2 targets
-
-**Phase 2 (Enumeration) is complete when:**
-- ALL accessible non-static targets have: path fuzzing, login form identification, credential testing
-- ALL API endpoints discovered from JS bundles tested for auth status
-- Service discovery exhaustive on API gateways (try 50+ common prefixes)
-- CORS, verb tampering, header injection tested on all non-CDN targets
-- Credential wordlist built and tested against all login endpoints
-
-**Phase 3 (Vuln Scanning) is complete when:**
-- Nuclei run against all accessible targets (critical+high+medium)
-- Manual CVE checks for identified tech (Pimcore, Keycloak, Spring Boot versions)
-- JWT attacks, SSRF, path traversal, CRLF tested on relevant endpoints
-- Actuator/debug endpoint bypass attempts exhausted
-
----
-
-# ═══════════════════════════════════════════════════════════════
-# SETUP — Tool preparation, engagement initialization, resumption
-# ═══════════════════════════════════════════════════════════════
+Quick rule: ALL subdomains must be resolved, probed, tech-stacked, and JS-analyzed before Phase 1 exits. ALL accessible targets need path fuzzing + credential testing before Phase 2 exits.
 
 ## Preflight Check (`preflight`)
 
@@ -402,20 +380,9 @@ This prevents the pattern of "execute first, document later" that caused gaps in
 
 ## Scope Viability Assessment (Phase 1 Exit)
 
-At Phase 1 exit, classify the engagement's expected yield:
+> Full assessment framework: `references/large-scope-guidance.md`
 
-| Yield | Signals | Recommendation |
-|-------|---------|----------------|
-| **HIGH** | Real application in scope, multiple APIs/services, auth flows, user-generated content, complex business logic | Full 8-phase engagement, allocate maximum Phase 6 time |
-| **MEDIUM** | Mix of marketing + app surface, some APIs behind auth, limited input points | Standard engagement, focus Phase 6 on authenticated surface |
-| **LOW** | Marketing-only site (WP/Marketo), real app on different domain, all REST locked behind auth, no registration, static content | Flag to user: "Expected yield is low. Real app appears to be on [other domain]. Recommend: (a) fast-track Phases 3-5, (b) pivot to mobile app analysis for API discovery, or (c) confirm with user before investing full effort." |
-
-**LINE WORKS lesson (June 2026):** Phase 1 revealed the real product lives on worksmobile.com (not in scope). line-works.com is a marketing WordPress site. This should have been flagged at Phase 1 exit — instead, full effort was spent on a hardened marketing site yielding only 3 low-medium findings.
-
-**Rules:**
-- LOW yield does NOT mean skip phases — it means inform the user and let them decide
-- If user says "continue anyway" — execute all phases normally
-- Document the assessment in `scope.md` under "Viability Assessment"
+At Phase 1 exit, classify expected yield (HIGH/MEDIUM/LOW). If LOW → flag to user before investing full effort. Document in scope.md.
 
 ## Phase Routing
 
@@ -450,48 +417,16 @@ Each target gets independent state tracking. Finding IDs are unique per-target. 
 ---
 
 
-## Exploitation Mindset
+## Exploitation Mindset & Post-Exploitation Rules
 
-**Phase 6 objective is TAKEOVER, not proving individual vulnerabilities.** The goal is: "take over the web/system with whatever you've got from each phase before." Chain ALL findings from phases 1-5 into an end-to-end attack path that achieves maximum impact (RCE, admin access, data exfiltration, account takeover). Proving each finding independently is Phase 5 work — Phase 6 is about COMBINING them.
+> Full content: `references/exploitation-mindset.md` — load when entering Phase 6-7.
 
-When in Phase 5-6 (vuln assessment through exploitation), DO NOT:
-- Stop to ask user for approval on each attack (they said "just hack")
-- Write theoretical impact assessments instead of running exploits
-- Report findings as "potential" when you can prove them with code
-- Ask "want me to continue?" — always continue until blocked
-- Prove findings in isolation when they could be chained for higher impact
-- **EVER treat "got shell" or "got RCE" as the finish line** — it's the STARTING line for post-exploitation
-
-DO:
-- Chain findings aggressively (credential → access → data → escalation)
-- Run PoC scripts and show real output, not hypothetical chains
-- If a theoretical path exists, TRY IT before documenting
-- Create working PoC scripts with real tested values (never placeholders)
-- Build multi-step attack chains: XSS → cookie steal → API bypass → admin takeover
-- Prove each LINK in the chain independently, then show the full path
-- When a chain link needs victim interaction (e.g., XSS click), prove everything else works and document the chain as "proven minus victim interaction"
-
-## Post-Exploitation Continuation Rule (MANDATORY)
-
-**BFI lesson (June 2026):** Got RCE on a K8s pod, declared victory, and stopped. The human had to manually run `printenv`, test every credential, pivot through Chisel, and prove access to RabbitMQ/Redis/GCS/Slack/WhatsApp — yielding 10 additional Critical/High findings that were sitting ONE COMMAND AWAY. This is unacceptable.
-
-**THE RULE: When you achieve ANY form of access (shell, API token, DB creds, admin panel), the work is STARTING, not ending.**
-
-**Immediate mandatory actions upon achieving access:**
-1. `printenv | sort` (or equivalent) — extract EVERY credential, token, URL, connection string
-2. For EACH credential found → test it against its service (connect to DB, authenticate to API, access bucket)
-3. For EACH internal service reachable → prove access with evidence (response body, record count, data sample)
-4. For EACH third-party integration found (Slack webhooks, WhatsApp APIs, email services) → prove it works
-5. Document EACH proved access as a SEPARATE FINDING with its own severity
-
-**Access ≠ Finding. Proved impact = Finding.**
-- "Got shell on pod" is ONE finding (RCE)
-- "From that shell, accessed RabbitMQ with 3M messages" is ANOTHER finding
-- "From env vars, accessed Redis with full read/write" is ANOTHER finding
-- "From env vars, accessed GCS bucket with 2K PII files" is ANOTHER finding
-- Each proved lateral access is a separate finding that demonstrates blast radius
-
-**Never stop at less than full blast radius.** If `printenv` shows 15 credentials, test ALL 15. If the network has 10 reachable services, probe ALL 10. The total finding count should reflect the REAL damage an attacker can do, not just the entry point.
+Key rules:
+- Phase 6 objective is TAKEOVER, not proving individual vulnerabilities — chain ALL findings
+- Don't ask "want me to continue?" — always continue until blocked
+- THEORETICAL IS NOT HACKABLE: if a finding needs a prerequisite you haven't proven (XSS for token theft, MitM for header injection), report at severity of what you actually proved, not the full chain. "I need hackable things, not theoricality things."
+- SHELL IS THE STARTING LINE: upon any access → `printenv | sort` → test every credential → document each as separate finding
+- Never stop at less than full blast radius
 
 ## Guardrails
 
@@ -522,8 +457,11 @@ Load these references at phase transitions to increase finding rate:
 | Phase 5/6, testing SQLi | `references/sqli-payloads-and-bypass.md` | DB-specific payloads, WAF bypass, NoSQL, ORM CVEs |
 | Phase 5/6, testing SSTI | `references/ssti-engine-payloads.md` | Per-engine detection + RCE (Jinja2, Twig, Freemarker, etc.) |
 | Phase 5/6, testing RCE | `references/rce-exploitation-chains.md` | CMDi, EL injection, deserialization, file upload, YAML |
+| Phase 5/6, cryptojacking hunt | `references/cryptojacking-detection.md` | Mining IOCs, process/network/file indicators, YARA/Sigma |
+| Phase 1, AI-assisted recon | `references/ai-assisted-recon.md` | Perplexity/ChatGPT Search prompts, verification rules, OPSEC |
 | Phase 5/6, testing redirects | `references/open-redirect-chains.md` | Bypass techniques, OAuth/SSRF escalation chains |
 | Phase 1 (SPA targets) | `references/spa-config-extraction.md` | Extract routes, env URLs, feature flags from SPA inline config |
+| Phase 1 (TikTok/ByteDance) | `references/intel-bytedance-soundon.md` | SoundOn target intel, API surface, priority vectors |
 | Phase 1 exit | `references/scope-expansion.md` | Expand attack surface before testing |
 | Phase 2/3 entry | `references/attack-recipes.md` | Proven patterns with trigger conditions |
 | 40-50% budget, zero findings | `references/stuck-playbook.md` | Non-obvious techniques before abandoning |
@@ -539,20 +477,27 @@ Load these references at phase transitions to increase finding rate:
 
 ## Pitfalls
 
-- **SHELL IS THE STARTING LINE, NOT THE FINISH (critical):** Getting RCE/shell is Phase 6. What you DO with it is Phase 7 — and Phase 7 is where most findings come from. BFI lesson (June 2026): Got pod RCE, stopped. Human manually ran `printenv` and found 15+ credentials → proved access to RabbitMQ (3M messages), Redis (full R/W), GCS (2K PII files), Slack webhook, WhatsApp API, IZI credit APIs — yielding 10 ADDITIONAL Critical/High findings from ONE COMMAND. Rule: Upon ANY access, immediately (1) dump all env vars, (2) test every credential against its service, (3) document each proved access as a separate finding. The finding count should reflect full blast radius, not just the entry point.
+> Full pitfalls list: `references/pitfalls.md`
 
-- **EXPLOIT FIRST, THEORIZE NEVER (critical):** Don't stop at "this COULD be exploited if..." — actually try it. WinTicket lesson (June 2026): Phase 5 produced 8 "findings" that were all theoretical observations (missing headers, version disclosure, token format). When asked "where is the real hacking?" — none had real exploitation value. A 5-minute actual exploit attempt (Firebase signUp) immediately produced a real auth bypass. Rule: When you identify a potential vector, IMMEDIATELY test the exploit before documenting. The finding is the successful exploit, not the exposed config.
+### Checklist Atomicity Rule (MANDATORY)
+**Problem (SoundOn, June 2026):** Compound checklist items like "OSINT Gathering (WHOIS, Wayback, GitHub, Google dorks, Shodan)" were marked DONE after executing only 3 of 5 sub-techniques. Sitemap.xml was fetched but never parsed. JS bundles were partially analyzed.
 
-- **NEVER CLAIM COMPLETION FROM SUMMARIES OR STATE FILES (critical):** When the user asks "do all activities in phase X" or "have we done phase X?", you MUST actually EXECUTE the work — run the tests, produce the deliverables, write the output files. **Antom lesson (June 2026):** Claimed Phase 3 "complete" after manual curl probing, but hadn't run ANY of the 12 mandatory techniques from `references/phase3-enumeration.md` (ffuf, GraphQL, WebSocket, deserialization, actuator scan, source maps, etc.). User had to ask THREE times before the reference was loaded and the checklist properly executed. RULE: When user asks "did we miss something?" — ALWAYS load the phase reference file and diff its checklist against what was actually done. Don't answer from memory. UNRELIABLE SOURCES: (a) context compaction summaries, (b) state.yaml gateway status, (c) checklist.md from prior sessions, (d) your own memory of prior turns. ALL of these can be wrong. MANDATORY PROCESS: (1) skill_view the phase reference file FIRST, (2) ls the phase output directory to see what FILES actually exist, (3) compare against the phase's required deliverables list, (4) execute anything missing. If state says PASSED but deliverables don't exist → the phase is NOT done. If the context summary says "Phase X complete" but you haven't verified disk → DO NOT PARROT IT BACK. Lesson: WinTicket (June 2026) — Phase 4 state said PASSED but only a rough checklist existed, not the 6 required deliverables. Phase 3 context summary said "done" but systematic tests hadn't been run. User corrected this pattern twice in the same engagement.
-- **EXCLUSION CROSS-CHECK (critical, bug bounty):** Before exploiting ANY finding, verify it is NOT in the program's Out of Scope list. Common exclusions that waste hours: email enumeration, SPF/DMARC, missing security headers, brute force, CSRF on anonymous forms. Read exclusions during `start` and embed them in scope.md. At Phase 5/6 boundary, cross-check every finding against exclusions BEFORE writing PoCs. Lesson: WinTicket engagement (June 2026) — Firebase email enum + DMARC findings were both explicitly OOS, discovered only after full exploitation.
-- **Auth wall with valid token but incomplete registration:** When you have a valid session token but endpoints return 401 because the account isn't "registered" in the app (common in JP apps requiring identity verification, phone auth, or native WebView flow to complete signup): (1) Extract registration endpoint body format from JS bundles (`grep -oE 'firstName|lastName|birthday|agreementIds'`), (2) Try multiple body shapes on POST /v1/users or equivalent, (3) Check if the pre-auth token still enables OTHER actions (delete account, change email, access public APIs with auth bonus), (4) Test if authenticated-but-unregistered state enables IDOR on other endpoints that check auth but not registration status, (5) If fully blocked, document what the token CAN do and pivot to other attack vectors instead of burning time guessing body fields. WinTicket lesson: spent significant time trying to guess POST /v1/users body format. The valid token still enabled DELETE /v1/auth, email changes via Firebase, and provider unlinking — which led to the main ATO finding.
-- Phase 6 entry WITHOUT credential-inventory.md = wasted exploits (creds expire, lose track)
-- Nmap aggressive scans (-A) on production trigger IDS/WAF blocks — use -sS -sV with rate-limiting
-- Nuclei default templates flood target with 5000+ requests — always use `-tags` to scope
-- Gobuster on CDN-fronted targets returns false 200s — verify with response body diffing
-- Host timeout: document, retry after 30min, mark unreachable — don't burn time on dead hosts
-- Large scope (>20 hosts): track per-host coverage table or you'll miss hosts entirely
-- Phase transitions without re-enum = missed findings — new creds/access may reveal new surface
+**Root cause:** Autopilot momentum — chaining tools for speed, treating grouped items as single tasks, not self-reviewing before marking PASSED.
+
+**Fix — two mandatory rules:**
+1. **Split compound items into atomic rows** — each sub-technique gets its own checklist row (1a, 1b, 1c...). Cannot mark parent DONE until every child is DONE.
+2. **Require output proof per row** — every DONE must reference a file or specific output. No artifact = not done.
+
+**Self-review before `next`:** Before advancing any phase, re-read each checklist row and ask: "Did I actually execute this and capture output?" If the answer relies on memory rather than a file on disk, it wasn't done.
+
+Key rules (load reference for details):
+- TOKEN ≠ ATO — prove victim data access, not just token possession
+- SHELL IS THE STARTING LINE — upon any access, dump env vars, test every credential
+- EXPLOIT FIRST, THEORIZE NEVER — test before documenting
+- PROVE END-TO-END — walk full path from attacker action to victim impact
+- **"Theoretical" ≠ "Finding"** — if exploitation requires a prerequisite you haven't proved (e.g., "attacker needs victim's token"), the finding is THEORETICAL. Don't claim High/Critical severity without demonstrating the full chain. Programs reject "if attacker has X, then Y" without proving X.
+- NEVER CLAIM COMPLETION FROM SUMMARIES — always verify against disk/reference files
+- Phase 6 entry WITHOUT credential-inventory.md = wasted exploits
 
 ## Gate Enforcement (MANDATORY before `next`)
 
@@ -595,21 +540,7 @@ should, reason = state_manager.should_abandon(workdir, budget_hours=16)
 state_manager.abandon(workdir, "Authorization revoked")
 ```
 
-**state_manager.py — engagement lifecycle:**
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/ptest/scripts"))
-import state_manager
 
-state_manager.init_state(".", "Target Corp", scope_type="web",
-    targets=["*.target.com"], exclusions=["cdn.target.com"], budget_hours=16)
-state_manager.status(".")
-state_manager.advance_phase(".")
-state_manager.add_finding(".", "FINDING-1", "SSRF via PDF export", "High", "app.target.com")
-state_manager.escalate(".", "FINDING-2", "RCE via deserialization", "Critical", "api.target.com")
-should, reason = state_manager.should_abandon(".", budget_hours=16)
-state_manager.abandon(".", "Authorization revoked")
-```
 
 ### Script Failure Protocol
 

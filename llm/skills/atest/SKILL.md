@@ -191,7 +191,7 @@ Your testing priorities shift based on API type. Determine this during initializ
 
 | Phase | Gate | Reference |
 |-------|------|-----------|
-| 1 Scope & Recon | endpoints mapped, auth flow documented, valid token obtained | `references/phase1-scope-recon.md` |
+| 1 Scope & Recon | endpoints mapped, auth flow documented, valid token obtained. **Alt gate:** ptest Phase 3+ OR mtest Phase 4+ PASSED with endpoints + tokens inherited | `references/phase1-scope-recon.md` |
 | 2 AuthN/AuthZ | auth bypass tested, BOLA on all object endpoints, privesc attempted | `references/phase2-auth.md` |
 | 3 Injection & Logic | injection tested on all inputs, business logic assessed, race conditions tested | `references/phase3-injection-logic.md` |
 | 4 Reporting | report delivered with all findings + PoCs | see below |
@@ -345,6 +345,20 @@ Never use heredoc for scripts with regex — shell escaping of `\r\n` and bracke
 2. POST each with `{}` body + valid Referer
 3. Filter: responses containing `"redirectURL"` = auth-protected. Everything else = processes without auth
 4. Proven yield (Antom 2026-06): 291 endpoints → 30+ process without authentication
+
+**ptest handoff (ptest → atest):**
+- If `../ptest-output/` (or sibling ptest-output) exists with Phase 3+ PASSED, inherit endpoint list from `ptest-output/enumeration/` and tokens from `ptest-output/credential-inventory.md`
+- Skip Phase 1 entirely — gate satisfied by ptest inheritance
+- Start at Phase 2 (AuthN/AuthZ) directly
+- Copy relevant endpoints into `atest-output/phase1-recon/endpoints.md` for reference
+- Tag all findings with `source: "atest"` so they flow back to ptest findings-log
+
+**mtest handoff (mtest → atest):**
+- If `../mtest-output/` exists with Phase 4+ PASSED, inherit endpoint list from `mtest-output/phase4-traffic/` and tokens from intercepted traffic
+- Skip Phase 1 entirely — gate satisfied by mtest traffic analysis
+- Start at Phase 2 (AuthN/AuthZ) directly
+- After atest completes, findings flow back to mtest findings.jsonl with `source: "atest"`
+- Return to mtest Phase 9 for mobile-specific exploit chains
 
 **Attestation-heavy targets (mtest → atest):**
 - Document forge capability as Phase 1 gate prerequisite

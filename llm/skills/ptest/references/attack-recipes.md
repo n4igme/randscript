@@ -222,6 +222,27 @@ When entering Phase 2/3 on ANY engagement:
 
 ---
 
+## RECIPE: Unauthenticated Email Flooding (Trusted Domain Abuse)
+**TRIGGER:** Target has email-based auth (magic links, OTP, verification emails) with a send endpoint
+**TECHNIQUE:**
+1. Identify the email-send endpoint (e.g., `/v1/auth/email`, `/api/send-link`, `/auth/magic-link`)
+2. Check if it requires authentication (many need only a pre-auth token or nothing at all)
+3. Send 10+ requests to the SAME external email address — check for rate limiting
+4. If no rate limit: send to multiple external addresses to confirm it's not per-recipient
+5. Verify delivery: emails arrive from trusted domain (e.g., `info@mail.target.com`) with valid SPF/DKIM
+6. Document: sender address, headers (SPF pass, DKIM valid), volume achievable, content controllability
+**EXPECTED YIELD:** Medium (email flooding/spam via trusted domain, phishing amplification)
+**PROVEN ON:** WinTicket (June 2026) — `POST /v1/auth/email` sent unlimited emails from `info@mail.winticket.jp` to ANY external address. 20 emails delivered with zero rate limiting. Required only a pre-token (obtainable without auth from `/v1/auth/email/token`).
+**KEY INSIGHT:** Even if the email content is fixed (login link), the impact is: (1) mailbox flooding DoS, (2) domain reputation abuse, (3) phishing amplification (victim sees legit sender domain in inbox → trusts future spoofed emails). Strongest when sender domain has valid SPF+DKIM — makes future phishing more credible.
+**SEVERITY FACTORS:**
+- No auth needed to trigger sends → Higher
+- Unlimited volume (no rate limit) → Higher
+- Can target ANY external address → Higher
+- Email content contains controllable fields (name, URL) → Higher (phishing)
+- Fixed content, auth required, per-recipient limit → likely OOS per most programs
+
+---
+
 ## RECIPE: Payment Gateway Merchant Validation Oracle
 **TRIGGER:** Payment integration (GMO, Stripe, PayPal, Adyen) with merchant/shop IDs visible in JS or API responses
 **TECHNIQUE:**

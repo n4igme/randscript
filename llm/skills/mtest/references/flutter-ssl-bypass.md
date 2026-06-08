@@ -85,19 +85,60 @@ sys.stdin.read()
 
 ## Traffic Redirection (Required)
 
-Flutter's `dart:io` HTTP client ignores Android system proxy settings. Must use iptables:
+Flutter's `dart:io` HTTP client ignores Android system proxy settings. Two approaches:
+
+### Approach A: Frida connect() redirect + Burp Invisible Proxy (PREFERRED)
+
+Best for apps with Eversafe or other anti-tamper that blocks iptables/redsocks. Preserves SNI in ClientHello so Burp can generate per-host certs.
+
+```javascript
+// Redirect connect() for known app server IPs to Burp invisible proxy
+var TARGET_IPS = ["172.64.148.24", "104.18.39.232"]; // resolve target hosts
+var connect = Module.findExportByName("libc.so", "connect");
+Interceptor.attach(connect, {
+    onEnter: function(args) {
+        var family = args[1].readU16();
+        if (family === 2) { // AF_INET
+            var port = (args[1].add(2).readU8() << 8) | args[1].add(3).readU8();
+            if (port === 443) {
+                var ip = args[1].add(4).readU8() + "." + args[1].add(5).readU8() + "." +
+                         args[1].add(6).readU8() + "." + args[1].add(7).readU8();
+                if (TARGET_IPS.indexOf(ip) !== -1) {
+                    // Redirect to localhost:8443 (Burp invisible proxy via adb reverse)
+                    args[1].add(2).writeU8(0x20); // port 8443 high byte
+                    args[1].add(3).writeU8(0xFB); // port 8443 low byte
+                    args[1].add(4).writeU8(127);
+                    args[1].add(5).writeU8(0);
+                    args[1].add(6).writeU8(0);
+                    args[1].add(7).writeU8(1);
+                }
+            }
+        }
+    }
+});
+```
+
+**Setup:**
+```bash
+adb reverse tcp:8443 tcp:8443  # forward device 8443 → host Burp
+# Burp: Proxy → Options → Add → Port 8443 → Binding: All interfaces
+#   → Request Handling → "Support invisible proxying" ✓
+```
+
+**Why this works:** Flutter sends correct SNI in TLS ClientHello regardless of the IP it connects to. Burp invisible proxy reads SNI, generates per-host cert, and forwards to the real server.
+
+**Diagnostic:** If you see 100+ connect() redirects in 20s, SSL bypass is NOT working (connection retry storm). Working bypass = ~5 connections then stable (HTTP/2 multiplexing).
+
+### Approach B: iptables DNAT (simpler but conflicts with Eversafe)
 
 ```bash
-# Get app UID
 APP_UID=$(cat /data/system/packages.list | grep <package> | awk '{print $2}')
-
-# Redirect HTTPS to proxy
 iptables -t nat -A OUTPUT -p tcp -m owner --uid-owner $APP_UID --dport 443 -j DNAT --to-destination <HOST_IP>:8080
 iptables -t nat -A OUTPUT -p tcp -m owner --uid-owner $APP_UID --dport 80 -j DNAT --to-destination <HOST_IP>:8080
-
-# Cleanup
-iptables -t nat -F OUTPUT
+# Cleanup: iptables -t nat -F OUTPUT
 ```
+
+**Warning:** iptables may conflict with Eversafe's native HTTP stack (it uses its own connections to `/appprotect/eversafe/` endpoints). Use Approach A when Eversafe is present.
 
 ## Alternative Patterns (if primary doesn't match)
 
@@ -250,12 +291,108 @@ iptables: -t nat -A OUTPUT -p tcp -m owner --uid-owner <APP_UID> --dport 443 -j 
 
 1. **Access violations** — NEVER scan the full module range (`m.base, m.size`). Flutter's memory layout has unmapped pages between sections. Always use `Process.enumerateRanges('r-x')` filtered to the module.
 
-2. **Multiple matches** — Expect 3-5 matches for the pattern. Hook ALL of them. The actual verify function is one of them; the others are harmless (hooking them just makes unrelated functions return 1).
+2. **Multiple matches — NOT all are verify functions** — Pattern `FF 03 05 D1 FD 7B 0F A9` typically finds 3-5 matches. **Critical:** NOT all matches are ssl_verify_peer_cert. In Jago PROD (Flutter 3.22+, 11MB libflutter.so), 4 matches found but func#1 returned POINTER values (0x746e...) and was called hundreds of times per second — clearly NOT a verify function. Patching/hooking ALL matches breaks unrelated functionality. **Identify the real verify function by:**
+   - Monitoring return values: verify functions return int 0 or 1, NOT pointers
+   - Call frequency: verify is called once per TLS handshake, not continuously
+   - If func returns non-zero pointers constantly = wrong function, skip it
 
-3. **No exports** — Modern Flutter strips all symbols. Don't waste time looking for `SSL_write`, `SSL_read`, or `ssl_crypto_x509_session_verify_cert_chain` by name.
+3. **Return value semantics vary per match** — `ssl_crypto_x509_session_verify_cert_chain` returns BOOLEAN (1 = chain valid). `ssl_verify_peer_cert` returns enum (0 = ssl_verify_ok). When unsure, try: patch [0]→ret 0, patch [2],[3]→ret 1, SKIP [1] if it returns pointers. This is trial-and-error when symbols are stripped.
 
-4. **Timing** — libflutter.so loads AFTER the app process starts. If you spawn with Frida, the library isn't mapped yet at script load time. Always use `setTimeout` with retry.
+4. **Retry storm diagnostic** — If connect() redirect fires 100+ times in 20s, the SSL bypass is NOT working (TLS handshake fails → Dart retries). A working bypass shows ~5 connections then stabilizes (HTTP/2 multiplexes on one connection). ~5 redirects + no retry = TLS succeeding.
 
-5. **Proxy not enough** — Even with SSL bypass working, Flutter ignores system proxy. You MUST use iptables DNAT or the traffic won't reach your proxy.
+5. **No exports** — Modern Flutter strips all symbols. Don't waste time looking for `SSL_write`, `SSL_read`, or `ssl_crypto_x509_session_verify_cert_chain` by name.
 
-6. **reFlutter alternative** — If Frida-based bypass is too fragile, use [reFlutter](https://github.com/nicolo-ribaudo/reflutter) to patch `libflutter.so` directly (inserts proxy settings + disables cert verify at binary level). This survives app restarts without Frida.
+6. **Timing** — libflutter.so loads AFTER the app process starts. If you spawn with Frida, the library isn't mapped yet at script load time. Always use `setTimeout` with retry.
+
+7. **Proxy not enough** — Even with SSL bypass working, Flutter ignores system proxy. You MUST use connect() redirect (Approach A) or iptables DNAT (Approach B).
+
+8. **reFlutter alternative** — If Frida-based bypass is too fragile, use [reFlutter](https://github.com/nicolo-ribaudo/reflutter) to patch `libflutter.so` directly (inserts proxy settings + disables cert verify at binary level). This survives app restarts without Frida.
+
+9. **NVISO disable-flutter-tls.js patterns may fail** — The NVISO script (github.com/NVISOsecurity/disable-flutter-tls-verification) uses arm64 patterns that target specific Flutter versions. On custom/newer Flutter builds (e.g., Jago PROD 8.86.0), ALL three NVISO patterns (`F? 0F 1C F8...`, `F? 43 01 D1 FE 67 01 A9...`, `FF 43 01 D1 FE 67 01 A9 ?? ?? 06 94...`) return 0 matches. Fallback: use the generic `FF 03 05 D1 FD 7B 0F A9` with selective patching (skip pointer-returning functions).
+
+10. **Interceptor.attach/replace does NOT persist after Frida detach** — Hooks are removed when session ends. connect() redirect dies too. **`Memory.patchCode` DOES persist** (writes actual ARM64 opcodes: `mov w0, #0` = 0x52800000, `ret` = 0xD65F03C0). But connect() redirect cannot be made persistent via patchCode (it's dynamic logic). **You MUST keep the Frida session alive** for traffic interception. Use a background Python process with `while True: time.sleep(1)`.
+
+11. **TLS succeeding ≠ HTTP traffic in Burp** — Even with SSL bypass working (no retry storm, connections established), Burp may show empty history if the patched functions break the HTTP/2 framing or response parsing. If Burp shows 200+ ESTABLISHED connections but 0 HTTP history entries, you've patched a wrong function that corrupts the data path rather than just the verify path.
+
+12. **reFlutter as ultimate fallback** — When ALL Frida pattern approaches fail (NVISO, generic prologue, xref-based, Ghidra backtrace), use reFlutter to binary-patch libflutter.so. It patches the verify at build-hash level (SnapshotHash matching) regardless of compiler optimizations. See "reFlutter Binary Patch Approach" section below.
+
+---
+
+## reFlutter Binary Patch Approach (Last Resort — Always Works)
+
+When Frida-based SSL bypass fails after 3+ attempts with different patterns, use reFlutter:
+
+### Prerequisites
+```bash
+pip3 install reflutter  # or brew install reflutter
+```
+
+### Workflow
+
+```bash
+# 1. Patch the APK (enter proxy IP when prompted — use 127.0.0.1)
+echo "127.0.0.1" | reflutter target.apk
+# Output: release.RE.apk with patched libflutter.so
+
+# 2. Sign and align
+zipalign -f 4 release.RE.apk release.RE.aligned.apk
+apksigner sign --ks ~/.android/debug.keystore --ks-pass pass:android release.RE.aligned.apk
+
+# 3a. If single APK — install directly
+adb install release.RE.aligned.apk
+
+# 3b. If split APK (INSTALL_FAILED_INVALID_APK: Full install must include a base package):
+#     Extract patched libflutter.so and replace on device
+python3 -c "
+import zipfile
+z = zipfile.ZipFile('release.RE.apk')
+z.extract('lib/arm64-v8a/libflutter.so', '/tmp/reflutter_out')
+"
+adb push /tmp/reflutter_out/lib/arm64-v8a/libflutter.so /data/local/tmp/libflutter_patched.so
+
+# 4. Replace original lib on device (requires root)
+#    First find install path:
+adb shell "pm path com.target.app"
+#    Then overwrite:
+adb shell "su -c 'cp /data/local/tmp/libflutter_patched.so /data/app/~~HASH==/com.target.app-HASH==/lib/arm64/libflutter.so'"
+adb shell "su -c 'chmod 755 /data/app/~~HASH==/com.target.app-HASH==/lib/arm64/libflutter.so'"
+adb shell "am force-stop com.target.app"
+```
+
+### Split APK Reinstall (when app was uninstalled)
+```bash
+# If you have the original split APKs:
+adb install-multiple base.apk split_config.arm64_v8a.apk split_config.en.apk split_config.xxhdpi.apk
+# Then replace libflutter.so as above
+```
+
+### What reFlutter Does
+- Patches `ssl_crypto_x509_session_verify_cert_chain` to return 1 (valid)
+- Uses SnapshotHash matching (build-hash specific, not pattern-based)
+- Works on ANY Flutter version regardless of compiler optimizations
+- Does NOT add proxy routing — you still need Frida connect() redirect or iptables
+
+### Combining reFlutter + Frida
+After libflutter.so replacement, use Frida ONLY for:
+- Eversafe/anti-tamper bypass (Handler msg suppression)
+- connect() redirect to Burp (reFlutter doesn't route traffic)
+- Root hiding hooks
+
+```python
+# Minimal Frida script with reFlutter (no SSL hooks needed):
+# 1. eversafe_bypass.js (msg 84/100 suppression)
+# 2. connect() redirect to 127.0.0.1:8443
+# NO ssl pattern scanning needed — reFlutter handles it at binary level
+```
+
+### Key Advantages Over Frida SSL Bypass
+- Build-independent (works when ALL patterns fail)
+- Survives app restart (binary patch, not runtime hook)
+- No retry storms (verify is truly disabled, not just hooked)
+- No need to identify which of 4+ pattern matches is the real function
+
+### Limitations
+- Requires root (to overwrite lib on device)
+- Changes app signature (may trigger server-side sig checks)
+- Must redo after app update
+- reFlutter must support the Flutter engine version (SnapshotHash match)

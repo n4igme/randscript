@@ -152,7 +152,7 @@ with open("./mtest-output/findings.jsonl", "a") as f:
 **`start`:**
 1. Define scope: app name, package/bundle ID, platform(s), version, engagement type (internal/bounty).
 2. Create `<workdir>/mtest-output/` with subdirs for each phase.
-3. Run `state_manager.init(workdir, name, package_id, platforms)` → creates state.yaml + scope.md.
+3. Run `phase1_preflight.run(workdir, target_apk, package_id, platform, engagement_name)` → creates output dirs + state.yaml.
 4. Verify tools: Frida server running, proxy configured, device connected (`adb devices` / `ideviceinfo`).
 5. Begin Phase 1 preflight immediately.
 
@@ -298,6 +298,15 @@ Load full decision tree: `references/app-type-decision-tree.md`
 
 **What NOT to waste time on:** Frida hooking (nothing to hook), root detection bypass (irrelevant), native lib RE (none exist), certificate pinning (uses system Chrome).
 
+**TWA identification:** Check for `com.google.androidbrowserhelper.trusted` in decompiled source + `LauncherActivity extends n` (TrustedWebActivityService). XAPK with only config splits + tiny main APK (<1MB) = TWA. WinTicket lesson: 918KB XAPK, LauncherActivity just appends `?twa=1` to URL and launches Chrome Custom Tab. All auth/logic lives in web — APK reversing yields nothing useful.
+
+**TWA auth testing strategy:** Since auth is web-based:
+1. Map the web login flow via browser interception (not APK)
+2. Check if JS bundles are gzip-compressed (serve as binary, not readable text)
+3. Use browser DevTools network interception during real login
+4. The `intent://` scheme callbacks are the mobile-specific attack surface
+5. Test CSRF on intent-generating endpoints (Apple/Google OAuth callbacks)
+
 ### Intent Scheme URL Injection
 
 **When:** Backend returns `Location: intent://...` with user-controlled data in the URL (common in OAuth callback endpoints like `/v1/auth/apple`, `/v1/auth/google`).
@@ -362,6 +371,15 @@ Load: `references/bug-bounty-fast-path.md`
 
 ## Pitfalls
 
+### Burp Invisible Proxy + Flutter/reFlutter
+- **Upstream proxy pollution**: Check user-level upstream proxy (`output_user_options` → `upstream_proxy.servers[]`). A stale entry (e.g. `127.0.0.1:5556`) silently breaks ALL forwarding with "Failed to connect" error page.
+- **Hostname resolution**: Cloudflare IPs can become unreachable. Use `104.18.39.232` for Jago hosts (both api/mobile/assets). Set via `set_project_options` → `connections.hostname_resolution`.
+- **reFlutter + Frida SSL hooks conflict**: When using reFlutter-patched libflutter.so (binary NOP of ssl_verify_peer_cert), do NOT also hook `FF 03 05 D1 FD 7B 0F A9` pattern via Frida — those hit WRONG functions (return pointers, called thousands of times), causing connection retry storms. Use one SSL bypass method, not both.
+- **Host header with port**: Burp invisible proxy routes upstream using the Host header. If `Host: api.jago.com:8443` (with port), Burp tries upstream port 8443 which fails. The app sends `Host: api.jago.com` (no port) since original connect target is :443 — this works correctly. Only affects manual curl tests through the proxy.
+- **Burp MCP disconnected**: When Hermes MCP client reports "unreachable", talk to Burp MCP directly via raw sockets to SSE endpoint on port 9876. See references/burp-mcp-raw-socket.md.
+
+### Original Pitfalls
+
 See `references/pitfalls.md` for full pitfalls (mobile-specific, Frida, Flutter, Meta apps, Eversafe, Ghidra). Key ones:
 
 - Root/jailbreak bypass is NOT a finding — Phase 3 is a means, not a result
@@ -370,16 +388,49 @@ See `references/pitfalls.md` for full pitfalls (mobile-specific, Frida, Flutter,
 - Flutter 3.22+ breaks ALL known SSL bypass patterns — needs Ghidra RE approach
 - Eversafe TLV token is forgeable (no crypto) — full API testing without real device
 - Don't over-engineer Frida when you have keys — write standalone Python instead
+- Eversafe "debugger alert" (Flutter full-screen): Detection is **purely local** in `libeversafe.so` via raw `svc #0` syscalls reading `/proc/net/tcp`. **Best proven bypass: Hook `Handler.dispatchMessage` and suppress `msg.what=84` (THREATS_FOUND) + `msg.what=100` (SYSTEM_EXIT) + block `System.exit`/`Runtime.exit`/`Process.killProcess`.** This catches the detection result at the Java framework layer AFTER native scan but BEFORE Flutter renders the alert. Works regardless of how native lib detects. Alert is a Flutter widget — Java AlertDialog hooks useless. EversafeThreat/AIDL classes live in service classloader (ClassNotFoundException). libc hooks (`open`/`read`/`connect`) fail because native lib uses inline syscalls. **CRITICAL: Do NOT block `bindService` to EversafeService — the backend requires `x-eversafe-token` for auth. Blocking it causes "Sorry, we can't log you in" with zero login traffic.** Blocking `libeversafe.so` from loading CRASHES the app. `pm disable` on EversafeService kills token generation. See `references/eversafe-bypass.md` for full architecture + code.
+- Eversafe "something went wrong" on login after bypass: Even with msg 84 suppressed locally, the **service process still reports DEBUGGER to Eversafe backend** → token is tainted → Jago rejects login. Fix for staging: forge clean TLV 0x02 token (see `references/eversafe-attestation.md`). Fix for PROD: PROD wraps TLV with `encrypt_token` native function that embeds threat state — raw TLV rejected, encrypted-with-Frida also rejected. See `references/eversafe-attestation.md` "Staging vs Production Behavior" for full analysis. Java-layer token hooks (OkHttp/HttpURLConnection) DON'T work for Flutter — it uses dart:io directly, never touches Java HTTP.
 - QUIC (UDP 443) bypasses HTTP proxies — block with iptables to force TCP fallback
+- Flutter + redsocks + Burp = NO HTTP history (redsocks sends CONNECT-by-IP, Flutter omits SNI → Burp can't log). **BUT Burp invisible proxy DOES work** when using Frida `connect()` hook redirect (not redsocks). Traffic arrives as raw TLS with SNI preserved → Burp reads SNI → routes correctly. Setup: Burp invisible proxy on :8443 + `adb reverse tcp:8443 tcp:8443` + Frida connect() redirect to 127.0.0.1:8443. See `references/eversafe-bypass.md` "Burp Integration" and `references/redsocks-transparent-proxy.md` "CRITICAL LIMITATION" section.
+- Magisk systemless: `mount -o remount,rw /system` fails. Use module path `/data/adb/modules/*/system/etc/security/cacerts/` for CA install.
+- KernelSU has NO DenyList/MagiskHide equivalent. Root hiding requires Frida hooks (Java BufferedReader filter for /proc/self/mounts + File.exists block for /system/bin/su + native libc access/fgets hooks). KSU overlay mount (`KSU /system overlay...`) visible in mounts. See `references/kernelsu-root-hiding.md`.
+- Eversafe root detection (MGCheck) uses Java BufferedReader on `/proc/self/mounts` — catchable via libc hooks. But debugger detection uses raw `svc #0` — NOT catchable. Two different code paths for root vs debugger.
+- Flutter SSL bypass: pattern `FF 03 05 D1 FD 7B 0F A9` finds 3-5 matches but NOT all are verify functions. If one match returns pointer values and fires constantly = wrong function (skip it). Only patch functions that return int 0/1. NVISO disable-flutter-tls.js patterns often fail on newer/custom Flutter builds — fall back to generic pattern with selective patching. `Memory.patchCode` persists after detach (arm64: `mov w0,#0`=0x52800000 + `ret`=0xD65F03C0) but `Interceptor.attach` dies on detach — keep Frida session alive for connect() redirect. If 100+ redirects in 20s = SSL bypass failing (retry storm). Working = ~5 connections then stable. Always scan only `r-x` ranges — full module scan hits guard pages → access violation. See `references/flutter-ssl-bypass.md` Pitfalls section for full details.
 
 ## Cross-Skill Triggers
 
 | Signal | Trigger |
-|--------|---------|\n| Eversafe/Everspin detected (kr.co.everspin) | `references/eversafe-frida-bypass.md` + `references/eversafe-attestation.md` (token forgery) |\n| macOS Burp + DNAT not working | `references/redsocks-transparent-proxy.md` |
+|--------|---------|\n| Eversafe/Everspin detected (kr.co.everspin) | `references/eversafe-frida-bypass.md` + `references/eversafe-attestation.md` (token forgery) + `templates/flutter_eversafe_intercept.py` (ready-to-use interceptor). For full bypass writeup template see Jago PROD: `mtest-output/phase3-protection/bypass-writeup.md` |\n| KernelSU root detection (KSU overlay in mounts, /data/adb/ksu) | `references/kernelsu-root-hiding.md` + `templates/flutter_eversafe_full_bypass.js` |\n| Flutter + Eversafe + root detection combined | `templates/flutter_eversafe_full_bypass.js` (all-in-one: debugger suppress + root hide + connect redirect + SSL bypass) |\n| macOS Burp + DNAT not working | `references/redsocks-transparent-proxy.md` |
 | Flutter SSL bypass hooks never trigger | `references/phase3-bypass.md` → fallback approaches |
+| MHL/CTF challenge walkthrough write-up | `templates/mhl-walkthrough.md` (gist-style: summary → steps → notes → flag) |
+| Native .so flag extraction (no plaintext in strings) | `references/native-flag-extraction.md` (XOR emulation, identify real vs decoy buffers) |
 | BROWSABLE deep link with create/compose host | `scripts/deeplink_browsable_chain_test.sh` |
-| API endpoints in traffic | `atest` |
+| API endpoints in traffic | `atest` — see decision criteria below |
+
+### mtest Phase 8 → atest Decision Criteria
+
+**Stay in mtest Phase 8 (quick 1.5hr):**
+- ≤10 API endpoints discovered in traffic
+- Simple auth model (single bearer token, no multi-role)
+- No GraphQL/gRPC — just REST
+- API is secondary — mobile-specific surface (deep links, local storage, IPC, WebView) is higher value
+- Time budget remaining < 2hr
+
+**Switch to full atest:**
+- >10 endpoints with object IDs (BOLA surface)
+- Complex auth: multi-role, tenant isolation, or undocumented privilege levels
+- GraphQL or gRPC detected (needs specialized testing)
+- Mobile app is a thin client — API IS the app (all logic server-side)
+- Eversafe/attestation already bypassed — full API access available
+
+**Handoff procedure:**
+1. Complete mtest Phase 4 (traffic captured, endpoints mapped)
+2. Start atest at Phase 2 — skip Phase 1, gate satisfied by mtest traffic analysis
+3. Carry over: endpoint list from `mtest-output/phase4-traffic/`, auth tokens from intercepted traffic
+4. Findings tag with `source: "atest"` and flow back to mtest findings.jsonl
+5. After atest completes, return to mtest Phase 9 (exploitation) for mobile-specific chains
 | Flask passive analyzer needed | `references/passive-traffic-analyzer.md` |
+| Flutter app entering Phase 4 (traffic) | Skip redsocks→Burp entirely. Use Frida Dart-layer HTTP dumper. See `references/redsocks-transparent-proxy.md` "CRITICAL LIMITATION" |
 | Cloud storage URLs (S3/GCS) | `ctest` |
 | Web endpoints found | `ptest` |
 | Hardcoded secrets/source code | `scode` |

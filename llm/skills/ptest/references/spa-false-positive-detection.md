@@ -7,6 +7,28 @@ Modern SPAs (Single Page Applications) using client-side routing return HTTP 200
 - Directory brute-forcing
 - Checking for config files
 
+## ByteDance/TikTok "Goofy Deploy" SPA Pattern (SoundOn, June 2026)
+
+ByteDance products (SoundOn, TikTok Music) serve **two separate SPA apps from the same domain**:
+- **client-main** (authenticated dashboard) — catches all non-API, non-public routes, returns React shell HTML
+- **client_seo** (public SSR) — serves `/bio/*` routes with full SSR + `__MODERN_ROUTER_DATA__`
+
+**Detection signals:**
+- Response contains `goofy-deploy-app-{id}` in script tags
+- Inline `<script id="gfdatav1">` JSON with `env`, `idc`, `region`, `ver`, `canary` fields
+- `x-ggw-config-version` response header (on SSR routes)
+- Title is generic "SoundOn" (not page-specific) → SPA shell, not real content
+
+**Key implication:** ALL path fuzzing returns 200 with identical body size for non-existent paths. Only `/api/` routes return distinct responses (JSON "Unauthorized", "ROUTE_NOT_FOUND", or actual data).
+
+**Intel extraction from SPA shell:**
+- `gfdatav1` JSON → deployment version, IDC, region, canary status
+- `pumbaa-rule` base64 → full privacy/network interception ruleset
+- Script `project-id` attribute → Argus SecSDK project identifier
+- `data-business` attribute on PPF loader → internal app identifier
+
+---
+
 ## Detection Method
 
 **Always establish a baseline first:**

@@ -473,22 +473,30 @@ Write `./ptest-output/recon-passive/checklist.md`:
 ```markdown
 # Passive Recon Checklist
 
-| # | Technique | Status | Notes |
-|---|-----------|--------|-------|
-| 0 | Request Asset Inventory (internal engagements) | PENDING | |
-| 0b | Knowledge Base / Support Site Scraping | PENDING | |
-| 1 | OSINT Gathering (WHOIS, Wayback, GitHub, Google dorks, Shodan) | PENDING | |
-| 2 | Subdomain Enumeration | PENDING | |
-| 3 | Technology Fingerprinting (headers + body on ALL live hosts) | PENDING | |
-| 4 | Email & Username Discovery | PENDING | |
-| 5 | Network Mapping | PENDING | |
-| 6 | Asset Validation (DNS + HTTP probe ALL hosts) | PENDING | |
-| 6b | Port Scan (non-HTTP services: SFTP, VPN, SMTP, SSH) | PENDING | |
-| 6c | Subdomain Takeover Check (all CNAME targets) | PENDING | |
-| 6d | SPF/DMARC/Email Security Analysis | PENDING | |
-| 6e | TLS Certificate Analysis (CN, SANs, issuer, expiry) | PENDING | |
-| 6f | Third-Party Service Inventory (from DNS + headers) | PENDING | |
-| 7 | Binary/Source Intelligence | PENDING | |
+Rule: every row must have an Evidence entry (file path or "N/A") before marking DONE.
+
+| # | Technique | Status | Evidence | Notes |
+|---|-----------|--------|----------|-------|
+| 0 | Request Asset Inventory (internal engagements) | PENDING | | |
+| 0b | Knowledge Base / Support Site Scraping | PENDING | | |
+| 1a | OSINT — WHOIS | PENDING | | |
+| 1b | OSINT — Wayback Machine | PENDING | | |
+| 1c | OSINT — GitHub code search | PENDING | | |
+| 1d | OSINT — Google dorks | PENDING | | |
+| 1e | OSINT — Shodan InternetDB | PENDING | | |
+| 2 | Subdomain Enumeration (subfinder + crt.sh + amass) | PENDING | | |
+| 3 | Technology Fingerprinting (headers + body on ALL live hosts) | PENDING | | |
+| 4 | Email & Username Discovery | PENDING | | |
+| 5 | Network Mapping (ASN, IP ranges) | PENDING | | |
+| 6 | Asset Validation (DNS + HTTP probe ALL hosts) | PENDING | | |
+| 6b | Port Scan (non-HTTP services: SFTP, VPN, SMTP, SSH) | PENDING | | |
+| 6c | Subdomain Takeover Check (all CNAME targets) | PENDING | | |
+| 6d | SPF/DMARC/Email Security Analysis | PENDING | | |
+| 6e | TLS Certificate Analysis (CN, SANs, issuer, expiry) | PENDING | | |
+| 6f | Third-Party Service Inventory (from DNS + headers) | PENDING | | |
+| 7a | Binary/Source Intelligence — JS bundle analysis | PENDING | | |
+| 7b | Binary/Source Intelligence — sitemap.xml parse | PENDING | | |
+| 7c | Binary/Source Intelligence — app association files | PENDING | | |
 ```
 
 Mark each technique as `DONE`, `SKIPPED (reason)`, or `FAILED (reason)` after execution.

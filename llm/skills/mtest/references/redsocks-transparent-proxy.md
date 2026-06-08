@@ -146,9 +146,47 @@ When using Burp upstream proxy to route traffic through a parsing proxy (e.g., F
 | `HTTP/1.1 405 METHOD NOT ALLOWED` from upstream | Upstream points to Flask (can't handle CONNECT) | Remove upstream proxy, use Burp extension instead |
 | Burp upstream proxy rule doesn't match traffic | redsocks sends CONNECT with IP, not hostname | Don't use upstream proxy with redsocks — use passive analyzer pattern |
 
+## CRITICAL LIMITATION: Flutter + redsocks + Burp = No HTTP History
+
+**This combination is fundamentally broken for logging Flutter traffic in Burp.**
+
+**Root cause**: redsocks sends `CONNECT <IP>:443` (not `CONNECT hostname:443`). Flutter's BoringSSL does NOT send SNI when the connection target is an IP address. Burp therefore cannot determine the hostname, cannot generate a per-host certificate, and logs ZERO requests in HTTP History.
+
+**Symptoms**: 27+ ESTABLISHED connections on Burp port, redsocks log shows dozens of `accepted` entries, SSL bypass hooks fire (onEnter logs), but Burp Proxy History stays completely empty.
+
+**Attempted fixes that DON'T work** (all tested, all failed):
+- Invisible proxy mode ON
+- Disable HTTP/2 negotiation in Burp
+- Hostname resolution entries (Project Settings → Hostname Resolution: api.jago.com→IP)
+- Scope + SSL pass-through configuration changes
+- Fresh listener on different port
+- Any combination of the above
+
+**Why Flutter specifically breaks**: Native Android apps using OkHttp/HttpURLConnection typically include SNI even when connecting by IP (because the URL was hostname-based). Flutter's BoringSSL, when it receives a pre-resolved IP from the Dart runtime, omits SNI entirely.
+
+**When to detect (SAVE TIME)**: If after setting up redsocks→Burp you see connections in redsocks log + SSL bypass hooks firing + ZERO Burp history entries — stop troubleshooting Burp immediately. Switch to alternative capture.
+
+**Correct alternatives**:
+1. **Frida Dart-layer HTTP dumper** — hook Dart `_SecureSocket`, `HttpClient`, or Dio interceptor to dump plaintext. Best when SSL bypass already works.
+2. **HTTP Toolkit** — handles IP-based connections better than Burp
+3. **mitmproxy transparent mode** — can infer hostname from cert CN/SAN
+4. **Frida native IO hooks** — hook `read()`/`write()` on SSL socket FDs after SSL bypass nullifies encryption verification
+
+See `references/passive-traffic-analyzer.md` for the Frida dumper implementation.
+
+## Magisk CA Installation
+
+Standard `mount -o remount,rw /system` FAILS on Magisk-rooted devices (overlay FS, /system not in /proc/mounts).
+
+**Working approaches**:
+1. **MagiskTrustUserCerts module**: Install CA as user cert (Settings), module auto-promotes
+2. **Manual module**: `mkdir -p /data/adb/modules/customcerts/system/etc/security/cacerts/ && cp <hash>.0 there`
+3. **For Frida-based capture**: CA install unnecessary — hooking at Dart layer captures plaintext before TLS
+
 ## Notes
 
 - Get app UID: `adb shell pm list packages -U | grep PACKAGE`
 - Only targets specified UID — other apps unaffected
 - Still need SSL bypass (Frida or system cert) for app to accept Burp's cert
 - redsocks sends CONNECT with IP address (not hostname) — Burp resolves via SNI in the subsequent TLS handshake
+- For Flutter apps: **skip redsocks entirely**, use Frida Dart-layer dumper from the start

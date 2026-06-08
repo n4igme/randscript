@@ -79,6 +79,28 @@ for i in range(N):
 
 ## Additional Firebase Checks
 
+### End-to-End Proof Requirements (MANDATORY before claiming ATO)
+
+**WinTicket lesson (June 2026):** Claimed Critical ATO because Firebase pre-registration + deleteProvider worked at the API level. Never proved the token grants access to victim data on the APPLICATION. The `/v1/auth/email/token` endpoint returned tokens to ANYONE (no Firebase validation). The "ATO" was Firebase API calls that never touched victim's actual account.
+
+**Before claiming Firebase-based ATO, prove ALL of:**
+1. **Find the real token exchange endpoint** — intercept real login flow or reverse APK. Don't guess.
+2. **Prove it validates Firebase tokens** — send invalid tokens, confirm rejection. If endpoint returns tokens without any input, it's NOT the auth flow.
+3. **Access victim data** — call profile/balance/history endpoint with the session. Show real data.
+4. **Full chain in one script** — pre-register → password login → token exchange → victim data access.
+
+**Severity based on what's ACTUALLY proved:**
+| Proved | Severity |
+|--------|----------|
+| signUp works (password provider on) | Info |
+| + deleteProvider locks victim out | Medium (DoS) |
+| + real app session obtained | High (auth bypass) |
+| + victim data accessed | Critical (ATO) |
+
+**Trap:** Endpoints like `/v1/auth/email/token` may be CSRF/tracking tokens, NOT session tokens. Test: does it return tokens with NO auth input? If yes → not the real auth.
+
+## Additional Firebase Checks
+
 ### Anonymous auth
 ```bash
 curl -sk -H "Referer: https://<target>/" \
@@ -223,9 +245,68 @@ curl -sk -X POST "https://identitytoolkit.googleapis.com/v1/accounts:signInWithE
 ```
 
 **Temp email services that work with Firebase (tested June 2026):**
+- `api.mail.tm` — BEST: create account (POST /accounts), poll inbox (GET /messages), full HTML body with oobCode extractable. Persistent mailbox (doesn't expire in 10min). Requires password auth (Bearer token from POST /token).
 - `api.tempmail.lol` — generate + auth/$token polling (tokens expire ~10min)
 - `api.guerrillamail.com` — sid_token based (Firebase delivery unreliable)
 - `www.1secmail.com` — login/domain based (sometimes blocked)
+
+### Complete Programmatic Email-Link Flow (mail.tm — PROVEN June 2026)
+
+```python
+import requests, time, re
+
+API_KEY = "<firebase_api_key>"
+TARGET = "https://www.target.com"
+MAILTM = "https://api.mail.tm"
+
+# 1. Create disposable email
+domains = requests.get(f"{MAILTM}/domains").json()["hydra:member"]
+domain = domains[0]["domain"]
+email = f"test-{int(time.time())}@{domain}"
+pwd = "TestPass123!"
+r = requests.post(f"{MAILTM}/accounts", json={"address": email, "password": pwd})
+# Get auth token for mailbox access
+token_r = requests.post(f"{MAILTM}/token", json={"address": email, "password": pwd})
+mail_token = token_r.json()["token"]
+headers_mail = {"Authorization": f"Bearer {mail_token}"}
+
+# 2. Trigger email-link sign-in (use target's own endpoint if available)
+# Option A: via Firebase directly
+requests.post(
+    f"https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={API_KEY}",
+    headers={"Referer": f"{TARGET}/"},
+    json={"requestType": "EMAIL_SIGNIN", "email": email,
+          "continueUrl": f"{TARGET}/email/callback", "canHandleCodeInApp": True}
+)
+# Option B: via target's own send endpoint (often no rate limit)
+# requests.post(f"{TARGET}/v1/auth/email", json={"email": email}, headers={"Bearer": pre_token})
+
+# 3. Poll inbox for OOB code (mail.tm delivers in 5-15s)
+oob_code = None
+for _ in range(12):
+    time.sleep(5)
+    msgs = requests.get(f"{MAILTM}/messages", headers=headers_mail).json()
+    for msg in msgs.get("hydra:member", []):
+        detail = requests.get(f"{MAILTM}/messages/{msg['id']}", headers=headers_mail).json()
+        html = detail.get("html", [""])[0] if isinstance(detail.get("html"), list) else detail.get("html", "")
+        codes = re.findall(r'oobCode=([^&"<>\s]+)', html)
+        if codes:
+            oob_code = codes[0]
+            break
+    if oob_code:
+        break
+
+# 4. Complete sign-in
+r = requests.post(
+    f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithEmailLink?key={API_KEY}",
+    headers={"Referer": f"{TARGET}/"},
+    json={"email": email, "oobCode": oob_code}
+)
+id_token = r.json()["idToken"]
+# Now have valid Firebase session with emailLink provider
+```
+
+**Key insight:** The `continueUrl` in step 2 determines WHERE the app redirects after auth. Use the target's actual callback URL (often `/email/callback`, `/auth/action`, or `/login/callback` — NOT always `/login/`). Discover it from the emails themselves.
 
 **WebView Bridge Detection (mobile-only registration):**
 If console logs show `WebView Callback Initiated` with methods like `showRegisterPage`, the registration flow requires the native mobile app WebView. Desktop browser cannot complete registration. Look for:
@@ -275,7 +356,10 @@ curl -sk -H "Referer: https://<target>/" \
 
 **Note:** Firebase blocks if email is already registered (EMAIL_EXISTS). Attack window is unclaimed emails only. Corporate Google Workspace emails are often NOT registered in the app's Firebase project.
 
-## Key Pitfalls
+## Pitfalls
+
+- **Firebase token ≠ app session (CRITICAL).** WinTicket lesson (June 2026): Firebase pre-registration + provider unlinking worked perfectly at the Firebase API layer. But the app had its own session exchange endpoint (`POST /z/auth`) that rejected all token formats we tried. The backend likely validates `sign_in_provider` claim and only accepts emailLink/google/apple — not password. Result: 50+ body format attempts returned 400, "Critical ATO" was downgraded to ZERO submittable findings. RULE: When targeting a Firebase-backed app, you MUST prove the full chain: (1) Firebase auth → (2) app session exchange → (3) access victim endpoints. Steps 1 alone is worthless if step 2 rejects your token. Always identify and test the session exchange endpoint BEFORE writing the finding report.
+- **Map the login UI before claiming auth bypass.** If you can't answer "what URL does the user visit to log in?" and "what happens after they authenticate?" — you haven't done enough recon to claim an auth finding. Firebase REST API manipulation without proving app-level access is a LEAD, not a finding.
 - Firebase API key is often **referer-restricted** → always add `-H "Referer: https://<target>/"`
 - `ADMIN_ONLY_OPERATION` on anonymous doesn't mean password is also blocked — test separately
 - Token from password signUp has `sign_in_provider: "password"` in JWT — backend may reject if it checks provider
@@ -286,13 +370,52 @@ curl -sk -H "Referer: https://<target>/" \
 - Temp email tokens expire quickly (~10min) — poll immediately after sending the sign-in link
 - Always clean up test accounts after PoC: `accounts:delete` with idToken
 
-## WinTicket Case Study (June 2026)
+### CRITICAL VALIDATION GATE: "Token Exchange" ≠ "ATO" (WinTicket lesson, June 2026)
+
+**Before claiming ATO, you MUST prove ALL of these in sequence:**
+
+1. **Token exchange actually validates Firebase token** — send request WITHOUT any bearer / with garbage bearer. If the endpoint returns a token anyway → it's NOT a real auth endpoint. Your "exploit" is meaningless.
+
+2. **Returned token grants authenticated access** — call a protected endpoint (`/users/me`, `/profile`, `/account`) with the token. If you get 401 → it's NOT a session token (might be CSRF, tracking, or rate-limit token).
+
+3. **Authenticated access shows VICTIM data** — if you can only see your own empty pre-registered account, you haven't proved ATO. You need to show data that belongs to someone else (or prove the UID-sharing means your session IS the victim's session by showing shared state).
+
+4. **For mobile-only apps** — if the app has no web login and the real auth happens via native SDK/WebView bridge, your REST API calls may be hitting a completely different auth flow than real users use. Reverse the APK/IPA to find the actual token exchange endpoint.
+
+**The test that would have caught WinTicket:**
+```bash
+# Send to "auth" endpoint with NO bearer at all
+curl -sk -X POST "https://api.target.com/v1/auth/email/token" \
+  -H "Origin: https://www.target.com"
+# If this returns a token → endpoint doesn't validate auth → NOT exploitable
+```
+
+**Severity mapping:**
+| What you proved | Real severity |
+|---|---|
+| Firebase manipulation only (pre-reg, email change, provider unlink) | Medium (DoS/misconfiguration) |
+| Firebase token accepted by backend + 401 on all endpoints | Medium (same as above) |
+| Firebase token → access to YOUR OWN empty profile only | Low-Medium |
+| Firebase token → access to VICTIM's data/profile/balance | High-Critical (actual ATO) |
+
+## WinTicket Case Study (June 2026) — CAUTIONARY TALE
+
+**What was claimed:** Full ATO chain (Critical)
+**What was actually proved:** Firebase-level manipulation only (Medium — lockout DoS)
+
 - App uses email-link only for auth
-- Password signUp NOT disabled → unlimited account creation
-- `/v1/auth/email/token` on api.winticket.jp accepts password-provider tokens (200, returns app token)
-- Mass pre-registration confirmed (5 accounts in 5s, no rate limit)
-- `accounts:update` email change WITHOUT verification confirmed (emailVerified:false)
-- `deleteProvider:["emailLink"]` confirmed — removes victim's only login method
-- Full ATO chain proven: pre-register → signInWithPassword → get app token → unlink emailLink → victim locked out
-- Severity: HIGH→CRITICAL (gambling platform, real money, full account takeover + victim lockout)
-- Key escalation: initial finding was "Medium — account squatting" but chaining email change + provider unlinking + app token exchange = full ATO
+- Password signUp NOT disabled → unlimited account creation ✅
+- Mass pre-registration confirmed (no rate limit) ✅
+- `deleteProvider:["emailLink"]` confirmed — removes victim's only login method ✅ (DoS)
+- `accounts:update` email change WITHOUT verification confirmed ✅ (Firebase-level)
+
+**WHERE IT FELL APART:**
+- `/v1/auth/email/token` returns a token **even with NO auth header** — it does NOT validate Firebase tokens
+- The returned token is `timestamp.hash` (likely CSRF/tracking), NOT a session token
+- Token gives 401 on `/v1/users/me` — NOT authenticated
+- Real auth likely happens in native mobile app via different endpoint (never found)
+- **NEVER accessed another user's data or profile — ATO was never proved**
+
+**Honest severity:** Medium (Firebase misconfiguration → account lockout DoS + provider manipulation). NOT ATO without proving data access.
+
+**Lesson:** Firebase API manipulation ≠ application-level compromise. You MUST prove the app's actual auth flow uses the Firebase token you control.

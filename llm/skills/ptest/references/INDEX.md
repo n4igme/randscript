@@ -2,6 +2,8 @@
 
 Quick lookup: what you found → which reference to load.
 
+**Stats:** 212 reference files. Last updated: 2026-06-05.
+
 ---
 
 ## By Discovery (what you encountered)
@@ -35,7 +37,7 @@ Quick lookup: what you found → which reference to load.
 | Teleport remote access proxy exposed | `teleport-assessment.md` |
 | Signed URL (GCS/S3) in API response | `signed-url-exploitation.md` |
 | Callback / webhook / integration endpoint | `unauthenticated-callback-testing.md` |
-| Alibaba Cloud WAF (Tengine, acw_tc cookie) | `alibaba-cloud-infrastructure.md` |
+| Alibaba Cloud WAF (Tengine, acw_tc cookie) | `intel-alibaba-cloud-infrastructure.md` |
 | Kubernetes / GKE / container environment | `kubernetes-container-attacks.md`, `microservice-architecture-mapping.md` |
 | Istio / Envoy headers | `kubernetes-container-attacks.md` §Istio, `operational-pitfalls.md` (Istio section) |
 | SFTP / SSH port open | `non-http-protocol-testing.md` §2 |
@@ -65,7 +67,7 @@ Quick lookup: what you found → which reference to load.
 | Cloud credentials found (AWS/GCP/Azure keys, tokens) | `cloud-privilege-escalation.md`, `credential-chaining.md` |
 | Person / researcher / employee OSINT | `person-osint.md` |
 | Google product (*.google.com SPA) | `google-spa-recon.md` |
-| ByteDance / TikTok product (TLB, Goofy Deploy, Garfish, Arco Design) | `bytedance-tiktok-infrastructure.md` |
+| ByteDance / TikTok product (TLB, Goofy Deploy, Garfish, Arco Design) | `intel-bytedance-tiktok-infrastructure.md` |
 | Source map (.js.map) accessible | `source-map-token-exploitation.md`, `js-bundle-recon.md` (Source Map section) |
 | Clickstream / telemetry token in JS | `source-map-token-exploitation.md` (Telemetry Token section) |
 | CORS `*` + Debug mode combined | `source-map-token-exploitation.md` (CORS + Debug section) |
@@ -108,6 +110,9 @@ Quick lookup: what you found → which reference to load.
 
 ---
 
+
+---
+
 ## By Phase (what you're doing)
 
 | Phase | Relevant References |
@@ -120,6 +125,9 @@ Quick lookup: what you found → which reference to load.
 | 6 — Exploitation | `phase6-exploitation-framework.md`, `web-testing-checklist.md`, `jwt-attack-techniques.md`, `signal-hunting-table.md`, `attack-chain-framework.md`, `credential-chaining.md`, `re-validation-loops.md`, `advanced-web-attacks.md`, `insecure-deserialization.md`, `parameter-pollution.md`, `graphql-websocket-testing.md`, `kubernetes-container-attacks.md`, `cicd-pipeline-exploitation.md`, `prototype-pollution.md`, `file-upload-attacks.md`, `http-request-smuggling.md`, `host-header-attacks.md`, `oauth-sso-attack-chains.md`, `gateway-misconfiguration-patterns.md` |
 | 7 — Post-Exploitation | `phase7-post-exploitation-framework.md`, `data-classification-framework.md` |
 | 8 — Reporting | `phase8-reporting-process.md`, `time-box-enforcement.md`, `bug-bounty-submission-guide.md`, `attack-chain-narrative-writing.md` |
+
+---
+
 
 ---
 
@@ -159,85 +167,222 @@ Quick lookup: what you found → which reference to load.
 
 ---
 
+
+---
+
 ## All Reference Files (alphabetical)
 
 ```
-advanced-web-attacks.md              — WebSocket, cache poisoning, HTTP smuggling, race conditions
-attack-chain-narrative-writing.md    — How to write "Why This Attack Chain Works" sections for reports
-api-first-methodology.md             — API-centric testing approach
-api-fuzzing-methodology.md           — Parameter discovery, type/boundary fuzzing, auth manipulation, mass assignment, rate limit bypass, Content-Type switching, SpEL injection, GraphQL fuzzing
-attack-chain-framework.md            — Compound attack path documentation
-bug-bounty-osint-checklist.md         — Bug bounty OSINT techniques
-browser-extension-security.md        — Chrome/Firefox extension static+dynamic analysis, message passing, CORS proxy, privesc chains
-bug-bounty-submission-guide.md       — Bug bounty report writing, disclosure policy, scope decisions, multi-finding strategy
-bulk-actuator-scanning.md            — Bulk /actuator check across all hosts
-bytedance-tiktok-infrastructure.md   — ByteDance/TikTok tech stack: TLB, Goofy Deploy, Garfish, Arco Design, domain ecosystem, recon tips
-camunda-bpm-assessment.md            — Camunda BPM web UI and API testing
-cicd-devops-assessment.md            — ArgoCD, Atlantis, Airflow, n8n, Jenkins, Vault, Grafana
-cloud-infrastructure-enumeration.md  — GCP/AWS/Azure project mapping, bucket enum
-cloud-privilege-escalation.md        — AWS/GCP/Azure post-compromise privesc, IAM abuse, S3/Lambda/EC2 exploitation
-cloudflare-api-shield.md             — CF API Shield vs Access distinction
-cloudflare-bypass-techniques.md      — Origin IP discovery, CF product identification
-command-injection-filter-bypasses.md — 20+ filter bypass techniques: no-space, no-slash, keyword evasion, hex/octal, brace expansion, argument injection, WorstFit, blind exfil, polyglots
-credential-chaining.md               — Discovery → Validation → Escalation → Pivot
-credential-inventory-structure.md    — Centralized credential tracking
-dark-web-breach-osint.md             — Breach databases, dark web search, threat intel feeds, credential leak methodology
-data-classification-framework.md     — Data sensitivity classification
-depth-vs-breadth-decisions.md        — When to stop vs dig deeper
-dns-record-intelligence.md           — SPF/DMARC/MX/TXT analysis
-file-upload-attacks.md              — File upload bypass techniques
-fix-verification.md                 — Redo/reassessment fix verification methodology
-framework-specific-attacks.md        — Next.js, Laravel, Django, WordPress, Rails, GraphQL, Spring Boot
-gateway-misconfiguration-patterns.md — Parallel gateway drift, CDN bypass, config inconsistency detection
-ghidra-extension-building.md         — Build Ghidra extensions from source for version mismatches
-heapdump-secret-extraction.md        — Java HPROF analysis with Eclipse MAT
-insecure-deserialization.md          — Java/PHP/.NET/Python deserialization exploitation
-internal-ad-attacks.md               — AD enumeration, Kerberos attacks, credential dumping, lateral movement, Windows privesc
-javascript-secret-scanning.md        — Bulk JS secret scanning patterns
-js-bundle-recon.md                   — Phase 1 JS bundle analysis for recon (URLs, configs, architecture)
-keycloak-assessment.md               — Keycloak realm/client enumeration
-keycloak-gateway-exploitation.md     — Keycloak behind API gateway
-kubernetes-container-attacks.md      — K8s API, kubelet, etcd, container escape, GKE metadata, Istio mesh
-laravel-debug-exploitation.md        — Laravel debug mode detection, Ignition RCE, .env exposure, log poisoning
-legacy-protocol-bypass.md            — Legacy auth endpoints that bypass SSO/MFA (20+ platforms)
-llm-ai-feature-testing.md            — Prompt injection, AI IDOR/SSRF, OWASP LLM Top 10
-lucy-security-assessment.md          — Lucy phishing platform testing
-microservice-architecture-mapping.md — K8s/GKE architecture from external signals
-mobile-app-testing.md                — SUPERSEDED: use `mtest` skill for mobile testing
-graphql-websocket-testing.md         — GraphQL introspection, batching, IDOR; WebSocket auth, CSWSH, injection
-kubernetes-container-attacks.md      — K8s API, kubelet, etcd, container escape, GKE metadata, Istio mesh
-cicd-pipeline-exploitation.md        — Jenkins RCE, GitLab CI variables, GitHub Actions injection, ArgoCD
-multi-operator-coordination.md       — Team coordination for multi-person engagements
-nmap-cloud-targets.md                — Nmap behavior on GCP/AWS load balancers
-nmap-cloud-targets.md                — Nmap behavior on GCP/AWS load balancers
-nextjs-proxy-pattern.md              — Next.js SSR API route proxy exploitation, internal service access
-nodejs-library-attacks.md             — Node.js library-level vulns: path.join traversal, yauzl/adm-zip Zip Slip, require() RCE, prototype pollution, ReDoS
-non-http-protocol-testing.md         — SMTP, SFTP/SSH, OpenVPN, DNS
-operational-pitfalls.md              — 50+ battle-tested tool/target pitfalls
-parallel-http-probing.md             — Parallel bash probing pattern
-parameter-pollution.md               — HPP server behavior, WAF bypass
-path-traversal-actuator-bypass.md    — ..;/ ingress bypass techniques
-pattern-subdomain-bruteforce.md      — Pattern-based DNS brute-force
-proprietary-crypto-reversing.md      — Reversing custom crypto: LCG, XOR checksum, modular arithmetic, constraint solving, Z3, JS pitfalls
-phase6-exploitation-framework.md     — Structured exploitation checklist
-phase7-post-exploitation-framework.md — Access classification and playbooks
-phase8-reporting-process.md          — Report writing, audience, delivery
-re-validation-loops.md               — Mini-enumeration during exploitation
-saml-sso-assessment.md               — SAML metadata, IdP enum, SSO attacks
-signal-hunting-table.md              — A→B→C finding signal lookup (30+ pairs)
-signed-url-exploitation.md           — GCS/S3 signed URL analysis, content-type bypass, service account drift, bucket enumeration
-snyk-token-enumeration.md            — Snyk API exploitation
-source-map-token-exploitation.md     — Source map → token extraction → verified write access chains, telemetry tokens, CORS+debug, Flutter/proto analysis
-cross-skill-triggers.md              — When to invoke ctest/atest/mtest/w3hunt/scode during ptest, integration chains, GitHub credential OSINT technique, scope trap detection, pitfalls
-geo-restriction-bypass.md            — Detect geo-blocked targets early, bypass via regional VPS/residential proxies/SSH tunnels
-telegram-webapp-auth.md              — Telegram Mini App initData auth: hash validation, IDOR, bot token leakage, session extraction
-ssrf-outbound-forcing.md             — Server-side callback forcing
-subdomain-takeover.md                — Dangling CNAME detection
-target-redirection-web-app.md        — GoPay target redirection web app analysis
-teleport-assessment.md               — Teleport Enterprise proxy: /webapi/ping, OIDC, JWKS, K8s/SSH/DB proxy, CVE mapping
-time-box-enforcement.md              — Budget tracking and over-budget decisions
-web-bypass-techniques.md             — WAF/auth bypass techniques
-web-testing-checklist.md             — User management, app logic, input handling, security headers, infra checks
-webauthn-passkeys-testing.md         — FIDO2/WebAuthn/Passkey registration, auth, fallback, counter, origin testing
-web-vuln-bypass-tables.md            — SSRF, path traversal, access control, authentication, OAuth, business logic, NoSQL injection, DOM XSS, XSS, IDOR, file upload, SSTI, MFA, ATO, race condition, mass assignment bypass payloads (1941 lines)
+advanced-web-attacks.md                            — Advanced Web Attacks
+intel-alibaba-cloud-infrastructure.md                    — Alibaba Cloud / Ant Group Infrastructure Patterns
+api-first-methodology.md                           — API-First Testing Methodology
+api-fuzzing-methodology.md                         — API Fuzzing & Parameter Manipulation
+attack-chain-framework.md                          — Attack Chain Documentation Framework
+attack-chain-narrative-writing.md                  — Attack Chain Narrative Writing
+attack-recipes.md                                  — Attack Recipes — Proven Patterns
+authenticated-testing-playbook.md                  — Authenticated Testing Playbook
+engagement-bfi.md                                  — BFI Finance Engagement Notes (2026-05-29)
+engagement-bitbank.md                              — Bitbank.cc Engagement Intel
+engagement-bitbank-issuehunt.md                    — bitbank.cc — IssueHunt Bug Bounty Engagement Intel
+bounty-targets-data.md                             — Bounty Targets Data - Structured Scope for Bug Bounty Platforms
+browser-extension-security.md                      — Browser Extension Security Testing
+bug-bounty-osint-checklist.md                      — Bug Bounty OSINT Checklist
+bug-bounty-program-enumeration.md                  — Bug Bounty Program Enumeration
+bug-bounty-recon-pitfalls.md                       — Bug Bounty Recon Pitfalls & Tricks
+bug-bounty-submission-guide.md                     — Bug Bounty Submission Guide
+bugbounty-platform-selection.md                    — Bug Bounty Platform Selection Guide
+bulk-actuator-scanning.md                          — Bulk Actuator & Admin Endpoint Scanning
+burp-cookie-extraction.md                          — Burp Browser Cookie Extraction (macOS)
+intel-bytedance-tiktok-infrastructure.md                 — ByteDance / TikTok Infrastructure Patterns
+camunda-bpm-assessment.md                          — Camunda BPM Assessment (Black-Box)
+cdn-aware-phase5.md                                — CDN-Aware Phase 5 Workarounds
+cdn-fronted-js-recon.md                            — CDN-Fronted Target Enumeration via JS Bundle Analysis
+chain-and-escalate-phase.md                        — Chain & Escalate Phase (Phase 5.5)
+chain-hunting-methodology.md                       — Chain Hunting Methodology
+cicd-devops-assessment.md                          — CI/CD & DevOps Tool Assessment Reference
+cicd-pipeline-exploitation.md                      — CI/CD Pipeline Exploitation
+cloud-infrastructure-enumeration.md                — Reference for discovering and mapping cloud infrastructure during external penet
+cloud-privilege-escalation.md                      — Cloud Privilege Escalation & Exploitation
+cloudflare-api-shield-bypass.md                    — Cloudflare API Shield Bypass Patterns
+cloudflare-api-shield.md                           — Cloudflare API Shield / API Gateway Assessment
+cloudflare-bypass-techniques.md                    — Cloudflare Bypass & Assessment Techniques
+cloudflare-targets.md                              — Pentesting Cloudflare-Protected Targets
+cloudflare-zone-parsing.md                         — Cloudflare Zone File Parsing
+command-injection-filter-bypasses.md               — Command Injection — Filter Bypass Techniques
+credential-chaining.md                             — Credential Chaining & Cross-Environment Pivoting
+credential-inventory-structure.md                  — Credential Inventory Structure
+cross-skill-triggers.md                            — See `references/cross-skill-triggers.md` for full table and chains.
+csrf-attacks.md                                    — CSRF Attacks Reference — Keycloak SSO / Banking Apps
+dark-web-breach-osint.md                           — Dark Web & Breach Data OSINT
+data-classification-framework.md                   — Data Classification Framework (Post-Exploitation)
+depth-vs-breadth-decisions.md                      — Depth vs Breadth Decision Framework
+engagement-digitalocean-intigriti.md               — DigitalOcean Bug Bounty (Intigriti) — Engagement Notes (2026-05-27)
+intel-digitalocean-program.md                      — DigitalOcean Bug Bounty Program Intel
+dns-record-intelligence.md                         — DNS Record Intelligence Analysis
+intel-dropbox-infrastructure.md                          — Dropbox Infrastructure & Program Intel
+dynatrace-cluster-probing.md                       — Dynatrace Managed Cluster Probing
+elementor-dom-xss-lightbox.md                      — CVE-2022-29455: Elementor DOM XSS via Lightbox
+escalate-finding.md                                — Escalate Finding
+execute-code-integration.md                        — Execute Code Integration
+exploit-validation-checklist.md                    — Exploit Validation Checklist (MANDATORY before reporting)
+exploitation-first-mindset.md                      — Exploitation-First Mindset
+exploitation-mindset.md                            — Exploitation Mindset — Pitfalls & Patterns
+false-positive-detection.md                        — False Positive Detection Patterns
+false-positive-filter.md                           — False Positive Filter — 2-Minute Validation
+file-upload-attacks.md                             — File Upload Attacks Reference
+financial-services-scoring.md                      — CVSS Scoring Guidance for Financial Services
+intel-findaya-goto-financial.md                    — Findaya / GoTo Financial — Engagement Intelligence
+finding-escalation-techniques.md                   — Finding Escalation Techniques
+finding-template-full.md                           — Finding Template
+finding-template.md                                — Shared Finding Template
+findings-jsonl-convention.md                       — Cross-Skill Findings Convention
+firebase-auth-bypass.md                            — Firebase Authentication Bypass Patterns
+firebase-auth-emulator.md                          — Firebase Email-Link Auth Session Emulator
+fix-verification.md                                — Fix Verification (Redo/Reassessment Engagements)
+flutter-web-app-analysis.md                        — Flutter Web App Analysis
+framework-specific-attacks.md                      — Framework-Specific Attack Playbooks
+gateway-misconfiguration-patterns.md               — Gateway Misconfiguration Patterns Reference
+gcp-gke-patterns.md                                — GCP/GKE Penetration Testing Patterns
+gcp-port-scan-pitfalls.md                          — GCP Port Scan Pitfalls
+geo-restriction-bypass.md                          — Geo-Restriction Detection & Bypass
+ghidra-extension-building.md                       — Building Ghidra Extensions for Mismatched Versions
+gojek-gobiz-auth-patterns.md                       — GoTo/Gojek/GoBiz Authentication Patterns
+google-maps-ssrf-kml.md                            — Google Maps SSRF Testing via KML Import
+google-pitchfork-testing.md                        — Google Pitchfork Framework Testing
+google-spa-recon.md                                — Google SPA Reconnaissance Patterns
+intel-goto-financial-program.md                    — GoTo Financial — Bug Bounty Program Intelligence
+intel-grab-infrastructure.md                             — Grab Infrastructure Patterns (HackerOne)
+graphql-websocket-testing.md                       — GraphQL & WebSocket Security Testing
+guardrails.md                                      — - **Public Disclosure Prohibition** — NEVER publish PoCs on public URLs before v
+heapdump-secret-extraction.md                      — Heapdump Secret Extraction
+host-header-attacks.md                             — Host Header Attacks Reference
+http-request-smuggling.md                          — HTTP Request Smuggling Reference
+hub-refactor-plan.md                               — ptest Hub Model Refactor Plan
+identity-sdk-endpoint-extraction.md                — Identity SDK Endpoint Extraction
+insecure-deserialization.md                        — Insecure Deserialization Reference
+intent-injection-login-csrf.md                     — Intent:// Injection Login CSRF — Full PoC Pattern
+internal-ad-attacks.md                             — Internal Pentest & Active Directory Attacks
+internal-logging-injection.md                      — Internal Logging Endpoint Injection
+intigriti-recon.md                                 — Intigriti Platform Recon Reference
+istio-mesh-assessment.md                           — Istio/Service Mesh Assessment (External)
+javascript-secret-scanning.md                      — JavaScript Secret Scanning
+js-bundle-recon.md                                 — JS Bundle Analysis — Phase 1 Recon
+jwt-algorithm-enumeration.md                       — JWT Algorithm Enumeration via Error Messages
+jwt-attack-techniques.md                           — JWT Attack Techniques
+keycloak-assessment.md                             — Keycloak Assessment (Black-Box)
+keycloak-gateway-exploitation.md                   — Keycloak Exploitation via API Gateway Proxy
+kubernetes-container-attacks.md                    — Kubernetes & Container Security Testing
+kubernetes-management-tooling.md                   — Kubernetes Management Tooling Exposure
+laravel-debug-exploitation.md                      — Laravel Debug Mode Detection & Exploitation
+large-scope-guidance.md                            — When scope has 100+ subdomains, define "phase complete" explicitly:
+legacy-protocol-bypass.md                          — Legacy Protocol Authentication Bypass
+intel-line-works-ly-corp.md                        — LINE Works / LY Corporation Program Intel
+engagement-lineworks.md                            — LINE WORKS Engagement Intel (IssueHunt, June 2026)
+llm-ai-feature-testing.md                          — Security Testing AI/LLM Features in Web Applications
+lucy-security-assessment.md                        — Lucy Security Platform Assessment
+meta-auth-surface.md                               — Meta Bug Bounty — Auth Attack Surface
+intel-meta-instagram-infrastructure.md                   — Meta/Instagram Infrastructure Intelligence
+microservice-architecture-mapping.md               — Microservice Architecture Mapping (Black-Box)
+mobile-app-testing.md                              — Mobile Application Penetration Testing
+multi-operator-coordination.md                     — Multi-Operator Coordination
+multi-target-structure.md                          — Multi-Target Engagement Structure
+n8n-exploitation.md                                — n8n Exploitation Reference
+n8n-mcp-oauth-exploitation.md                      — n8n MCP OAuth Exploitation
+n8n-workflow-assessment.md                         — n8n Workflow Automation Assessment
+nextjs-proxy-pattern.md                            — Next.js Server-Side Proxy Pattern (SSR API Routes)
+nginx-case-sensitivity-bypass.md                   — Nginx Case-Sensitivity Bypass
+nmap-cloud-targets.md                              — Nmap on Cloud-Hosted Targets (GCP/AWS/Azure)
+nodejs-library-attacks.md                          — Node.js Library-Level Attack Patterns
+non-http-protocol-testing.md                       — Non-HTTP Protocol Testing Reference
+oauth-redirect-uri-testing.md                      — OAuth redirect_uri Testing Methodology
+oauth-sso-attack-chains.md                         — OAuth/SSO Attack Chains
+open-redirect-chains.md                            — Open Redirect Chains
+operational-lifecycle.md                           — 1. **Read State** — check `./ptest-output/state.yaml` to determine active gatewa
+operational-pitfalls.md                            — Operational Pitfalls & Performance Notes
+osint-completeness-checklist.md                    — OSINT Completeness Checklist
+osint-credential-hunting.md                        — OSINT Credential Hunting via GitHub & Public Sources
+otp-bruteforce-pattern.md                          — OTP/Verification Code Brute-Force via Authenticated Oracle
+otp-endpoint-testing.md                            — OTP Endpoint Testing
+parallel-http-probing.md                           — Parallel HTTP Probing for Asset Validation
+parameter-pollution.md                             — HTTP Parameter Pollution (HPP)
+partner-gateway-probing.md                         — Partner Gateway Probing
+path-traversal-actuator-bypass.md                  — Path Traversal + Actuator Bypass Techniques
+pattern-subdomain-bruteforce.md                    — Pattern-Based Subdomain Brute-Force
+person-osint.md                                    — Person OSINT Methodology
+phase1-passive-recon.md                            — Phase 1: Passive Recon
+phase2-active-recon.md                             — Phase 2: Active Reconnaissance
+phase3-enumeration.md                              — Phase 3: Enumeration
+phase4-attack-surface.md                           — Phase 4: Attack Surface Mapping
+phase5-vuln-assessment.md                          — Phase 5: Threat Modeling & Vulnerability Assessment
+phase6-exploitation-framework.md                   — Phase 6: Exploitation Framework
+phase6-per-host-coverage-template.md               — Phase 6: Per-Host Coverage Template
+phase7-post-exploitation-framework.md              — Phase 7: Post-Exploitation Framework
+phase8-reporting-process.md                        — Phase 8: Reporting Process Guide
+pitfalls.md                                        — - **TOKEN ≠ ATO, ENDPOINT ≠ AUTH (critical):** WinTicket lesson (June 2026): Cla
+post-exploitation-rules.md                         — Post-Exploitation Rules (MANDATORY)
+pre-engagement.md                                  — Pre-Engagement Phase
+preflight.md                                       — Preflight Check
+program-exclusion-validation.md                    — Program Exclusion Validation (Bug Bounty)
+proprietary-crypto-reversing.md                    — Proprietary Crypto & Validation Reversing
+prototype-pollution.md                             — Prototype Pollution Reference
+proven-patterns.md                                 — Proven Pentest Patterns
+quality-gates.md                                   — Before drafting any finding report, answer these 3 questions. One NO = KILL the 
+race-condition-hunting.md                          — Race Condition Hunting Reference
+rce-exploitation-chains.md                         — RCE Exploitation Chains
+re-validation-loops.md                             — Re-Validation Loops (Mini-Enumeration)
+reassessment-report-template.md                    — Reassessment/Redo Report Template
+report-structure-template.md                       — Penetration Test Report Structure Template
+report-templates-by-platform.md                    — Report Templates by Platform
+s3-bucket-enumeration.md                           — S3 Bucket Enumeration & Testing
+saml-sso-assessment.md                             — SAML/SSO Attack Surface Assessment
+scope-expansion.md                                 — Scope Expansion Techniques
+scope-matrix.md                                    — Scope-Aware Checklist Matrix
+second-look-protocol.md                            — Second Look Protocol
+severity-escalation.md                             — Severity Escalation Protocol
+signal-hunting-table.md                            — Signal Hunting Table: A→B→C Reference
+signature-based-auth-testing.md                    — Signature-Based Authentication Testing
+signed-url-exploitation.md                         — GCS/S3 Signed URL Analysis & Exploitation
+snyk-token-enumeration.md                          — Snyk Token Enumeration & Exploitation
+source-map-token-exploitation.md                   — Source Map → Token Exploitation Chain
+spa-config-extraction.md                           — SPA Site-Config Extraction Technique
+spa-false-positive-detection.md                    — SPA False Positive Detection in Web Enumeration
+spa-js-endpoint-extraction.md                      — SPA JS Bundle Endpoint Extraction
+spa-recon-techniques.md                            — SPA Recon Techniques
+sqli-payloads-and-bypass.md                        — SQLi Payloads & Bypass Techniques
+ssrf-outbound-forcing.md                           — SSRF & Outbound Request Forcing (Black-Box)
+ssti-engine-payloads.md                            — SSTI Engine-Specific Payloads
+stripe-webhook-exploitation.md                     — Stripe Webhook Signature Bypass Exploitation
+stuck-playbook.md                                  — Stuck Playbook — When Standard Checks Find Nothing
+subdomain-takeover-csp.md                          — Subdomain Takeover & CSP Bypass
+subdomain-takeover.md                              — Subdomain Takeover Assessment
+submission-pipeline.md                             — Submission Pipeline Tracking
+supabase-testing.md                                — Supabase Backend Testing Methodology
+target-heuristics.md                               — Target Assessment Heuristics
+target-selection-scoring.md                        — Target Selection Scoring
+target-selection.md                                — Bounty Target Selection Heuristic
+telegram-webapp-auth.md                            — Telegram WebApp (Mini App) Authentication
+teleport-assessment.md                             — Teleport Remote Access Proxy Assessment
+tight-scope-bounty-testing.md                      — Tight-Scope Bug Bounty Testing (3 or fewer domains)
+time-box-enforcement.md                            — Time-Box Enforcement Mechanism
+token-format-oracle.md                             — Token Format Oracle Pattern
+transmit-security-cis-testing.md                   — Transmit Security CIS (Customer Identity Service) Testing
+triage-rebuttal.md                                 — Triage Rebuttal Guide
+tyk-gateway-enumeration.md                         — Tyk API Gateway Enumeration
+unauthenticated-callback-testing.md                — Unauthenticated Integration/Callback/Webhook Endpoint Testing
+waf-bypass-techniques.md                           — WAF Bypass Techniques
+wayback-osint-alternatives.md                      — Wayback Machine & Alternative OSINT for Dorking
+web-bypass-techniques.md                           — Web ACL/WAF Bypass Techniques
+web-cache-poisoning.md                             — Web Cache Poisoning & Cache Deception Reference
+web-testing-checklist.md                           — Web Testing Checklist (Cross-Reference)
+web-vuln-bypass-tables.md                          — Web Vulnerability Bypass Tables — Quick Reference
+webauthn-passkeys-testing.md                       — WebAuthn & Passkeys Security Testing
+webhook-signature-bypass.md                        — Webhook Signature Bypass Testing
+engagement-winticket-issuehunt.md                  — WinTicket IssueHunt Engagement
+wordpress-enumeration.md                           — WordPress Penetration Testing Checklist
+wordpress-headless-cors.md                         — WordPress Headless CMS — CORS Misconfiguration Pattern
+write-access-protocol.md                           — Write Access Response Protocol
+xss-filter-bypass-techniques.md                    — XSS Filter Bypass Techniques
+xss-filter-bypass.md                               — XSS Filter Bypass Methodology
+xxe-injection.md                                   — XXE Injection Reference
+yeswehack-dojo-interaction.md                      — YesWeHack Dojo Challenge Interaction
 ```

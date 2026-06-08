@@ -1,7 +1,7 @@
 ---
 name: osint
 description: "Offensive person/organization OSINT reconnaissance — handle correlation, email discovery, platform enumeration, breach checks, and cross-reference chain mapping."
-version: 1.0.1
+version: 1.0.2
 author: n4igme
 license: MIT
 trigger: "osint, recon person, find handles, email discovery, platform enumeration, breach check, identity correlation, dox"
@@ -374,119 +374,24 @@ Always distinguish: **Publicly derived** vs **Prior knowledge** vs **Inferred**.
 ```python
 import sys, os
 sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/osint/scripts"))
-import handle_check
-import state_manager
-
-# Initialize engagement
-workdir = "."
-state_manager.init_state(workdir, "target_handle",
-    handles=["n4igme"], emails=["test@example.com"])
-
-# Check status
-state_manager.status(workdir)
-
-### Gate Enforcement (MANDATORY before `next`)
-
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/osint/scripts"))
+import state_manager, handle_check
 from gate_check import check_gate, print_gate_status
 
-result = check_gate(".", phase=None)
-print_gate_status(result)
-# Only advance if result["passed"] is True
-```
-
-### Script Invocation
-
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/osint/scripts"))
-import handle_check
-import state_manager
-
-# Initialize engagement
-### Script Invocation
-
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/osint/scripts"))
-import handle_check
-import state_manager
-
-# Initialize engagement
+# Initialize
 state_manager.init_state(".", target="handle", handles=["n4igme"], emails=["x@y.com"])
 
 # Check handle across platforms
 results = handle_check.check("n4igme")
 
-# Advance phase
-state_manager.advance_phase(".")
-
-# Gate check
-from gate_check import check_gate, print_gate_status
-result = check_gate(".", phase=None)
-print_gate_status(result)
-```
-
-**state_manager.py — engagement lifecycle:**
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/osint/scripts"))
-import state_manager
-
-state_manager.init_state(".", "target_handle", handles=["handle1"], emails=["a@b.com"])
-state_manager.status(".")
-state_manager.advance_phase(".")
-state_manager.add_finding(".", "GitHub", "handle1", source="public", confidence="high")
-state_manager.add_chain_link(".", "handle1", "real_email@x.com", "git_commit", "strong")
-state_manager.increment_platforms(".", count=5)
-```
-
-**gate_check.py — phase gate enforcement:**
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/osint/scripts"))
-from gate_check import check_gate, print_gate_status
-
-result = check_gate(".", phase=None)
-print_gate_status(result)
-```
-
-### State Management
-
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/osint/scripts"))
-import state_manager
-
-state_manager.init_state(".", "target_handle", handles=["handle1"], emails=["x@y.com"])
+# Lifecycle
 state_manager.status(".")
 state_manager.advance_phase(".")
 state_manager.add_finding(".", "GitHub", "handle1", source="public", confidence="high")
 state_manager.add_chain_link(".", "handle1", "real@email.com", "git commit", "strong")
+state_manager.increment_platforms(".", count=5)
 state_manager.abandon(".", "No unique identifier available")
-```
 
-### Gate Enforcement (MANDATORY before `next`)
-
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/osint/scripts"))
-from gate_check import check_gate, print_gate_status
-
+# Gate check before advancing
 result = check_gate(".", phase=None)
 print_gate_status(result)
-```
-
-### Gate Enforcement (MANDATORY before `next`)
-
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/osint/scripts"))
-from gate_check import check_gate, print_gate_status
-
-result = check_gate(".", phase=None)
-print_gate_status(result)
-# Only advance if result["passed"] is True
 ```

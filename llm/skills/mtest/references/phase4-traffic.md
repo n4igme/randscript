@@ -20,10 +20,22 @@ This file is consumed by Phase 8 handoff and atest Phase 1. Write it during step
    openssl x509 -inform DER -in cacert.der -out cacert.pem
    HASH=$(openssl x509 -inform PEM -subject_hash_old -in cacert.pem | head -1)
    cp cacert.pem ${HASH}.0
+
+   # Method A: adb root (works on userdebug builds, NOT Magisk)
    adb root && adb remount
    adb push ${HASH}.0 /system/etc/security/cacerts/
    adb shell "chmod 644 /system/etc/security/cacerts/${HASH}.0"
    adb reboot
+
+   # Method B: Magisk (systemless root — /system remount FAILS)
+   adb push ${HASH}.0 /sdcard/
+   adb shell "su -c 'mkdir -p /data/adb/modules/customcerts/system/etc/security/cacerts && cp /sdcard/${HASH}.0 /data/adb/modules/customcerts/system/etc/security/cacerts/ && chmod 644 /data/adb/modules/customcerts/system/etc/security/cacerts/${HASH}.0'"
+   # Create module descriptor
+   adb shell "su -c 'echo \"id=customcerts\" > /data/adb/modules/customcerts/module.prop && echo \"name=Custom CA Certs\" >> /data/adb/modules/customcerts/module.prop && echo \"version=1\" >> /data/adb/modules/customcerts/module.prop && echo \"versionCode=1\" >> /data/adb/modules/customcerts/module.prop'"
+   adb reboot
+
+   # Method C: MagiskTrustUserCerts module (easiest)
+   # Install CA as user cert via Settings, module promotes to system on boot
 
    # iOS
    # Settings > General > Profile > Install Burp CA
@@ -80,9 +92,45 @@ When redsocks shows "accepted" (no errors), packets route (iptables counters cli
    - Try fresh listener on a different port
 3. **If hooks DON'T fire:** Pattern mismatch — app uses different BoringSSL build. Try alternate patterns (see `references/flutter-ssl-bypass.md`) or Ghidra RE approach.
 
-Key insight: hooks firing + no Burp traffic = Burp config issue, never the app or bypass.
+Key insight: hooks firing + no Burp traffic = proxy-chain issue. For non-Flutter apps check Burp config (intercept, invisible proxy, force TLS). For Flutter apps via redsocks, this is the CONNECT-by-IP hard blocker — see "CRITICAL: Flutter + Burp Proxy Chain Failure Mode" below. No Burp config fixes it.
 
 **Reference:** `traffic-analysis.md`, `burp-mcp-integration.md`, `passive-traffic-analyzer.md`
+
+**Cloudflare TLS Fingerprint Rejection (Invisible Proxy Shows `<no response>`)**
+
+When Burp invisible proxy captures requests but ALL entries show `<no response>`:
+- Requests are visible in HTTP History (method, path, headers captured)
+- But response column is empty for every single entry
+- This happens even AFTER setting correct `hostname_resolution` in project options
+
+**Root cause:** Cloudflare rejects Burp's TLS fingerprint (JA3/JA4) when Burp tries
+to establish the upstream connection. The invisible proxy terminates the client TLS
+(from app), reads the request, but when it opens a NEW connection to the real server,
+Cloudflare identifies it as non-browser/non-app traffic and drops it.
+
+**Diagnosis:**
+1. Verify API works directly: `curl -s https://api.target.com/ping` → 200
+2. Verify Burp captures requests (Host header, path visible in History)
+3. All responses show `<no response>` — confirmed CF TLS rejection
+
+**Workaround — Direct curl testing:**
+- Use Burp ONLY for request capture (headers, body format, auth tokens)
+- Extract headers from captured requests (x-tyk-auth, x-device-id, etc.)
+- Test API directly with `curl` using those headers
+- The app itself still works fine — the connect() redirect path is different
+  from Burp's upstream forwarding (app → Burp listener terminates TLS →
+  Burp opens new upstream connection with its own TLS fingerprint → CF rejects)
+
+**Why the app still works but Burp doesn't:**
+- App's TLS session is terminated at Burp's invisible proxy listener
+- Burp creates a SEPARATE upstream connection with its own JA3 fingerprint
+- Cloudflare sees Burp's Java-based TLS stack, not the app's BoringSSL
+- The app never directly talks to CF in this setup — Burp does on its behalf
+
+**When this does NOT apply:**
+- Non-Cloudflare backends (AWS ALB, nginx direct, etc.)
+- Apps where Burp upstream resolves to non-CF IPs
+- Staging environments often don't have CF WAF enabled
 
 **CRITICAL: Flutter + Burp Proxy Chain Failure Mode (CONNECT-by-IP)**
 
