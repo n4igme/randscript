@@ -497,4 +497,4 @@ curl http://localhost:8080/methods  # should return JSON (when Ghidra + plugin r
 
 - `references/frida-scripting.md` — Frida hook patterns (Java, native, SSL bypass, root bypass, Python API)
 - `references/debugger-workflows.md` — LLDB, GDB, GEF/pwndbg, remote debugging (Android/iOS)
-- `references/unknown-binary-triage.md` — 15-min methodology for approaching unfamiliar binaries, `references/frida-scripting.md`, `references/debugger-workflows.md`, `references/unknown-binary-triage.md`
+- `references/unknown-binary-triage.md` — 15-min methodology for approaching unfamiliar binaries

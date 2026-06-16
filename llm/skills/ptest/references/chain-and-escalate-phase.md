@@ -1,79 +1,112 @@
-# Chain & Escalate Phase (Phase 5.5)
+# Chain & Escalate Phase (Mandatory Between Phase 6 and Phase 8)
 
-Run this micro-phase AFTER vulnerability assessment (Phase 5) and BEFORE exploitation (Phase 6).
+After exploitation and before reporting, cross-reference ALL findings for combinatorial impact. Individual findings often undersell the real risk — chains demonstrate realistic attack scenarios.
 
-## Purpose
+## When to Run
 
-Revisit all findings (including Info/Low) and systematically attempt to chain or escalate them into higher-severity impacts. This is where Low findings become Medium+ through creative combination.
+- After Phase 6 (Exploitation) completes
+- Before Phase 8 (Reporting) begins
+- Can also run mid-Phase-6 when 3+ findings exist
 
-## When to Trigger
+## Process
 
-- After Phase 5 completes with findings of any severity
-- Especially when you have 3+ Info/Low findings (chain potential increases with quantity)
-- When unauth testing is exhausted and you need to maximize value before pivoting to auth
+### Step 1: Build the Finding Matrix
 
-## Protocol
+List all confirmed findings in a table:
 
-### Step 1: Inventory All Findings
+| ID | Type | Asset | Requires Auth | Gives Attacker |
+|----|------|-------|---------------|----------------|
+| F1 | Access bypass | api.target.com | No | Bypasses origin check |
+| F2 | User enum | api.target.com | No | Confirms registered emails |
+| F3 | Actuator | dev.target.com | No | Internal architecture |
 
-List every finding regardless of severity. Include:
-- Info disclosures (headers, error messages, version leaks)
-- Exposed endpoints (health, metrics, config)
-- Open storage (buckets, registries)
-- Authentication details (mechanisms, policies, error verbosity)
+### Step 2: Chain Discovery
 
-### Step 2: Cross-Reference Matrix
+For each pair (A, B), ask:
+1. Does A's output feed B's input?
+2. Does A remove a prerequisite that B needs?
+3. Do A+B together affect a larger population than either alone?
+4. Does A provide targeting info that makes B more dangerous?
 
-For each finding, ask:
-| Question | Example |
-|----------|---------|
-| Does this leak credentials/keys? | CSP header → Sentry DSN → event injection |
-| Does this expose internal tools? | Open bucket → internal binary → RE for vulns |
-| Does this reveal endpoints to attack? | OpenAPI spec → authenticated attack surface map |
-| Can I use data from A to attack B? | Version disclosure → CVE lookup → exploit |
-| Does this weaken a trust boundary? | Config leak → password policy = 0 → brute force viable |
+**Common chain patterns:**
 
-### Step 3: Escalation Techniques
+| Chain Type | Example | Impact Upgrade |
+|-----------|---------|----------------|
+| Bypass + Enum | Referer bypass + user enum = unauthenticated mass enumeration | Low+Medium → High |
+| Enum + Credential | User enum + no rate limit = credential stuffing at scale | Medium+Low → High |
+| Info Leak + Targeted Attack | Actuator (internal IPs) + SSRF = internal network access | Medium+Medium → Critical |
+| Auth Bypass + Data Access | Token leak + IDOR = full account takeover | Medium+High → Critical |
+| Config Leak + Privilege Esc | Exposed env vars + default creds = admin access | Low+Medium → Critical |
 
-#### Information Leak → Active Exploitation
-- **CSP/headers → third-party key extraction** (Sentry DSN, analytics tokens, API keys)
-- **Error messages → library identification** → known CVE lookup
-- **Version disclosure → changelog diff** → find security fixes you can reverse
-- **Config endpoints → policy weaknesses** (no rate limit, weak passwords, hidden features)
+### Step 3: Write Chain Narratives
 
-#### Storage Exposure → Intelligence Gathering
-- **Open buckets → non-public binaries** (internal agents, tools not on GitHub)
-- **Open buckets → install scripts** (supply chain context, infrastructure mapping)
-- **Open buckets → GPG keys/configs** (aids targeted attacks)
-- **Binary analysis → internal endpoints** (metadata URLs, API paths, auth mechanisms)
+For each viable chain, write the attack scenario as a story:
 
-#### Endpoint Discovery → Attack Surface Expansion
-- **OpenAPI/Swagger specs → full API map** for authenticated testing
-- **Health/metrics endpoints → infrastructure details** (versions, dependencies)
-- **Staging/dev environments → weaker security controls**
+```
+CHAIN: F1 + F6 → Unauthenticated Merchant Reconnaissance
 
-### Step 4: Prove the Chain
+STEP 1: Attacker adds Referer: https://global.alipay.com/ (F1 bypass)
+STEP 2: Attacker calls /checkLoginId with empty captcha object (F6 no-captcha)
+STEP 3: Differential response confirms registered merchants
+STEP 4: Attacker builds verified target list at scale (no rate limit)
+STEP 5: Credential stuffing / spear phishing against confirmed accounts
 
-For each escalation:
-1. Document the full chain: A → B → C
-2. Prove each step with evidence (curl commands, responses)
-3. Assess combined impact (not individual finding severity)
-4. Write the narrative: "An attacker who discovers X can leverage it to achieve Y"
+RESULT: Unauthenticated attacker can identify all registered payment merchants
+         then launch targeted attacks knowing accounts definitely exist.
+SEVERITY UPGRADE: F1 alone = Medium, F6 alone = Medium, Chain = High
+```
 
-### Step 5: Re-assess Severity
+### Step 4: Decide Submission Strategy
 
-| Original | Escalated To | Chain Example |
-|----------|-------------|---------------|
-| Info (CSP leak) | Medium | CSP → Sentry DSN → event injection |
-| Low (bucket listing) | Low-Medium | Bucket → internal binary exposure → offline RE |
-| Info (error verbosity) | Low-Medium | JWT library leak → targeted attack research |
-| Low (no rate limit) | Medium | No rate limit + weak password policy → brute force |
-| Info (config disclosure) | Low | Hidden login form still active at API level |
+| Situation | Strategy |
+|-----------|----------|
+| Chain is tight (A directly enables B) | Submit as single finding, reference both |
+| Chain is loose (A provides context for B) | Submit separately, mention chain in Impact |
+| Chain hits different assets | Submit separately per asset, cross-reference |
+| One finding is Low but chain is High | Lead with the chain, Low finding is supporting evidence |
 
-## Exit Criteria
+## Checklist Before Reporting
 
-- [ ] All findings cross-referenced against each other
-- [ ] Third-party keys/tokens extracted from headers tested for abuse
-- [ ] Exposed binaries/files checked for non-public internal tools
-- [ ] At least one escalation attempt documented per Info/Low finding
-- [ ] Escalated findings re-assessed with updated severity
+- [ ] Every finding pair has been evaluated for chain potential
+- [ ] Each chain has a step-by-step attack narrative
+- [ ] Severity is rated for the CHAIN, not individual findings
+- [ ] Submission strategy decided (single vs separate reports)
+- [ ] PoC script demonstrates the full chain end-to-end (not just individual steps)
+
+## Mandatory Chain PoC Scripts (AntGroup lesson, June 2026)
+
+**Every chain MUST have a dedicated PoC script** (`exploit/chain-{letter}-{name}.py`) that runs the full attack end-to-end in one execution. The user WILL ask "do these chains have real exploitation PoCs?" — diagrams alone are insufficient.
+
+**Chain PoC structure:**
+```python
+#!/usr/bin/env python3
+"""CHAIN X PoC: {title} ({severity})
+Steps: step1 → step2 → step3 → impact
+"""
+def main():
+    print('[*] CHAIN X: {title}')
+    print('[STEP 1] ...')  # Execute and show real output
+    print('[STEP 2] ...')  # Each step uses prior step's output
+    print('[CHAIN COMPLETE]')
+    print('[IMPACT] ...')
+```
+
+Each step must produce REAL server responses (not mocked). If a step is blocked (e.g., rate limited), document it as "PROVEN: {evidence}" with reference to logs.
+
+## Anti-Patterns
+
+- **Reporting findings individually when a chain exists** — you leave severity on the table
+- **Claiming a chain without proving prerequisites** — "if attacker has X" without demonstrating X
+- **Over-chaining** — 5-step chains with speculative steps get rejected. Keep it to 2-3 proven steps
+- **Ignoring Info/Low findings** — these are often the glue that upgrades a Medium to High
+- **Writing chain diagrams without PoC scripts** — the user demands executable proof, not ASCII art
+
+## Real-World Example: AntGroup (June 2026)
+
+Individual findings:
+- F1: Referer bypass on dashboard API (Medium)
+- F6: User enumeration with captcha bypass (Medium)
+
+Chain: F1 removes origin restriction → F6 confirms merchants at scale → attacker builds target list → credential stuffing/phishing against confirmed payment merchants
+
+Result: Chain severity = High (unauthenticated mass reconnaissance of financial accounts)

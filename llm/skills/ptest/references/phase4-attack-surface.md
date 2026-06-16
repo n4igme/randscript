@@ -168,7 +168,9 @@ Document assets that were discovered but are confirmed NOT exploitable or out-of
 | ... | | |
 ```
 
-### 5. Cross-Environment Correlation
+### 5. Cross-Environment Correlation (MANDATORY)
+
+**Bank Jago re-assessment (June 2026):** Phase 4 was initially marked complete without this step. User asked "did we miss something?" — cross-env correlation and credential inventory were both missing from the checklist despite being in the reference. ALWAYS verify the Phase 4 checklist includes ALL tasks from this reference before claiming done.
 
 Map the same service across development, staging, and production environments to compare security posture. Differences between environments often reveal misconfigurations, forgotten hardening steps, or exploitable gaps.
 
@@ -207,9 +209,25 @@ Write `./ptest-output/attack-surface/checklist.md`:
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | 1 | Asset Inventory Compiled | PENDING | |
-| 2 | Scope Confirmed with User | PENDING | |
+| 2 | Attack Surface Scoring Matrix | PENDING | |
 | 3 | Entry Points Mapped | PENDING | |
-| 4 | Dismissed Assets Documented | PENDING | |
+| 4 | Cross-Environment Correlation (MANDATORY) | PENDING | |
+| 5 | Credential Inventory (consolidate Phases 1-3, MANDATORY) | PENDING | |
+| 6 | Scope Confirmed with User | PENDING | |
+| 7 | Dismissed Assets Documented | PENDING | |
+| 8 | Dismissal Verification (paths tested per group) | PENDING | |
+```
+Create `./ptest-output/exploit/credential-inventory.md` at Phase 4 exit — NOT Phase 6 entry. By Phase 4, you've already found credentials in Phases 1-3 (default passwords, API keys from JS, tokens from headers, exposed configs). Waiting until Phase 6 means these creds aren't consolidated when you need them for threat modeling (Phase 5). BlueSpider had 5 passDefault values + 67 emails + n8n configs discovered before Phase 5 started — all should have been in a single inventory file for cross-reference during attack tree building.
+
+Format:
+```markdown
+| # | Type | Value | Source | Phase Found | Validated? |
+|---|------|-------|--------|-------------|------------|
+| 1 | Default password | 12345678 | /api/get-params/passDefault | P3 | Not yet |
+| 2 | User emails | 67 accounts | /api/load-user | P3 | Not yet |
+```
+| 6 | Scope Confirmed with User | PENDING | |
+| 7 | Dismissed Assets Documented | PENDING | |
 ```
 
 ## Exit Criteria

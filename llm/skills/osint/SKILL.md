@@ -253,6 +253,12 @@ for cert in json.load(sys.stdin):
 
 **Full methodology:** `skill_view(name='osint', file_path='references/domain-recon.md')`
 
+### Corporate OSINT (organizations)
+
+**Full methodology:** `skill_view(name='osint', file_path='references/corporate-osint-patterns.md')`
+
+Covers: employee enumeration (LinkedIn dorks, GitHub org mining), email pattern discovery, ASN/IP range mapping, cloud asset discovery, acquisition/subsidiary mapping, tech stack fingerprinting from job posts, supply chain (npm/PyPI/Docker).
+
 Quick checklist:
 1. DNS full record pull (A, AAAA, MX, TXT, NS, SOA, DMARC)
 2. ASN lookup → CIDR range mapping → reverse DNS on entire range
@@ -329,6 +335,31 @@ Build a graph showing how identities connect:
 ## Key Findings
 ## Recommendations
 ```
+
+---
+
+## Cross-Skill Triggers
+
+**Into osint (from other skills):**
+- ptest Phase 1 needs target intel (employee names, tech stack, email patterns) → invoke osint
+- opsec needs offensive validation of own exposure → invoke osint against own handles
+- w3hunt needs team/developer enumeration for a DeFi protocol → invoke osint
+
+**Out of osint (to other skills):**
+- Domain/infra discovered → hand to ptest Phase 1 (add to attack surface)
+- Cloud assets found (S3 buckets, GCP projects) → hand to ctest Phase 1
+- Source code repos discovered → hand to scode
+- Credentials found in breaches → hand to ptest Phase 6 (credential stuffing)
+- API keys/tokens discovered → hand to atest or ctest (validate scope)
+- Identity chain complete for self → hand to opsec (defensive assessment)
+
+| osint Finding | Triggers | Action |
+|---------------|----------|--------|
+| Subdomains + live hosts | ptest | Add to scope, begin Phase 2 active recon |
+| Leaked AWS/GCP creds in breach | ctest | IAM access analysis |
+| GitHub repos with source | scode | Code review for vulns |
+| Employee emails enumerated | ptest | Phishing surface, credential stuffing |
+| Personal handle → real identity chain | opsec | Defensive remediation |
 
 ---
 

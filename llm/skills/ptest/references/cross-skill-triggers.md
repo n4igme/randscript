@@ -5,10 +5,14 @@ See `references/cross-skill-triggers.md` for full table and chains.
 | Signal | Trigger Skill |
 |--------|--------------|\
 | Cloud infrastructure (AWS/GCP/Azure) | `ctest` |
+| SSRF returning cloud errors/metadata (169.254 timeout, /var/task/ in stack trace, AWS/GCP/Azure error XML) | `ctest` Phase 3 IMMEDIATELY + `references/lambda-ssrf-credential-theft.md` — don't finish ptest Phase 5 first. Stolen IAM creds expire in hours. |
 | API-heavy target | `atest` |
 | Mobile app discovered | `mtest` |
 | Web3/blockchain | `w3hunt` |
 | Source code available | `scode` |
+| AD environment (DC ports 88/389/636/3268 in Phase 2) | `adtest` — load at Phase 3 entry, don't wait until Phase 6 |
+| SYSTEM on domain-joined Windows host | `adtest` — load IMMEDIATELY |
+| SSH 2222 + key-only on 22 | Docker/container — check hostname, /proc/1/cgroup, /mnt/host, docker.sock, SUID |
 | Istio/service mesh detected | `references/istio-mesh-assessment.md` |
 | Geo-restricted target | `references/geo-restriction-bypass.md` |
 | Cloudflare API Shield detected (401 MISSING_API_TOKEN) | `references/cloudflare-api-shield-bypass.md` — classify responses (CF-blocked vs backend-auth vs backend-forbidden), test all methods per path, check for path whitelist misconfig, path-based bypass discovery, cross-host testing |

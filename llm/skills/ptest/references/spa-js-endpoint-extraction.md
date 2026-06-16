@@ -5,6 +5,29 @@
 - Third-party identity SDKs embedded (Transmit Security, Auth0, Okta, Firebase Auth)
 - API routes returning consistent "missing auth" errors — JS reveals the full surface
 
+## MANDATORY: Analyze ALL Webpack Chunks, Not Just Main (AltoCMS, June 2026)
+
+**Problem:** Only `main.*.chunk.js` and one numbered chunk were analyzed. The main chunk contained 8 API endpoints. But the app had 40+ lazy-loaded chunks that contained 50+ additional authenticated API endpoints (user/add, card/reset-pin-tries, role/access-list, transaction/download-transaction-data, etc.).
+
+**Root cause:** Autopilot — analyzed files already on disk without fetching ALL chunks referenced in the webpack bootstrap.
+
+**Fix — mandatory for React/webpack SPAs:**
+1. Read HTML source — find webpack runtime bootstrap (inline `<script>` mapping chunk IDs to hashes)
+2. Extract ALL chunk ID→hash mappings (e.g., `{0:"a0a7007f", 1:"84c865b2", ...}`)
+3. Fetch EVERY chunk: `https://target/static/js/{id}.{hash}.chunk.js`
+4. Extract API paths from EACH: `grep -oE '"[a-z][a-z_-]+/[a-z_/-]+"' chunk.js`
+5. Deduplicate and test ALL discovered endpoints for auth enforcement
+
+**Key insight:** Main chunk only has auth endpoints. Business logic (card mgmt, transactions, user CRUD, downloads) lives in lazy-loaded chunks. These are publicly accessible static assets even though the routes need auth.
+
+```bash
+# Extract all chunk URLs from webpack bootstrap
+grep -oE '"[0-9]+":"[a-f0-9]+"' index.html | while IFS=: read id hash; do
+  id=$(echo $id | tr -d '"'); hash=$(echo $hash | tr -d '"')
+  echo "https://target/static/js/${id}.${hash}.chunk.js"
+done
+```
+
 ## Key Lesson (bitbank.cc, June 2026)
 
 Standard API fuzzing with ffuf/gobuster found ZERO undocumented endpoints. But JS bundle analysis revealed:

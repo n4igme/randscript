@@ -174,6 +174,17 @@ Quick lookup: what you found → which reference to load.
 
 ```
 advanced-web-attacks.md                            — Advanced Web Attacks
+## File Naming Convention
+
+- `engagement-*` — target-specific engagement docs (contain secrets/keys, gitignored from public repos)
+- `intel-*` — program recon/infrastructure intel (contain API keys, gitignored from public repos)
+- `phase*` — phase methodology references (generic, safe for repos)
+- Everything else — reusable technique references (generic, safe for repos)
+
+**Rule:** When creating new engagement or target-specific references, ALWAYS use the `engagement-` or `intel-` prefix. This ensures they're auto-excluded from public repo backups via gitignore patterns (`llm/skills/**/engagement-*`, `llm/skills/**/intel-*`).
+
+---
+
 intel-alibaba-cloud-infrastructure.md                    — Alibaba Cloud / Ant Group Infrastructure Patterns
 api-first-methodology.md                           — API-First Testing Methodology
 api-fuzzing-methodology.md                         — API Fuzzing & Parameter Manipulation

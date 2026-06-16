@@ -130,6 +130,29 @@ Test aliasing, fragments, batched queries. Enforce per-field auth.
 - **IDOR + 2FA Bypass**: access backup codes → disable victim's MFA
 - **IDOR + OAuth**: manipulate state/code params → session hijack
 
+### Response-Leaked ID Chaining (SecOps Exam, June 2026)
+
+Some IDOR vulnerabilities require **multi-step chaining** where one request leaks data needed for the next:
+
+**Pattern:** Endpoint returns YOUR data in `RESULT` but leaks ANOTHER user's identifier in a metadata field (e.g., `MESSAGE`, `next_token`, `cursor`).
+
+**Real example (`/api_key` endpoint):**
+1. POST with `enc_id=<your_enc_id>&new_user_id=<any_number>`
+2. Response: `{"STATUS":1, "MESSAGE":"<OTHER_USER_ENC_ID>", "RESULT":"<YOUR_API_KEY>"}`
+3. The `MESSAGE` field leaks another user's encrypted ID
+4. Use that leaked enc_id as `enc_id` in next request → get THEIR API key
+
+**Testing methodology:**
+1. Make a normal request, note ALL fields in response (not just the obvious data field)
+2. Try using response metadata values (MESSAGE, token, cursor, next) as INPUT parameters
+3. Vary secondary parameters (user_id, page, offset) — observe which response fields change
+4. Chain: response field from request N becomes input for request N+1
+
+**Indicators this pattern exists:**
+- Response contains fields you didn't ask for (extra IDs, encoded strings)
+- Different `new_user_id`/`offset` values return different metadata but same primary data
+- Metadata field looks like an encoded/encrypted identifier (base64, hex, UUID)
+
 ---
 
 ## Tools

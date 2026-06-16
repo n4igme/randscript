@@ -10,6 +10,9 @@ Before spending 30 min on full PoC, run this 2-minute check per finding type.
 **Quick check:** Does the response actually contain OTHER user's data?
 - Same response body for both users = NOT BOLA (just a public endpoint)
 - 200 but empty/generic body = NOT BOLA (auth checked, just bad error code)
+- errorCode 0 + zero/empty data for ANY ID (including random) = param is IGNORED, not IDOR. True IDOR shows different data shape (different currency, region, balance) for different IDs.
+- **SoundOn pattern (June 2026):** `/api/revenue/royalty/total?artistId=OTHER` returned errorCode 0 with empty storeIncomeList for ALL artistIds tested — same currency (IDR), same structure. The backend extracts artistId from the session, not the query param. Spent 20+ min on inconclusive testing that could have been ruled out in 2 min by checking if a random/nonexistent ID returns the same shape as own ID.
+- **2-min IDOR validation:** (1) Call with own ID → note response structure. (2) Call with random nonexistent ID → if same structure returned, param is ignored. (3) Only if different structure/error for random vs own, test with real victim ID.
 - Confirm: response contains data identifiable as belonging to victim user
 
 ### SQL Injection

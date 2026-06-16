@@ -335,6 +335,29 @@ Firmware/embedded (no allocator / flat memory)
 
 ---
 
+## Cross-Skill Triggers
+
+**Into xdev (from other skills):**
+- ptest finds RCE primitive (deserialization, SSTI) needing reliability work → invoke xdev Phase 2+
+- mtest finds native buffer overflow in .so → invoke xdev (Android native path)
+- scode identifies exploitable UAF/OOB in source → invoke xdev for PoC development
+- ctest finds container escape primitive needing kernel exploit → invoke xdev (Linux kernel path)
+
+**Out of xdev (to other skills):**
+- Working exploit achieves code exec → hand to ptest Phase 7 (post-exploitation, blast radius)
+- Exploit targets mobile native lib → hand back to mtest Phase 9 (mobile exploit chains)
+- Exploit grants cloud credentials → hand to ctest Phase 2 (IAM escalation)
+- Exploit needs RE work (stripped binary, unknown format) → hand to retools
+
+| xdev Finding | Triggers | Action |
+|--------------|----------|--------|
+| LPE achieved on target host | ptest | Post-exploitation: pivot, dump creds, lateral |
+| Sandbox escape from app | mtest | Chain with app-layer findings for full impact |
+| Kernel code exec | ctest | Test if cloud metadata/K8s SA accessible |
+| Info leak primitive only | ptest/mtest | Report as-is, chain with other vulns for severity |
+
+---
+
 ## Guardrails
 
 - **Authorization** — only develop exploits for targets you have explicit authorization to test (pentest engagement, CTF, own systems, coordinated disclosure)

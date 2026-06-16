@@ -88,6 +88,21 @@ grep -i "proxied.*false\|proxy_status.*dns_only" zone-export.txt | awk '{print $
 
 ### 0b. Knowledge Base / Support Site Scraping
 
+**LLM Documentation Files (MANDATORY check):**
+Modern developer platforms expose `llms.txt` or `llms-full.txt` at their docs root — these are structured API routing tables designed for LLM consumption. They reveal full product structure, API endpoints, integration modes, and SDK packages without any active probing.
+
+```bash
+# Check for LLM-friendly documentation (passive — public docs site)
+curl -sk --max-time 8 "https://docs.target.com/llms.txt" 2>/dev/null | head -100
+curl -sk --max-time 8 "https://docs.target.com/llms-full.txt" 2>/dev/null | head -100
+# Also check main site
+curl -sk --max-time 8 "https://www.target.com/llms.txt" 2>/dev/null | head -100
+```
+
+**What to extract:** API product names, integration modes (hosted/embedded/API-only), SDK package names (@scope/package), sandbox/test resource URLs, error simulation endpoints. This is pure gold for Phase 3-6 planning.
+
+**Example (Antom, June 2026):** `docs.antom.com/llms.txt` revealed full payment API structure, sandbox URLs, test wallet endpoints, and NPM package name — all without authentication.
+
 Before brute-forcing, scrape the target's public knowledge base or support site for service names and internal terminology:
 
 ```bash
@@ -125,13 +140,13 @@ whois target.com
 # - Expiry date (if soon, domain may lapse)
 ```
 
-#### 1b. Shodan / Censys (Indexed Services)
+#### 1b. Shodan / Censys (Indexed Services — MANDATORY on ALL resolved IPs)
+
+**BlueSpider re-assessment (June 2026):** Initially only checked Shodan on the primary IP (103.150.110.210). Missed MariaDB 10.5.26 exposed on 202.153.228.179, MikroTik Winbox on 182.16.161.91, and Node.js/Express on 103.86.160.163:5000. Rule: after DNS resolution produces unique IPs, query Shodan InternetDB on EVERY SINGLE ONE — not just the primary target IP. Batch with a loop. This is a 2-minute check per IP that catches exposed databases, VPN services, and management ports invisible to HTTP probing.
+
 ```bash
 # Shodan InternetDB (free, no API key needed)
-# Query each known IP for indexed ports/vulns/hostnames
-curl -s "https://internetdb.shodan.io/{IP}" | jq .
-
-# Batch all resolved IPs
+# MANDATORY: Query EVERY unique IP from DNS resolution
 while IFS='|' read -r sub ip; do
   echo "=== ${sub} (${ip}) ==="
   curl -s "https://internetdb.shodan.io/${ip}" 2>/dev/null

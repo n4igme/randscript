@@ -93,6 +93,16 @@ When a previously-accessible host becomes unreachable during exploitation:
 **HTTP Probing at Scale (100+ subdomains):**
 - Sequential `curl` in a loop is too slow (3-5s per host × 270 hosts = 15+ minutes)
 - `xargs -P` with shell `-c` has quoting/variable issues — output often empty
+- httpx may return EMPTY output against slow/rate-limited ISP-hosted targets (iForte, BlueSpider June 2026). Reduce threads: `httpx -threads 5 -timeout 8`. If still empty → fall back to execute_code with individual curl per host
+- ffuf/gobuster timeout on rate-limited targets: reduce to `-t 5 -rate 10`. If still failing → manual probe with curated Laravel wordlist or JS bundle extraction (`grep -oE '"/api/[a-zA-Z0-9_/-]{2,80}"'`) which gives better coverage than blind fuzzing
+
+**Laravel Login Rate Limiting (IP-based, not session-based):**
+- Laravel's Throttle middleware rate-limits by IP, not by session cookie or user
+- Creating fresh `requests.Session()` per attempt does NOT bypass the rate limit
+- Typical threshold: 5 attempts per 60 seconds (returns HTTP 429)
+- The 429 response body confirms: `"Too many login attempts. Please try again in X seconds."`
+- Bypass requires actual IP rotation (proxies, VPN rotation) — not session/cookie tricks
+- Note: 422 is the standard "wrong credentials" response in Laravel Sanctum (not 401)
 - Background jobs (`&`) are blocked by the terminal tool
 - **Working approach:** Write a bash script that spawns background jobs with per-file temp output (`$TMPDIR/live_$i.txt`), then `cat $TMPDIR/live_*.txt > live-subs.txt` after `wait`. Run with `bash script.sh`. See `scripts/http-probe-parallel.sh` for a ready-to-use implementation.
 - Limit concurrency to 25-30 to avoid connection exhaustion
@@ -110,6 +120,12 @@ When a previously-accessible host becomes unreachable during exploitation:
 - Use `--top-ports 100 -T4` for initial sweep, then targeted scans on interesting hosts
 - Non-cloud hosts (colocation, VPS) are more likely to have additional ports
 - Service detection (`-sV`) on GCP load balancers returns "tcpwrapped" — not useful
+
+### Nmap on CDN-Fronted Targets (AntGroup, June 2026)
+
+Nmap port scanning CDN/WAF-fronted hosts (Tengine, Spanner, Alibaba Cloud) is extremely slow and times out. All hosts resolve to shared CDN IPs — all-ports-open (tcpwrapped) = LB artifact, only 80/443 are real.
+
+**Decision:** For CDN-fronted targets, skip nmap after confirming 80/443. Focus on: response header fingerprinting (curl -I), JS bundle extraction, path fuzzing with SPA baseline filtering. Port scanning only valuable on non-CDN hosts.
 
 ### Performance Notes (from real engagements)
 

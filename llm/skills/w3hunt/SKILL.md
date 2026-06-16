@@ -149,54 +149,6 @@ Run after every engagement closes (accepted, rejected, abandoned, duplicate).
 - Contract source code needs review → hand to scode (web3 scope type)
 - Off-chain oracle/keeper exploitable → hand to ctest (if cloud-hosted)
 
-### Gate Enforcement (MANDATORY before `next`)
-
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/w3hunt/scripts"))
-from gate_check import check_gate, print_gate_status
-
-result = check_gate(".", phase=None)
-print_gate_status(result)
-```
-
-### Target Refresh
-
-```bash
-python3 ~/.hermes/skills/security/w3hunt/scripts/target_refresh.py --min-payout 10000 --output ~/PenTest/Hunting/Immunefi/targets.md
-```
-
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/w3hunt/scripts"))
-import postmortem
-postmortem.run(os.path.expanduser("~/PenTest/Hunting/Immunefi/<target>"), lessons={
-    "what_worked": "...", "what_wasted_time": "...",
-    "transferable": "yes/no — ...", "hunt_again": "yes/no — ..."
-})
-```
-
-### Gate Enforcement (MANDATORY before `next`)
-
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/w3hunt/scripts"))
-from gate_check import check_gate, print_gate_status
-
-result = check_gate(os.path.expanduser("~/PenTest/Hunting/Immunefi/<target>"), phase=None)
-print_gate_status(result)
-```
-
-### Target List Refresh
-
-```bash
-# Refresh Immunefi target shortlist (run weekly or when >7 days stale)
-python3 ~/.hermes/skills/security/w3hunt/scripts/target_refresh.py --output ~/PenTest/Hunting/Immunefi/targets.md
-
-# Custom minimum payout threshold
-python3 ~/.hermes/skills/security/w3hunt/scripts/target_refresh.py --min-payout 25000
-```
-
 ### `scope` Procedure
 
 Use when: resuming after >24h, before submitting, or when unsure about asset coverage.
@@ -219,10 +171,21 @@ print_gate_status(result)
 ### Target Refresh
 
 ```bash
-# Refresh Immunefi target shortlist from bounty-targets-data
 python3 ~/.hermes/skills/security/w3hunt/scripts/target_refresh.py \
   --min-payout 10000 \
   --output ~/.hermes/skills/security/w3hunt/references/immunefi-targets-v3.md
+```
+
+### Postmortem
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/w3hunt/scripts"))
+import postmortem
+postmortem.run(os.path.expanduser("~/PenTest/Hunting/Immunefi/<target>"), lessons={
+    "what_worked": "...", "what_wasted_time": "...",
+    "transferable": "yes/no — ...", "hunt_again": "yes/no — ..."
+})
 ```
 
 ### `status` Procedure

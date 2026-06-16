@@ -262,3 +262,43 @@ fetch('https://app.target.co.id/api/v1/beneficiary/add', {
 - [Keycloak Security Advisories](https://www.keycloak.org/security)
 - [SameSite Cookie Recipes](https://web.dev/samesite-cookies-explained/)
 - [Spring Security CSRF Docs](https://docs.spring.io/spring-security/reference/servlet/exploits/csrf.html)
+
+---
+
+## CSRF Token Validation Weakness Checklist
+
+Quick-test matrix for any CSRF token implementation. Run ALL checks before marking CSRF as "implemented":
+
+| Test | Payload | Expected (Secure) | Finding if Passes |
+|------|---------|-------------------|-------------------|
+| Empty token | `token=` | Rejected (403/error) | Weak validation |
+| Missing param | (omit token entirely) | Rejected | No validation |
+| Any non-empty string | `token=INVALID` | Rejected | Accepts any value |
+| Token from other session | Use token from session A in session B | Rejected | Not session-bound |
+| Expired token (reuse) | Reuse token after it should expire | Rejected | No expiry |
+| Truncated token | Send first half only | Rejected | Length-only check |
+| Static token | Same token across page reloads | N/A (bad design) | Predictable token |
+| Token in cookie only | Remove from POST body, keep cookie | Rejected | Double-submit bypass |
+
+**Testing script:**
+```python
+# Get a page to extract valid token
+r = s.get(TARGET)
+valid_token = extract_token(r.text)
+
+tests = [
+    ("Empty", ""),
+    ("Invalid", "AAAA"),
+    ("Truncated", valid_token[:8]),
+    ("Missing", None),  # omit param
+]
+
+for name, token in tests:
+    data = {"domain": "google.com"}
+    if token is not None:
+        data["token"] = token
+    r = s.post(TARGET, data=data)
+    print(f"{name}: {r.status_code} {'REJECTED' if 'Invalid' in r.text else 'ACCEPTED'}")
+```
+
+**mock.hackme.secops.group:8000 (June 2026):** Empty/missing = "Invalid CSRF Token" (rejected). Any non-empty string = accepted. Token not session-bound, not validated against server state — only checks `!empty($token)`.

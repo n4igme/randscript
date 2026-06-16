@@ -11,9 +11,30 @@ exec(read_file("~/.hermes/skills/security/ptest/scripts/phase3_enumerate.py")["c
 
 ---
 
+## Critical Pitfalls (BlueSpider, June 2026)
+
+### JS Bundle Diff Between Environments (MANDATORY)
+When multiple environments exist (dev/staging/prod), extract and DIFF the JS bundles from each. Prod may contain endpoints not present in dev bundles. The `/api/load-user` endpoint that enabled the full production compromise was only in the prod JS bundle (`app-6750147a.js`) — not the dev bundle (`app-50814d1f.js`). A simple `diff` of extracted endpoint lists between environments catches this.
+
+### Parameterized Endpoint Enumeration
+When an endpoint like `/api/get-params/{type}` is found, do NOT only test the param values seen in JS (e.g., `VERIFIKASI`). Systematically enumerate common param types: `passDefault`, `CATEGORY`, `STATUS`, `DEPARTMENT`, `CHANNEL`, `SLA`, `EMAIL`, `PASSWORD`, `CONFIG`, `SECRET`. The `passDefault` param leaked the system's default password unauthenticated — this single finding led to 69-account mass ATO on production.
+
+### Username ≠ Login Credential
+User enumeration endpoints may return usernames (e.g., `MGR01`, `SPV01`) while the login form requires email addresses. Always search for a secondary endpoint that exposes full user objects with email fields (e.g., `/api/load-user`). If no email-returning endpoint exists, try common email patterns: `username@domain.com`, `firstname.lastname@domain.com` against discovered domains.
+
 ## When to Use
-- After active recon is complete (Gateway 2 PASSED).
-- When you need to enumerate application-layer details: directories, APIs, parameters.
+- Third phase of any engagement (Gateway 3 is OPEN).
+- After active recon has identified live hosts and services.
+
+## MANDATORY: JS Bundle Environment Diff (BlueSpider, June 2026)
+When target has multiple environments (dev/staging/prod) with Vite/Webpack JS bundles:
+1. Extract JS bundle filenames from EACH environment's login page (`grep -oE 'src="[^"]*app-[^"]*\.js"'`)
+2. Note the hash differs between envs (e.g., `app-50814d1f.js` vs `app-6750147a.js`)
+3. Extract API endpoints from EACH unique bundle
+4. DIFF the endpoint lists — prod may have endpoints not in dev
+5. Test any prod-only endpoints for unauthenticated access IMMEDIATELY
+
+This step found `/api/load-user` (full user dump with emails) that existed only on prod but not dev — the single endpoint that enabled a 69-account mass ATO including Super Admin.
 
 ## ALL-Hosts Coverage Rule (WinTicket, June 2026)
 
@@ -144,13 +165,35 @@ ffuf -u https://target.com/api/FUZZ -w $SECLISTS_PATH/Discovery/Web-Content/api/
 ffuf -u https://target.com/api/v1/FUZZ -w $SECLISTS_PATH/Discovery/Web-Content/api/api-endpoints.txt -mc all -fc 404
 
 # Check common API documentation endpoints
-for path in /swagger /swagger-ui /api-docs /openapi.json /swagger.json /docs /redoc; do
-  curl -s --max-time 5 -o /dev/null -w "%{http_code} $path\n" "https://target.com$path"
+# CRITICAL: Test at BOTH root AND every discovered context path prefix!
+# AltoCMS lesson (June 2026): /jago/api/v2/api-docs returned 401 but /jago/v3/api-docs
+# was unauthenticated (97KB, 95 endpoints, 130 schemas). Spring Boot 3.x serves OpenAPI v3
+# at a PARENT context level that often bypasses the API security filter chain.
+for base in "" "/jago" "/api" "/app" "/service" "/backend"; do
+  for path in /v3/api-docs /v2/api-docs /swagger-ui.html /swagger-ui/ /swagger-resources /api-docs /openapi.json /openapi.yaml /swagger.json /docs /redoc; do
+    code=$(curl -s --max-time 5 -o /dev/null -w "%{http_code}" "https://target.com${base}${path}")
+    [ "$code" != "404" ] && [ "$code" != "000" ] && echo "${base}${path} -> $code"
+  done
 done
+# Also check with /api/ prefix (common: /api/v3/api-docs vs /v3/api-docs)
+# If ANY returns 200 with size > 1000, download and analyze immediately
 
 # GraphQL introspection
 curl -s -X POST https://target.com/graphql -H "Content-Type: application/json" -d '{"query":"{__schema{types{name}}}"}'
 ```
+
+### 2b. Parameterized Endpoint Type Brute-Force (MANDATORY)
+
+**BlueSpider lesson (June 2026):** JS bundle revealed `/api/get-params-inbound/VERIFIKASI` — tested it, found verification fields exposed unauth. But MISSED `/api/get-params/passDefault` which exposed the system default password (`JAGO1234!` on prod, `12345678` on dev) unauthenticated. User had to point this out. Combined with user enumeration → instant ATO.
+
+**Rule:** When a parameterized endpoint like `/api/get-params/{type}` is found, ALWAYS brute-force the type parameter:
+```
+passDefault, password, DEFAULT_PASSWORD, admin, config, secret, key, token,
+CATEGORY, STATUS, DEPARTMENT, CHANNEL, VERIFIKASI, ROLE, PERMISSION, LEVEL,
+EMAIL, SMTP, API_KEY, DB, DATABASE, REDIS, QUEUE, MAIL, APP_KEY, SIP, PBX
+```
+
+**Attack chain:** config param endpoint (passDefault) + user enumeration = ATO on any new/reset user.
 
 ### 3. Parameter Discovery
 Identify hidden parameters on discovered endpoints.
@@ -330,10 +373,15 @@ done
 
 **Key insight:** Different Referers may work for different endpoint groups. Production frontends bypass prod endpoints; pre-prod Referers bypass PRE endpoints. Some endpoints (like password/key material) may need NO Referer at all — always test without Referer first.
 
-**Ant Group / Antom specifics:** See `references/intel-alibaba-cloud-infrastructure.md` §"Referer-Based Access Control Bypass" for known working values.
+**Behavioral clue (Ant Group, June 2026):** When a Referer bypasses the check, the response may be EMPTY (not the config data) — this means the Referer passed but the request body/params/session is still invalid. Empty response ≠ failure; it means you're past the first gate. Next step: add required body params or session cookies.
+
+**Ant Group / Antom specifics:** See `references/intel-alibaba-cloud-infrastructure.md` §"Referer-Based Access Control Bypass" for known working values. See also `references/engagement-antom-antgroup.md` for tested Referer values and endpoint map.
 
 ### 7. Authentication Endpoint Mapping
 Document all authentication mechanisms and entry points.
+
+**MANDATORY: Test OAuth/Auth endpoints with GET individually (BIFast, June 2026):**
+When JS analysis reveals OAuth endpoints (e.g., `/oauth/internal/authorize`, `/oauth/internal/preauthorize`, `/oauth/internal/token`), do NOT assume they all behave the same because one returned 302. Test EACH endpoint individually with GET AND POST — some may be unauthenticated while others require auth. The BIFast engagement missed `/oauth/internal/preauthorize` returning 400 JSON (unauthenticated, processing requests) because all OAuth paths were batch-tested and the single non-302 was overlooked. This endpoint accepted arbitrary client_ids and leaked OAuth flow implementation details via sequential error messages.
 
 **Error code sequence mapping (MANDATORY for APIs with structured errors):**
 When an API returns structured error codes (e.g., `{"success":0,"data":{"code":30004}}`), systematically determine the validation sequence by sending requests with progressively more fields:
@@ -386,6 +434,7 @@ Identify the web framework, then load the appropriate attack playbook.
 # WordPress: /wp-content/, /wp-json/
 # Rails: _session_id cookie, X-Request-Id header
 # Spring Boot: /actuator, x-envoy-* headers
+# Spring Boot OpenAPI: /{context}/v3/api-docs (often outside auth filter — see below)
 # GraphQL: /graphql, /graphiql, /playground
 # Tyk Gateway: /hello returns JSON with "Tyk GW", 403 "Requested endpoint is forbidden"
 # n8n: /rest/settings returns config JSON, /healthz returns {"status":"ok"}
@@ -553,12 +602,31 @@ done
 
 ### Exposed API Documentation
 ```bash
-# OpenAPI/Swagger specs
-for path in /openapi.json /swagger.json /api-docs /docs /api/docs /swagger-ui /redoc; do
-  code=$(curl -s -o /dev/null -w "%{http_code}" "https://target.com$path")
-  [ "$code" != "404" ] && [ "$code" != "000" ] && echo "$path -> $code"
+# OpenAPI/Swagger specs — test at EVERY discovered context path
+# AltoCMS lesson: /jago/v3/api-docs was unauth while /jago/api/v2/api-docs was 401
+# Spring Boot 3.x serves at context root, bypassing /api/* security filters
+for base in "" $(grep -oE '/[a-z]+' live-paths.txt 2>/dev/null | sort -u); do
+  for path in /v3/api-docs /v2/api-docs /openapi.json /swagger.json /swagger-ui /swagger-ui.html /api-docs /docs /redoc; do
+    code=$(curl -s -o /dev/null -w "%{http_code} %{size_download}" "https://target.com${base}${path}")
+    echo "$code" | grep -qvE "^(404|000) " && echo "${base}${path} -> $code"
+  done
 done
 ```
+**When found:** Download immediately, extract all paths, count schemas, check for sensitive field names (password, token, pin, secret). Report as finding if accessible without auth.
+
+**CRITICAL NEXT STEP — Systematic Unauth Endpoint Testing (AltoCMS, June 2026):**
+When an OpenAPI spec is found unauthenticated, do NOT stop at documenting the spec exposure. Immediately test EVERY endpoint in the spec for missing auth:
+```python
+# Parse OpenAPI spec and test all endpoints without auth
+import json
+with open('api-docs.json') as f:
+    spec = json.load(f)
+for path, methods in spec['paths'].items():
+    for method in methods:
+        # POST endpoints with empty body, GET endpoints bare
+        # Filter: status != 401 AND size > 0 = UNAUTH ACCESS
+```
+**AltoCMS result:** 95 endpoints tested → found `/api/download/remove-files` (POST) accessible without auth, accepting file deletion requests. This endpoint was NOT discoverable via ffuf/gobuster (would need exact path), only via systematic OpenAPI-guided testing. The OpenAPI spec is not just an info disclosure finding — it's the TOOL to find auth bypass on individual endpoints.
 
 ### Container Registry Exposure
 ```bash

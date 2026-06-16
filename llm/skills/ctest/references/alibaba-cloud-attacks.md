@@ -113,6 +113,14 @@ SEA companies commonly geo-restrict API gateways. Symptoms:
 - Static assets (CDN/OSS) remain globally accessible
 - Fix: test from regional VPN (Singapore, Jakarta) before concluding service is down
 
+## Cross-Skill References (ptest intel)
+
+When testing Alibaba/Ant Group targets, load these from ptest for engagement-specific intel:
+- `ptest references/intel-alibaba-antom-infrastructure.md` — TERN/Spanner/Tengine/Marmot stack fingerprints
+- `ptest references/intel-alibaba-antom-actuator-findings.md` — Actuator hosts, heapdump bypass, SOFA versions
+- `ptest references/intel-alibaba-antom-genai-cockpit.md` — ilmprodmerchant backend, unauth upload, 148 API endpoints
+- `ptest references/intel-alibaba-cloud-infrastructure.md` — Alibaba Cloud infrastructure patterns
+
 ## Cross-Skill Triggers
 
 | Finding | Action |

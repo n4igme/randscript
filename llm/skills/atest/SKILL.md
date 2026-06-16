@@ -10,7 +10,7 @@ notes:
 metadata:
   hermes:
     tags: [api, rest, graphql, grpc, pentest]
-    related_skills: [ptest, scode, ctest, mtest, w3hunt]
+    related_skills: [ptest, scode, ctest, mtest, w3hunt, ttest, adtest]
 ---
 
 # API-First Penetration Testing Framework
@@ -190,8 +190,9 @@ Your testing priorities shift based on API type. Determine this during initializ
 ## Phases (load reference for full methodology)
 
 | Phase | Gate | Reference |
-|-------|------|-----------|
+|-------|------|-----------| 
 | 1 Scope & Recon | endpoints mapped, auth flow documented, valid token obtained. **Alt gate:** ptest Phase 3+ OR mtest Phase 4+ PASSED with endpoints + tokens inherited | `references/phase1-scope-recon.md` |
+| - | ByteDance/TikTok passport SDK auth patterns (SoundOn, TikTok Shop, etc.) | `references/bytedance-passport-patterns.md` |
 | 2 AuthN/AuthZ | auth bypass tested, BOLA on all object endpoints, privesc attempted | `references/phase2-auth.md` |
 | 3 Injection & Logic | injection tested on all inputs, business logic assessed, race conditions tested | `references/phase3-injection-logic.md` |
 | 4 Reporting | report delivered with all findings + PoCs | see below |
@@ -203,6 +204,7 @@ Your testing priorities shift based on API type. Determine this during initializ
 - IDOR hunting patterns: load `references/idor-hunting-patterns.md` for parameter manipulation, bypass techniques, blind detection, and platform-specific patterns (GraphQL, gRPC, presigned URLs)
 - Test both horizontal (user→user) and vertical (user→admin) access
 - GraphQL: always try introspection + batching + nested queries (see `references/graphql-exploitation.md`) (see `references/graphql-exploitation.md`, `references/graphql-dos-batching.md`)
+- WebSocket APIs: load `references/websocket-testing.md` for CSWSH, message-level IDOR, subscription escalation, and Socket.IO/SignalR patterns
 - Every finding needs reproducible curl/request evidence
 - mtest handoff: if `phase8-handoff.md` exists, skip Phase 1 discovery
 - Attack recipes: load ptest `references/attack-recipes.md` at Phase 2/3 entry for proven patterns
@@ -321,6 +323,13 @@ Never use heredoc for scripts with regex — shell escaping of `\r\n` and bracke
 - Login often returns `tokenId` (not JWT directly) — requires second call to `/access-token`
 - Always test both documented flow AND shortcuts (skip steps, replay consent)
 
+**WRITE ENDPOINTS: TEST WITH AND WITHOUT COOKIES (BlueSpider, June 2026):**
+- Laravel Sanctum (and similar cookie-aware middleware) enforces CSRF only when a session cookie is PRESENT in the request
+- Without ANY cookies, the request may bypass middleware entirely and hit the controller directly
+- Rule: for every write endpoint (POST/PUT/PATCH/DELETE), test THREE ways: (1) with valid session+XSRF, (2) with expired/invalid session, (3) with ZERO cookies/headers
+- BlueSpider: `/api/reset-default-password` returned 401 WITH cookies (CSRF enforcement) but 200 "Password Successfully Reset !" with NO cookies — Critical ATO missed because only tested authenticated
+- This applies to ANY framework with cookie-triggered middleware (Laravel, Django, Rails session-based CSRF)
+
 **Multi-step flow testing (Phase 3):**
 1. Map full flow from Burp history
 2. Call LATER steps WITHOUT earlier steps (prerequisite skip)
@@ -364,6 +373,12 @@ Never use heredoc for scripts with regex — shell escaping of `\r\n` and bracke
 - Document forge capability as Phase 1 gate prerequisite
 - The forge IS the token acquisition method — without it you can't do Phase 2+
 
+**Test write endpoints BOTH with AND without cookies/session (BlueSpider, June 2026):**
+- Laravel Sanctum (and similar cookie-triggered middleware) enforces CSRF only when a session cookie is present. Without cookies, requests may bypass middleware entirely.
+- Pattern: endpoint returns 401/419 when tested WITH session cookie, but returns 200 with no cookies at all.
+- Rule: for every write endpoint (POST/PUT/PATCH/DELETE), test THREE ways: (1) valid token/session, (2) expired/invalid token, (3) ZERO cookies/headers. This applies to ALL frameworks using cookie-presence-triggered middleware (Laravel Sanctum, Django SessionMiddleware, Express cookie-session).
+- BlueSpider: `/api/reset-default-password` returned 401 with cookies (CSRF enforcement) but 200 "Password Successfully Reset !" with zero cookies — Critical ATO missed because only tested authenticated.
+
 **Consent/Step-Skip Testing (Business Logic):**
 1. Skip prerequisite: submit consent without calling prerequisite endpoint
 2. Replay: submit same consent multiple times
@@ -377,6 +392,23 @@ Never use heredoc for scripts with regex — shell escaping of `\r\n` and bracke
 **Burp MCP output:** Use `execute_code` to parse; print <20 lines.
 **Large file writes:** Never >300 lines in one op. Split into chunks.
 **Report writing:** Skeleton + summary first, then patch in findings.
+
+**DNS resolution failure in terminal but browser works:**
+- Some targets (Akamai/CDN-fronted) may fail DNS resolution from Python `requests` in terminal while the browser resolves fine
+- Root cause: local DNS resolver differences between system Python and browser's built-in resolver
+- Workaround: run API tests via browser `fetch()` calls in `browser_console` instead of terminal Python
+- Pattern: `browser_console(expression='fetch("/api/endpoint", {credentials:"include"}).then(r=>r.json()).then(d=>JSON.stringify(d))')`
+- This preserves httpOnly session cookies that aren't accessible via `document.cookie`
+
+**Rate limit bypass attempts:**
+- Header spoofing (X-Forwarded-For, X-Real-IP, Client-IP) does NOT work against Akamai/CDN — they use real TCP source IP
+- Clearing browser cookies/localStorage resets CLIENT-SIDE rate limit toasts but server-side IP-based limits persist
+- Only true bypass: different source IP (proxy, VPN, different network)
+
+**React SPA form automation pitfalls:**
+- Controlled components: use `Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set` + `dispatchEvent(new Event('input', {bubbles:true}))` to properly update React state
+- Field disabling on state change: some forms disable fields after actions (e.g., password disabled after "Send code") — fill ALL fields BEFORE triggering state-changing buttons
+- httpOnly cookies: session cookies not visible in `document.cookie` — verify login success by navigating to authenticated page, not checking cookies
 
 ---
 

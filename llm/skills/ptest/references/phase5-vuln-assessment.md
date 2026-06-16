@@ -142,6 +142,19 @@ nuclei -u https://target.com -t technologies/ -t exposures/ -o ./ptest-output/vu
 - Results must be manually verified (eliminate false positives)
 - If nuclei is unavailable, document the gap
 
+**Timeout mitigation (Bank Jago, June 2026):** Full template scans (10K+ templates) timeout on rate-limited hosts even at `-rate-limit 5 -c 2`. Use tag-specific scans instead:
+```bash
+# Tag-specific scans (fast, targeted)
+nuclei -u https://target.com -tags n8n,workflow -rate-limit 3 -c 1 -no-interactsh -timeout 5
+nuclei -u https://target.com -tags openvpn -rate-limit 3 -c 1 -no-interactsh -timeout 5
+nuclei -u https://target.com -tags tyk -rate-limit 3 -c 1 -no-interactsh -timeout 5
+
+# If full scan needed, split by severity
+nuclei -l targets.txt -severity critical,high -rate-limit 3 -c 2 -no-interactsh -timeout 5
+nuclei -l targets.txt -severity medium -rate-limit 3 -c 2 -no-interactsh -timeout 5
+```
+Never mark nuclei "DONE" with 0 results from a timeout — that's a gap requiring manual supplementation.
+
 ### 2. Web Server Scanning (Recommended: nikto)
 ```bash
 # Nikto scan
@@ -199,6 +212,17 @@ Before reporting CORS findings, assess actual impact:
 
 ### CORS Origin Reflection Testing (MANDATORY)
 
+Test ALL endpoints that return sensitive data or perform state-changing actions.
+### CORS Origin Reflection Testing (MANDATORY)
+### CORS Origin Reflection Testing (MANDATORY — including ALL API backends)
+
+**AntGroup lesson (June 2026):** Critical CORS (arbitrary origin + credentials) was found on `ilmprodmerchant.alipayplus.com` only during Phase 6 by accident. Phase 5 CORS checks only tested frontend hosts. **Always test CORS on every discovered API backend**, not just SPA frontends. API backends often have permissive CORS because developers assume "only our SPA calls this."
+
+Test ALL endpoints that return sensitive data or perform state-changing actions, **especially**:
+- Real API backends discovered via SPA backend discovery (JS extraction, browser network)
+- Internal service endpoints (actuator, /api/v1/*, etc.)
+- Endpoints behind auth that return `AUTH_FAILED` (CORS headers still reflect before auth check)
+
 Test ALL endpoints that return sensitive data or perform state-changing actions:
 
 ```bash
@@ -218,6 +242,11 @@ curl -sk -H "Origin: https://evil.target.com" "$ENDPOINT" -D- | grep -i "access-
 curl -sk -H "Origin: https://target.com.evil.com" "$ENDPOINT" -D- | grep -i "access-control"
 curl -sk -H "Origin: https://eviltarget.com" "$ENDPOINT" -D- | grep -i "access-control"
 ```
+
+**CRITICAL (AntGroup lesson, June 2026):** CORS testing MUST be repeated in Phase 6 on any newly-discovered API backends. The ilmprodmerchant.alipayplus.com backend was only discovered during Phase 5 bot.alipayplus.com testing — its CORS reflection (arbitrary origin + credentials: true) was the highest-severity finding on that asset. Phase 5 nuclei scans missed it entirely because the backend was behind an SPA. Always re-test CORS on:
+- API backends discovered via JS bundle analysis
+- Endpoints found through browser network interception
+- Any host not in the original Phase 2 live-hosts list
 
 **Impact assessment:**
 - Reflected origin + `Access-Control-Allow-Credentials: true` + endpoint returns sensitive data = **High** (cross-origin data theft)

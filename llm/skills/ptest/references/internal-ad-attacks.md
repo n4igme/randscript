@@ -1,5 +1,7 @@
 # Internal Pentest & Active Directory Attacks
 
+> **For dedicated AD engagements** (scope = "compromise the domain"), use the `adtest` skill instead. This reference is for ptest Phase 6/7 scenarios where you land on a domain network during a web/infra pentest and need AD techniques for lateral movement and post-exploitation.
+
 Techniques for internal network penetration testing and Active Directory exploitation. Use during Phase 6/7 when internal network access is achieved or when scope includes AD/Windows infrastructure.
 
 ---

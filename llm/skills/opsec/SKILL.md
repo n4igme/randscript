@@ -466,30 +466,6 @@ result = check_gate(".", phase=None)
 print_gate_status(result)
 ```
 
-## Script Invocation
-
-Scripts are in `~/.hermes/skills/security/opsec/scripts/`.
-
-**state_manager.py — assessment lifecycle:**
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/opsec/scripts"))
-import state_manager
-
-state_manager.init_state(".", subject="n4igme", handles=["n4igme", "maurha"])
-state_manager.status(".")
-state_manager.advance_phase(".")
-state_manager.add_finding(".", "high", "Work email in git commits")
-state_manager.set_chain_hops(".", 2)
-state_manager.add_remediation(".", 1, "Rewrite git history with noreply email")
-```
-
-**exposure_check.py — automated git email + platform audit:**
-```bash
-python3 ~/.hermes/skills/security/opsec/scripts/exposure_check.py \
-  --github-user <handle> --check-platforms --output ./opsec-output/exposure.md
-```
-
 ## Cross-Skill Integration
 
 - **Validate your own exposure:** Run `osint` skill against your handles — `handle_check.py` from osint scripts checks 12+ platforms in one call
@@ -501,89 +477,7 @@ python3 ~/.hermes/skills/security/opsec/scripts/exposure_check.py \
 
 ## Script Invocation
 
-**state_manager.py — assessment lifecycle:**
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/opsec/scripts"))
-import state_manager
-
-state_manager.init_state(".", "my_handle", handles=["h1","h2"], emails=["a@b.com"])
-state_manager.status(".")
-state_manager.advance_phase(".")
-state_manager.add_finding(".", "high", "Work email in git commits", source="github")
-state_manager.set_chain_hops(".", 2)
-state_manager.add_remediation(".", 1, "Set git email to noreply")
-```
-
-**gate_check.py — phase gate enforcement:**
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/opsec/scripts"))
-from gate_check import check_gate, print_gate_status
-
-result = check_gate(".", phase=None)
-print_gate_status(result)
-```
-
-**exposure_check.py — automated audit:**
-```bash
-python3 ~/.hermes/skills/security/opsec/scripts/exposure_check.py --github-user <handle> --check-platforms --output ./opsec-output/exposure.md
-```
-
-## Script Invocation
-
 Scripts are in `~/.hermes/skills/security/opsec/scripts/`. Invoke via `execute_code`.
-
-**state_manager.py — assessment lifecycle:**
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/opsec/scripts"))
-import state_manager
-
-state_manager.init_state(".", "my_handle", handles=["h1","h2"], emails=["x@y.com"])
-state_manager.status(".")
-state_manager.advance_phase(".")
-state_manager.add_finding(".", "high", "Work email in git commits", source="github")
-state_manager.set_chain_hops(".", 2)
-state_manager.add_remediation(".", 1, "Remove cross-links from GitHub profile")
-state_manager.abandon(".", "All findings are Low")
-```
-
-**gate_check.py — phase gate enforcement:**
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/opsec/scripts"))
-from gate_check import check_gate, print_gate_status
-
-result = check_gate(".", phase=None)
-print_gate_status(result)
-```
-
-**exposure_check.py — automated audit:**
-```bash
-# Git email audit + profile cross-links
-python3 ~/.hermes/skills/security/opsec/scripts/exposure_check.py --github-user <handle>
-
-# With platform presence check
-python3 ~/.hermes/skills/security/opsec/scripts/exposure_check.py --github-user <handle> --check-platforms
-
-# Write report
-python3 ~/.hermes/skills/security/opsec/scripts/exposure_check.py --github-user <handle> --check-platforms --output ./opsec-output/exposure-auto.md
-```
-
-## Gate Enforcement (MANDATORY before `next`)
-
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/opsec/scripts"))
-from gate_check import check_gate, print_gate_status
-
-result = check_gate(".", phase=None)
-print_gate_status(result)
-# Only advance if result["passed"] is True
-```
-
-## Script Invocation
 
 **state_manager.py — assessment lifecycle:**
 ```python
@@ -601,4 +495,21 @@ state_manager.advance_phase(workdir)
 state_manager.add_finding(workdir, "high", "Work email in git commits", source="github")
 state_manager.set_chain_hops(workdir, 2)
 state_manager.add_remediation(workdir, 1, "Remove cross-links from GitHub sidebar")
+state_manager.abandon(workdir, "All findings are Low")
+```
+
+**gate_check.py — phase gate enforcement:**
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/opsec/scripts"))
+from gate_check import check_gate, print_gate_status
+
+result = check_gate(".", phase=None)
+print_gate_status(result)
+# Only advance if result["passed"] is True
+```
+
+**exposure_check.py — automated audit:**
+```bash
+python3 ~/.hermes/skills/security/opsec/scripts/exposure_check.py --github-user <handle> --check-platforms --output ./opsec-output/exposure-auto.md
 ```
