@@ -110,3 +110,5 @@ curl -sk -H "Origin: null" -I "$BASE_URL/api/users" | grep -i "access-control"
 curl -sk -H "Origin: https://attacker.target.com" -I "$BASE_URL/api/users" | grep -i "access-control"
 ```
 If `Access-Control-Allow-Origin` reflects attacker origin + `Access-Control-Allow-Credentials: true` → High (credential theft via CORS). If reflects but no credentials → Medium (data leakage only).
+
+**Also check `Access-Control-Expose-Headers`:** This header controls which response headers are readable by cross-origin JavaScript. If it leaks auth token header names (e.g., `CST, X-SECURITY-TOKEN`, `Authorization`, `Set-Cookie`) on ANY endpoint (including public ones), it enables a separate finding — cross-origin session token exposure — even when `Access-Control-Allow-Credentials` is not set. The exposed headers become readable by any `fetch()` call from an allowed origin, and if `Allow-Origin: *` is set, from any origin at all. This is a Medium severity finding on its own (information disclosure of auth header names + readable by any site).

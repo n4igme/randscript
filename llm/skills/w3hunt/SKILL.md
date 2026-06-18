@@ -1,11 +1,12 @@
 ---
 name: w3hunt
-version: 1.4.0
+version: 2.2.0
 description: "Web3 bug bounty hunting on Immunefi and similar platforms. Target selection, scope verification, DeFi-specific recon, and attack vector prioritization for hybrid web+contract programs."
 tags: [web3, bug-bounty, immunefi, defi, smart-contract, recon]
 trigger: "immunefi, web3 hunting, defi bug bounty, smart contract bounty, web3 recon"
 argument-hint: "<command: start|next|recon|scope|targets|status|resume|report|abort|cleanup>"
 notes:
+  - "v2.2.0: Deduplicated Gate Enforcement (3x→1x) and Postmortem (2x→1x). Consolidated command procedures. Added Phase Entry Protocol, findings.jsonl procedure. Aligned with skill family patterns."
   - "v2.1.0: Hub model — SKILL.md is routing + strategy + framework. Phase content in references/phase*.md"
   - "NEVER rewrite full SKILL.md in one tool call — use strReplace/patch for edits. Large write_file calls hit output token limits and get truncated."
 metadata:
@@ -72,21 +73,9 @@ from gate_check import check_gate, print_gate_status
 
 result = check_gate(os.path.expanduser("~/PenTest/Hunting/Immunefi/<target>"), phase=None)
 print_gate_status(result)
-```
-3. Verify gate condition:
-
-**Gate Enforcement (run before advancing):**
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/w3hunt/scripts"))
-from gate_check import check_gate, print_gate_status
-
-result = check_gate(os.path.expanduser("~/PenTest/Hunting/Immunefi/<target>"), phase=None)
-print_gate_status(result)
 # Only advance if result["passed"] is True
 ```
-
-Gate conditions per phase:
+3. Gate conditions per phase:
    - Phase 1: GO/NO-GO decision documented
    - Phase 2: minimum viable recon checklist complete (5 items)
    - Phase 3: quick-kill checklist done, OR "web layer hardened" documented
@@ -157,35 +146,12 @@ Use when: resuming after >24h, before submitting, or when unsure about asset cov
 2. Diff against saved `scope.txt` — flag changes.
 3. Update `scope.txt` with changes and timestamp.
 
-### Gate Enforcement (MANDATORY before `next`)
-
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/w3hunt/scripts"))
-from gate_check import check_gate, print_gate_status
-
-result = check_gate(os.path.expanduser("~/PenTest/Hunting/Immunefi/<target>"), phase=None)
-print_gate_status(result)
-```
-
 ### Target Refresh
 
 ```bash
 python3 ~/.hermes/skills/security/w3hunt/scripts/target_refresh.py \
   --min-payout 10000 \
   --output ~/.hermes/skills/security/w3hunt/references/immunefi-targets-v3.md
-```
-
-### Postmortem
-
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/w3hunt/scripts"))
-import postmortem
-postmortem.run(os.path.expanduser("~/PenTest/Hunting/Immunefi/<target>"), lessons={
-    "what_worked": "...", "what_wasted_time": "...",
-    "transferable": "yes/no — ...", "hunt_again": "yes/no — ..."
-})
 ```
 
 ### `status` Procedure
@@ -247,6 +213,13 @@ When entering a phase, load the corresponding reference file:
 | 5 | `references/phase5-exploit.md` | PoC validated + report submitted |
 
 **Load only the active phase file.**
+
+### Phase Entry Protocol (ALL phases)
+
+When entering ANY phase, before executing techniques:
+1. **Load reference file** — per Phase Routing table above
+2. **Record timestamp** — write `phase_N_start` in state.yaml
+3. **Check budget** — elapsed time vs. 8hr cap. If >75% spent with zero findings → trigger abandon check
 
 ---
 
@@ -380,6 +353,29 @@ Output: {actual execution output}
 ## Impact
 ## Fix Suggestion
 ## Scope Proof
+```
+
+### Cross-Skill Chaining (findings.jsonl)
+
+When recording a finding, append to `findings.jsonl` for cross-skill consumption:
+
+```python
+import json
+from datetime import datetime
+finding = {
+    "id": "W3HUNT-{count:03d}",
+    "skill": "w3hunt",
+    "severity": "{severity}",
+    "type": "{vuln_type}",  # e.g., oracle_manipulation, signature_replay, csp_bypass, ssrf, idor
+    "target": "{contract_address_or_url}",
+    "summary": "{one-line description}",
+    "chain_potential": [],  # e.g., ["ptest:web_exploitation", "atest:api_testing", "scode:contract_review"]
+    "timestamp": datetime.now().isoformat(),
+    "phase": "{current_phase}",
+    "status": "draft"  # draft → validated → submitted → accepted/rejected
+}
+with open("./findings.jsonl", "a") as f:
+    f.write(json.dumps(finding) + "\n")
 ```
 
 ### Script Failure Protocol

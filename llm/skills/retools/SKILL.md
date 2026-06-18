@@ -1,10 +1,13 @@
 ---
 name: retools
-version: 1.0.1
+version: 1.1.0
 description: "Reverse engineering tooling skill covering Ghidra, radare2, IDA, and Binary Ninja workflows. Setup, scripting, plugin management, and integration with MCP for automated analysis."
 tags: [reverse-engineering, ghidra, radare2, ida, binary-ninja, re, disassembly, decompilation]
 trigger: "ghidra setup, ghidra extension, r2 analysis, radare2, ida script, binary ninja, reverse engineering tools, RE tooling, ghidra mcp, decompile binary"
 argument-hint: "<context: setup|ghidra|r2|ida|binja|mcp>"
+notes:
+  - "v1.1.0: Added cross-skill trigger table, removed duplicate references. Added frontmatter notes."
+  - "v1.0.1: Added malware deobfuscation section, JADX MCP integration, unknown binary triage reference."
 metadata:
   hermes:
     tags: [reverse-engineering, tooling, ghidra, radare2]
@@ -484,17 +487,27 @@ r2 -q -c 'e asm.arch=arm; e asm.bits=64; pa mov x0, 0' --  # test ARM64 assembly
 curl http://localhost:8080/methods  # should return JSON (when Ghidra + plugin running)
 ```
 
-**References:**
+---
+
+## Cross-Skill Triggers
+
+**Into retools (from other skills):**
+- xdev needs binary RE (stripped binary, unknown format) → invoke retools
+- mtest needs native lib analysis (.so, Mach-O) → invoke retools (Ghidra/r2)
+- ttest finds native binary needing deep analysis → invoke retools
+- ptest finds custom binary protocol → invoke retools for format RE
+
+**Out of retools (to other skills):**
+- Exploitable vulnerability found during RE → hand to xdev (exploit development)
+- API endpoints/keys extracted from binary → hand to atest (API testing)
+- Hardcoded credentials found → hand to ctest (cloud) or adtest (AD)
+- Mobile native lib vulnerabilities → hand back to mtest (dynamic validation)
+
+## Additional References
+
 - `references/ghidramcp-api.md` — GhidraMCP REST API endpoints
 - `references/native-ssl-pinning-analysis.md` — SSL pinning RE in native libs
 - `references/frida-scripting.md` — Frida patterns: Java hooks, native intercept, SSL bypass, root bypass, Python API
 - `references/debugger-workflows.md` — LLDB, GDB, remote debugging (Android/iOS), pwndbg/GEF
-- `references/unknown-binary-triage.md` — 15-min triage: identify, metadata, strings, dynamic, tool selection, `references/frida-scripting.md`, `references/debugger-workflows.md`, `references/unknown-binary-triage.md`
-
----
-
-## Additional References
-
-- `references/frida-scripting.md` — Frida hook patterns (Java, native, SSL bypass, root bypass, Python API)
-- `references/debugger-workflows.md` — LLDB, GDB, GEF/pwndbg, remote debugging (Android/iOS)
-- `references/unknown-binary-triage.md` — 15-min methodology for approaching unfamiliar binaries
+- `references/unknown-binary-triage.md` — 15-min triage methodology for unfamiliar binaries
+- `references/malware-deobfuscation.md` — Malware analysis, IOC extraction, deobfuscation patterns

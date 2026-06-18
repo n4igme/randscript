@@ -1,12 +1,13 @@
 ---
 name: osint
 description: "Offensive person/organization OSINT reconnaissance — handle correlation, email discovery, platform enumeration, breach checks, and cross-reference chain mapping."
-version: 1.0.2
+version: 1.2.0
 author: n4igme
 license: MIT
 trigger: "osint, recon person, find handles, email discovery, platform enumeration, breach check, identity correlation, dox"
 argument-hint: "<command: start|status|resume|next|handles|emails|platforms|domains|social|breaches|chain|report|abort|cleanup>"
 notes:
+  - "v1.2.0: Added Phase Entry Protocol, time_tracking, N/A phase guidance. Fixed stale ptest cross-skill reference. Aligned with skill family patterns."
   - "v1.1.0: Added Quick Reference, state.yaml schema, gates, command procedures, output path, staleness check"
 metadata:
   hermes:
@@ -120,6 +121,23 @@ seeds:
 findings_count: 0
 platforms_checked: 0
 chain_links: 0
+
+time_tracking:
+  phase_1_start: ""
+  phase_1_end: ""
+  phase_2_start: ""
+  phase_2_end: ""
+  phase_3_start: ""
+  phase_3_end: ""
+  phase_4_start: ""
+  phase_4_end: ""
+  phase_5_start: ""
+  phase_5_end: ""
+  phase_6_start: ""
+  phase_6_end: ""
+  phase_7_start: ""
+  phase_7_end: ""
+
 notes: ""
 ```
 
@@ -151,6 +169,17 @@ notes: ""
 | 5 Social Media | All bot-friendly platforms checked | `social` |
 | 6 Breach Checks | HIBP or equivalent checked for all discovered emails | `breaches` |
 | 7 Chain + Report | Cross-reference map built, report generated | `chain` / `report` |
+
+### Phase Entry Protocol (ALL phases)
+
+When entering ANY phase, before executing techniques:
+1. **Load methodology** — per Phase Routing table above (inline or reference file)
+2. **Record timestamp** — write `phase_N_start` in state.yaml
+3. **Review seeds** — check what identifiers are available to inform this phase's queries
+
+### N/A Phases
+
+If a phase is not applicable (person target with no domains → Phase 4 N/A, no emails discovered → Phase 6 Breaches N/A), document justification in state.yaml and mark gateway `N/A`. Never skip silently.
 
 ---
 
@@ -349,7 +378,7 @@ Build a graph showing how identities connect:
 - Domain/infra discovered → hand to ptest Phase 1 (add to attack surface)
 - Cloud assets found (S3 buckets, GCP projects) → hand to ctest Phase 1
 - Source code repos discovered → hand to scode
-- Credentials found in breaches → hand to ptest Phase 6 (credential stuffing)
+- Credentials found in breaches → hand to ptest Phase 4 (credential stuffing, auth bypass)
 - API keys/tokens discovered → hand to atest or ctest (validate scope)
 - Identity chain complete for self → hand to opsec (defensive assessment)
 

@@ -1,12 +1,14 @@
 ---
 name: atest
-version: 1.0.1
+version: 1.3.0
 description: "Lightweight API penetration testing framework for REST, GraphQL, and gRPC targets. 4 focused phases without full infrastructure recon overhead."
 tags: [api, rest, graphql, grpc, pentest, authentication, injection]
 trigger: "api pentest, api security test, graphql pentest, grpc pentest, rest api test, api-only engagement"
 argument-hint: "<command: start|status|resume|next|report|abort|cleanup>"
 notes:
-  - "v1.1.0: Added time budgets, abandon heuristics, bola_scanner.py, state_manager.py, proven patterns, token acquisition moved to Phase 1 gate"
+  - "v1.3.0: Added Phase Entry Protocol, time_tracking in state.yaml. Extracted pitfalls to references/pitfalls.md. Deduplicated BlueSpider finding. Fixed mtest handoff (Phase 9→6)."
+  - "v1.2.0: Auth-gate-before-parameter-processing pitfall, expanded CORS testing, no-token abandon heuristic with middleware-gate guidance"
+  - "v1.1.0: Time budgets, abandon heuristics, bola_scanner.py, state_manager.py, proven patterns, token acquisition moved to Phase 1 gate"
 metadata:
   hermes:
     tags: [api, rest, graphql, grpc, pentest]
@@ -85,6 +87,13 @@ print_gate_status(result)
 # Only advance if result["passed"] is True
 ```
 
+### Phase Entry Protocol (ALL phases)
+
+When entering ANY phase, before executing techniques:
+1. **Load reference file** — per Phase Routing table (e.g., `references/phase1-scope-recon.md`)
+2. **Create/verify checklist** — `atest-output/phase{N}-{name}/checklist.md` must exist with all techniques as PENDING
+3. **Record timestamp** — write `phase_N_start` in state.yaml when creating checklist, `phase_N_end` when PASSED is written
+
 **`abort`:**
 1. Record reason in state.yaml, mark remaining phases ABORTED.
 2. Generate partial report from existing findings.
@@ -138,6 +147,17 @@ gateways:
   2_authn_authz: LOCKED
   3_injection_logic: LOCKED
   4_reporting: LOCKED
+
+time_tracking:
+  phase_1_start: ""
+  phase_1_end: ""
+  phase_2_start: ""
+  phase_2_end: ""
+  phase_3_start: ""
+  phase_3_end: ""
+  phase_4_start: ""
+  phase_4_end: ""
+  total_duration: ""  # Calculated at cleanup
 
 findings_count: 0
 current_phase: 1
@@ -193,6 +213,7 @@ Your testing priorities shift based on API type. Determine this during initializ
 |-------|------|-----------| 
 | 1 Scope & Recon | endpoints mapped, auth flow documented, valid token obtained. **Alt gate:** ptest Phase 3+ OR mtest Phase 4+ PASSED with endpoints + tokens inherited | `references/phase1-scope-recon.md` |
 | - | ByteDance/TikTok passport SDK auth patterns (SoundOn, TikTok Shop, etc.) | `references/bytedance-passport-patterns.md` |
+| - | Tyk API Gateway config-as-code parsing (YAML → CSV endpoint extraction, whitelist/blacklist analysis, bypass vectors) | `references/tyk-gateway-config-parsing.md` |
 | 2 AuthN/AuthZ | auth bypass tested, BOLA on all object endpoints, privesc attempted | `references/phase2-auth.md` |
 | 3 Injection & Logic | injection tested on all inputs, business logic assessed, race conditions tested | `references/phase3-injection-logic.md` |
 | 4 Reporting | report delivered with all findings + PoCs | see below |
@@ -311,104 +332,43 @@ Before writing the report, revisit all findings and attempt to chain them for hi
 
 ## Pitfalls
 
-**Burp MCP output:** Results from `get_proxy_http_history_regex` are 100-200KB single-line JSON. NEVER let raw output into context or use `read_file` on it. Always:
-1. Write parsing logic to `/tmp/script.py`
-2. Run via `terminal("python3 /tmp/script.py")`
-3. Print <20 line summary (method+path+status only)
-Never use heredoc for scripts with regex — shell escaping of `\r\n` and brackets breaks.
+> **Full pitfalls (operational, engagement lessons, auth quirks):** `references/pitfalls.md`
 
-**Large file writes:** Max 300 lines per operation. Split reports: skeleton first, then patch findings in groups of 2-3.
+### Key Rules (always active)
+- Burp MCP output: NEVER let raw 100-200KB JSON into context — parse via script, print <20 lines
+- Write endpoints: test THREE ways — (1) valid session, (2) expired, (3) ZERO cookies/headers (BlueSpider: middleware bypass)
+- Multi-step flows: call later steps WITHOUT earlier steps, OUT OF ORDER
+- SPA catch-all: ALL paths same status+size = frontend routing, extract routes from JS bundles
+- Webhook callbacks: test ALL for missing HMAC/signature (Prometheus `uri=` reveals routes)
+- Middleware auth gate: if ALL endpoints return same error → token acquisition is priority, not fuzzing
+- Large file writes: max 300 lines per op, split reports into skeleton + finding patches
 
-**Auth chain quirks (mobile APIs):**
-- Login often returns `tokenId` (not JWT directly) — requires second call to `/access-token`
-- Always test both documented flow AND shortcuts (skip steps, replay consent)
-
-**WRITE ENDPOINTS: TEST WITH AND WITHOUT COOKIES (BlueSpider, June 2026):**
-- Laravel Sanctum (and similar cookie-aware middleware) enforces CSRF only when a session cookie is PRESENT in the request
-- Without ANY cookies, the request may bypass middleware entirely and hit the controller directly
-- Rule: for every write endpoint (POST/PUT/PATCH/DELETE), test THREE ways: (1) with valid session+XSRF, (2) with expired/invalid session, (3) with ZERO cookies/headers
-- BlueSpider: `/api/reset-default-password` returned 401 WITH cookies (CSRF enforcement) but 200 "Password Successfully Reset !" with NO cookies — Critical ATO missed because only tested authenticated
-- This applies to ANY framework with cookie-triggered middleware (Laravel, Django, Rails session-based CSRF)
-
-**Multi-step flow testing (Phase 3):**
-1. Map full flow from Burp history
-2. Call LATER steps WITHOUT earlier steps (prerequisite skip)
-3. Call steps OUT OF ORDER
-4. Check consent/approval endpoints independently — often lack prerequisite validation
-- Pattern: Jago Riplay consent-stage accepted without compliance-check = regulatory bypass
-
-**SPA catch-all false positives (Phase 3):**
-- If ALL paths return same HTTP status + body size → SPA frontend routing, NOT real endpoints
-- ffuf/gobuster will produce 100% false positives on SPAs (every path returns index.html)
-- Instead: extract API routes from JS bundles (`grep -oE '"/(api|merchant|open)[^"]{2,80}"' bundle.js`)
-- Target the BACKEND host (from proxy config in SPA `<script>` tags) for real directory fuzzing
-
-**Referer bypass for API access:**
-- APIs returning `{"stat":"fail","msg":"RefererCheckFailed"}` check Referer header
-- Bypass: set Referer to internal domain found in site config (e.g., `https://global-testpre.alipay.com/`)
-- Discovery: extract proxy targets from SPA inline config → use as Referer values
-- Pattern: RefererCheck bypass upgrades response from "failed" to proper auth-check (redirectURL) — confirms valid API path
-
-**Unauthenticated endpoint mass-testing (JS bundle → batch POST):**
-1. Extract all `.json` endpoints from JS bundles: `grep -oE '"/(merchant|api|open)[^"]+\.json"' bundle.js | sort -u`
-2. POST each with `{}` body + valid Referer
-3. Filter: responses containing `"redirectURL"` = auth-protected. Everything else = processes without auth
-4. Proven yield (Antom 2026-06): 291 endpoints → 30+ process without authentication
+### Cross-Skill Handoff
 
 **ptest handoff (ptest → atest):**
-- If `../ptest-output/` (or sibling ptest-output) exists with Phase 3+ PASSED, inherit endpoint list from `ptest-output/enumeration/` and tokens from `ptest-output/credential-inventory.md`
-- Skip Phase 1 entirely — gate satisfied by ptest inheritance
-- Start at Phase 2 (AuthN/AuthZ) directly
-- Copy relevant endpoints into `atest-output/phase1-recon/endpoints.md` for reference
-- Tag all findings with `source: "atest"` so they flow back to ptest findings-log
+- If `../ptest-output/` exists with Phase 3+ PASSED, inherit endpoints + tokens
+- Skip Phase 1 — gate satisfied by ptest inheritance
+- Tag findings with `source: "atest"` to flow back to ptest findings-log
 
 **mtest handoff (mtest → atest):**
-- If `../mtest-output/` exists with Phase 4+ PASSED, inherit endpoint list from `mtest-output/phase4-traffic/` and tokens from intercepted traffic
-- Skip Phase 1 entirely — gate satisfied by mtest traffic analysis
-- Start at Phase 2 (AuthN/AuthZ) directly
-- After atest completes, findings flow back to mtest findings.jsonl with `source: "atest"`
-- Return to mtest Phase 9 for mobile-specific exploit chains
+- If `../mtest-output/` exists with Phase 4+ PASSED, inherit endpoint list from traffic capture
+- Skip Phase 1 — gate satisfied by mtest traffic analysis
+- After atest completes, findings flow back to mtest findings.jsonl
+- Return to mtest Phase 6 for mobile-specific exploit chains
 
 **Attestation-heavy targets (mtest → atest):**
 - Document forge capability as Phase 1 gate prerequisite
 - The forge IS the token acquisition method — without it you can't do Phase 2+
 
-**Test write endpoints BOTH with AND without cookies/session (BlueSpider, June 2026):**
-- Laravel Sanctum (and similar cookie-triggered middleware) enforces CSRF only when a session cookie is present. Without cookies, requests may bypass middleware entirely.
-- Pattern: endpoint returns 401/419 when tested WITH session cookie, but returns 200 with no cookies at all.
-- Rule: for every write endpoint (POST/PUT/PATCH/DELETE), test THREE ways: (1) valid token/session, (2) expired/invalid token, (3) ZERO cookies/headers. This applies to ALL frameworks using cookie-presence-triggered middleware (Laravel Sanctum, Django SessionMiddleware, Express cookie-session).
-- BlueSpider: `/api/reset-default-password` returned 401 with cookies (CSRF enforcement) but 200 "Password Successfully Reset !" with zero cookies — Critical ATO missed because only tested authenticated.
-
-**Consent/Step-Skip Testing (Business Logic):**
-1. Skip prerequisite: submit consent without calling prerequisite endpoint
-2. Replay: submit same consent multiple times
-3. Arbitrary keys: unexpected consentKey/consentType values
-4. Cross-user: manipulate user-identifying headers (x-cuid) vs JWT subject
-
 ---
 
 ## Output Handling
 
-**Burp MCP output:** Use `execute_code` to parse; print <20 lines.
-**Large file writes:** Never >300 lines in one op. Split into chunks.
-**Report writing:** Skeleton + summary first, then patch in findings.
+> Full details (DNS workarounds, React SPA automation, rate limits): `references/pitfalls.md`
 
-**DNS resolution failure in terminal but browser works:**
-- Some targets (Akamai/CDN-fronted) may fail DNS resolution from Python `requests` in terminal while the browser resolves fine
-- Root cause: local DNS resolver differences between system Python and browser's built-in resolver
-- Workaround: run API tests via browser `fetch()` calls in `browser_console` instead of terminal Python
-- Pattern: `browser_console(expression='fetch("/api/endpoint", {credentials:"include"}).then(r=>r.json()).then(d=>JSON.stringify(d))')`
-- This preserves httpOnly session cookies that aren't accessible via `document.cookie`
-
-**Rate limit bypass attempts:**
-- Header spoofing (X-Forwarded-For, X-Real-IP, Client-IP) does NOT work against Akamai/CDN — they use real TCP source IP
-- Clearing browser cookies/localStorage resets CLIENT-SIDE rate limit toasts but server-side IP-based limits persist
-- Only true bypass: different source IP (proxy, VPN, different network)
-
-**React SPA form automation pitfalls:**
-- Controlled components: use `Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set` + `dispatchEvent(new Event('input', {bubbles:true}))` to properly update React state
-- Field disabling on state change: some forms disable fields after actions (e.g., password disabled after "Send code") — fill ALL fields BEFORE triggering state-changing buttons
-- httpOnly cookies: session cookies not visible in `document.cookie` — verify login success by navigating to authenticated page, not checking cookies
+- **Burp MCP output:** parse via script, print <20 lines — never raw into context
+- **Large file writes:** max 300 lines per op, split into chunks
+- **Report writing:** skeleton + summary first, then patch in findings
 
 ---
 
@@ -426,7 +386,7 @@ Never use heredoc for scripts with regex — shell escaping of `\r\n` and bracke
 **Phase 1 (Recon):**
 - No API docs found after 20 min → switch to blind enumeration (fuzz top 50 paths)
 - API returns 403 on everything → check if auth is required first (move token acquisition up)
-- Can't get a valid token after 15 min → document as blocker, test unauth-only in Phase 2
+- Can't get a valid token after 15 min → check if token requires platform-registered credentials (Settings > API key generation, not self-service via API). If so, tell the user what's needed. If still unobtainable, document the blocker and run unauth-only testing in Phase 2. **Important:** when no token is available and all protected endpoints return the same auth error, you are hitting a middleware-level auth gate — BOLA, injection, and mass assignment tests will ALL return the same error code. Do not waste budget fuzzing auth-protected endpoints; focus on public endpoints, CORS, error code enumeration, and rate limiting instead. Document this constraint clearly in the report.
 
 **Phase 2 (AuthN/AuthZ):**
 - No BOLA after testing 20+ endpoints → stop BOLA, shift remaining time to injection

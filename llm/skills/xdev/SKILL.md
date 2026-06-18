@@ -1,14 +1,17 @@
 ---
 name: xdev
-version: 1.0.2
+version: 1.1.0
 description: "System-level exploit development framework covering Linux, Windows, macOS, Android, iOS, and firmware. 5 gated phases from vulnerability analysis through reliable exploit delivery."
 tags: [exploit, exploitation, shellcode, rop, heap, kernel, firmware, arm64, mitigation-bypass]
 trigger: "exploit dev, exploit development, write exploit, build exploit, shellcode, rop chain, heap exploitation, kernel exploit, privilege escalation exploit, firmware exploit"
 argument-hint: "<command: start|status|resume|next|report|abort|cleanup>"
+notes:
+  - "v1.1.0: Added Phase Entry Protocol, time_tracking, findings.jsonl procedure, N/A phase guidance. Fixed stale cross-skill references (ptest/mtest phase numbers). Added retools to related_skills."
+  - "v1.0.2: Current stable. Platform decision tree, mandatory checks, abandon heuristics."
 metadata:
   hermes:
     tags: [exploit, development, shellcode, kernel, firmware, offensive]
-    related_skills: [ptest, mtest, ctest]
+    related_skills: [ptest, mtest, ctest, retools]
 ---
 
 # Exploit Development Framework
@@ -162,6 +165,18 @@ primitives:
 mitigations_bypassed: []
 reliability: ""      # percentage or description
 current_phase: 1
+
+time_tracking:
+  phase_1_start: ""
+  phase_1_end: ""
+  phase_2_start: ""
+  phase_2_end: ""
+  phase_3_start: ""
+  phase_3_end: ""
+  phase_4_start: ""
+  phase_4_end: ""
+  phase_5_start: ""
+  phase_5_end: ""
 ```
 
 ---
@@ -230,6 +245,17 @@ Firmware/embedded (no allocator / flat memory)
 | 5 Documentation & Delivery | full writeup + exploit code delivered | see below |
 
 **Usage:** `skill_view(name='xdev', file_path='references/phase1-vuln-analysis.md')` when entering that phase.
+
+### Phase Entry Protocol (ALL phases)
+
+When entering ANY phase, before executing techniques:
+1. **Load reference file** — per Phases table above (+ Platform Decision Tree reference for Phase 2)
+2. **Record timestamp** — write `phase_N_start` in state.yaml
+3. **Review primitives state** — check which primitives are achieved so far, plan what this phase needs to produce
+
+### N/A Phases
+
+If a phase is not applicable (firmware with no mitigations → Phase 3 N/A, info-leak-only scope → Phase 4 N/A), document justification in state.yaml and mark gateway `N/A`. Never skip silently.
 
 ---
 
@@ -344,8 +370,8 @@ Firmware/embedded (no allocator / flat memory)
 - ctest finds container escape primitive needing kernel exploit → invoke xdev (Linux kernel path)
 
 **Out of xdev (to other skills):**
-- Working exploit achieves code exec → hand to ptest Phase 7 (post-exploitation, blast radius)
-- Exploit targets mobile native lib → hand back to mtest Phase 9 (mobile exploit chains)
+- Working exploit achieves code exec → hand to ptest Phase 5 (Post-Exploit & Impact)
+- Exploit targets mobile native lib → hand back to mtest Phase 5 (Runtime & Vuln)
 - Exploit grants cloud credentials → hand to ctest Phase 2 (IAM escalation)
 - Exploit needs RE work (stripped binary, unknown format) → hand to retools
 
@@ -377,4 +403,28 @@ Firmware/embedded (no allocator / flat memory)
 - Race conditions: timing windows vary wildly across hardware — PoC must demonstrate reliability percentage
 - ASLR bypass: don't assume info leak exists — document the leak primitive separately from the main bug
 - iOS: PAC bypass is mandatory for code exec on A12+ — budget time for this or downgrade scope to data-only
+
+## Cross-Skill Chaining (findings.jsonl)
+
+When recording a finding, append to `./xdev-output/findings.jsonl` for cross-skill consumption:
+
+```python
+import json
+from datetime import datetime
+finding = {
+    "id": "XDEV-{count:03d}",
+    "skill": "xdev",
+    "severity": "{severity}",
+    "type": "{vuln_type}",  # e.g., lpe, rce, sandbox_escape, info_leak, kernel_exec
+    "target": "{binary_or_component}:{version}",
+    "summary": "{one-line description}",
+    "chain_potential": [],  # e.g., ["ptest:post_exploit", "mtest:mobile_chain", "ctest:cloud_pivot"]
+    "timestamp": datetime.now().isoformat(),
+    "phase": "{current_phase}",
+    "status": "confirmed",
+    "reliability": "{percentage}"
+}
+with open("./xdev-output/findings.jsonl", "a") as f:
+    f.write(json.dumps(finding) + "\n")
+```
 

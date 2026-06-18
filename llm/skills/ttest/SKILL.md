@@ -1,10 +1,13 @@
 ---
 name: ttest
-version: 1.0.0
+version: 1.1.0
 description: "Thick client (desktop application) penetration testing — .NET, Java, Electron, native Win/Mac apps. Proxy, local storage, business logic, DLL hijacking."
 tags: [thick-client, desktop, pentest, dotnet, electron, java, windows]
 trigger: "thick client pentest, desktop app test, .NET app test, Electron test, Java desktop test, WinForms test, WPF test"
 argument-hint: "<command: start|status|resume|next|report|abort|cleanup>"
+notes:
+  - "v1.1.0: Added Phase Entry Protocol, findings.jsonl procedure, Abandon & Pivot Heuristics, N/A phase guidance. Aligned with skill family patterns."
+  - "v1.0.1: Added command procedures, state.yaml schema, gate enforcement, script invocation, finding template."
 metadata:
   hermes:
     tags: [thick-client, desktop, pentest, dotnet, electron, java, windows]
@@ -105,6 +108,17 @@ What type of thick client?
 | 4 Business Logic | Client-side controls bypassed, license/auth tested | `references/phase4-business-logic.md` |
 | 5 Reporting | All findings documented with PoCs | (inline below) |
 
+### Phase Entry Protocol (ALL phases)
+
+When entering ANY phase, before executing techniques:
+1. **Load reference file** — per Phase Routing table above
+2. **Record timestamp** — write `phase_N_start` in state.yaml
+3. **Confirm app type context** — verify toolchain matches app type from Phase 1
+
+### N/A Phases
+
+If a phase is not applicable (offline app → Phase 2 Traffic minimal, simple utility → Phase 4 Business Logic N/A), document justification in state.yaml and mark gateway `N/A`. Never skip silently.
+
 ## Effort Allocation
 
 | Phase | % | 4-hour engagement | 8-hour engagement |
@@ -126,6 +140,32 @@ What type of thick client?
 | Web endpoints discovered | ptest | Standard web pentest |
 | Cloud storage/API keys found | ctest | Cloud access testing |
 
+## Abandon & Pivot Heuristics
+
+**Phase 1 (Recon & Setup):**
+- Proxy can't intercept after 30 min (custom protocol, cert issues) → Wireshark passive capture + proceed to Phase 3 (local analysis)
+- App type unclear (heavily obfuscated native) → cap RE at 45 min, focus on traffic and storage
+
+**Phase 2 (Traffic):**
+- No HTTP traffic after 20 min → check for non-HTTP protocols (Wireshark). If custom binary protocol → document structure, move to Phase 3
+- All traffic is encrypted with pinned cert and unpatchable → document, shift time to Phase 3/4
+- Rich REST API discovered → hand to atest, focus ttest on local/logic
+
+**Phase 3 (Local Analysis):**
+- Storage encrypted and undecryptable → document, move to Phase 4
+- No local storage at all (cloud-only app) → mark Phase 3 N/A after 15 min, expand Phase 4
+- DLL hijack testing blocked by admin environment → document, continue with other checks
+
+**Phase 4 (Business Logic):**
+- App is simple utility with no business logic → mark N/A, proceed to reporting
+- Client-side checks all properly server-validated → document "client hardened", move to report
+- Memory corruption found during patching → hand to xdev, don't chase in ttest scope
+
+**Global:**
+- **75% budget, zero findings** → focus remaining time on DLL hijack + secrets scan (highest probability quick wins)
+- **App auto-updates mid-test** → document version change, re-verify findings still reproduce
+- **Source fully recovered (.NET/Java)** → hand to scode, shift ttest focus to runtime behavior only
+
 ## Pitfalls
 
 - .NET `ProtectedData` (DPAPI): decryptable only as same user on same machine — prove it, don't assume
@@ -135,3 +175,130 @@ What type of thick client?
 - Proxifier: process-level rules, not system-wide. Match exact executable name.
 - Non-HTTP protocols: Wireshark first to identify, THEN choose interception tool
 - License bypass alone is often "accepted risk" for internal apps — chain with data access for impact
+
+## Command Procedures
+
+**`start`:**
+1. Collect: app name, version, app type (dotnet/java/electron/native/hybrid), platform (windows/macos/linux), rules of engagement.
+2. Run `state_manager.init_state(workdir, name, app_type, platform, proxy_port)` — creates output dirs + state.yaml + scope.md + findings-log.md.
+3. Identify proxy strategy based on app type (see App-Type Decision Tree).
+4. Verify proxy intercepts traffic. Begin Phase 1 immediately.
+
+**`status`:** Output current phase, gateway states (5 phases), findings by severity, time elapsed, abandon check. If no engagement, suggest `start`.
+
+**`resume`:**
+1. Read `state.yaml` to determine active phase.
+2. **Staleness:** >7 days → re-verify app version unchanged (auto-updates). >30 days → treat as fresh.
+3. Report status and suggest next action.
+
+**`next`:**
+1. Run gate check (see Gate Enforcement below).
+2. If NOT met: list unmet criteria, suggest what to test.
+3. If met: `state_manager.advance_phase(workdir)`.
+4. Override allowed with justification.
+
+**`abort`:** `state_manager.abandon(workdir, reason)` — marks remaining ABANDONED, generates partial report.
+
+**`cleanup`:** Archive `./ttest-output/` to `ttest-output-{app}-{date}.tar.gz`. Remove test artifacts (patched binaries, injected DLLs). Print summary.
+
+## State Schema
+
+```yaml
+engagement:
+  name: ""
+  started: ""
+  app_type: ""      # dotnet, java, electron, native, hybrid
+  platform: ""      # windows, macos, linux, cross-platform
+  proxy_port: 8080
+
+gateways:
+  1_recon_setup: OPEN
+  2_traffic: LOCKED
+  3_local_analysis: LOCKED
+  4_business_logic: LOCKED
+  5_reporting: LOCKED
+
+findings_count: 0
+findings_by_severity: {critical: 0, high: 0, medium: 0, low: 0, info: 0}
+current_phase: 1
+time_tracking:
+  phase_1_start: ""
+  phase_1_end: ""
+  # ...through phase_5...
+notes: ""
+```
+
+## Gate Enforcement (MANDATORY before `next`)
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/ttest/scripts"))
+from gate_check import check_gate, print_gate_status
+
+result = check_gate(".", phase=None)
+print_gate_status(result)
+```
+
+## Script Invocation
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/ttest/scripts"))
+import state_manager
+
+workdir = "."
+state_manager.init_state(workdir, "CorpApp", app_type="electron", platform="windows", proxy_port=8080)
+
+state_manager.status(workdir)
+state_manager.advance_phase(workdir)
+state_manager.add_finding(workdir, "TTEST-001", "Hardcoded API key in app.asar", "High", "Secrets", "renderer/config.js")
+state_manager.abandon(workdir, "App removed from scope")
+```
+
+## Finding Template
+
+```markdown
+## [TTEST-{ID}] {Title}
+
+**Severity:** Critical / High / Medium / Low / Info
+**Category:** Secrets / Traffic / Storage / Logic / DLL / Config
+**Component:** `{file path or module within the application}`
+
+### Description
+{What the vulnerability is}
+
+### Reproduction
+{Steps to reproduce — app version, OS, tools used}
+
+### Evidence
+{Screenshot, extracted data, or command output}
+
+### Impact
+{What an attacker gains — data access, code execution, privilege escalation}
+
+### Remediation
+{Fix with priority}
+```
+
+### Cross-Skill Chaining (findings.jsonl)
+
+When recording a finding, append to `./ttest-output/findings.jsonl` for cross-skill consumption:
+
+```python
+import json
+from datetime import datetime
+finding = {
+    "id": "TTEST-{count:03d}",
+    "skill": "ttest",
+    "severity": "{severity}",
+    "type": "{vuln_type}",  # e.g., dll_hijack, hardcoded_secret, license_bypass, insecure_storage, rce_electron
+    "target": "{component_or_file}",
+    "summary": "{one-line description}",
+    "chain_potential": [],  # e.g., ["atest:api_testing", "scode:code_review", "xdev:exploit_dev"]
+    "timestamp": datetime.now().isoformat(),
+    "phase": "{current_phase}",
+    "status": "confirmed"
+}
+with open("./ttest-output/findings.jsonl", "a") as f:
+    f.write(json.dumps(finding) + "\n")
+```

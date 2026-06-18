@@ -289,8 +289,16 @@ droopescan scan drupal -u https://target.com
 joomscan -u https://target.com
 ```
 
-### 6. JavaScript Analysis
+### 6. JavaScript Analysis (includes Source Map Extraction)
 Extract endpoints, secrets, and functionality from client-side code.
+
+**SOURCE MAP CHECK (MANDATORY):** Before analyzing minified JS, check for `.map` files. Append `.map` to every discovered JS bundle URL. Source maps expose the FULL original source code — auth implementations, API configs, crypto functions, business logic. LoanPlatform (June 2026): two source maps (6.1MB + 5.6MB, 848 files) revealed PBKDF2 password hashing implementation, full API URL config (service prefixes), self-registration flow, and session timeout endpoint — none discoverable from the minified bundle alone. Source maps are a **finding** (info disclosure) AND an **attack enabler** (white-box analysis).
+
+**What to extract from source maps:**
+- `sourcesContent` → full original source files
+- Search for: API base URLs, OAuth client IDs/secrets, encryption implementations, hardcoded credentials
+- Auth flow: identify how passwords are hashed/encrypted client-side before transmission
+- Config files (config.js, environment.js): service URLs, feature flags, endpoint mappings
 
 **CRITICAL: Analyze ALL JS files, not just app chunks.** Third-party SDKs (platform-websdk, auth0-spa-js, okta-auth-js, transmit-security) often reveal entire hidden auth layers with different endpoints, error formats, and session handling. These SDKs are typically 100-300KB and contain hardcoded path definitions the main app never references directly.
 
@@ -350,7 +358,24 @@ curl -s https://target.com/static/js/main.*.js | grep -ioE '(api[_-]?key|token|s
 
 ### 6b. Referer-Based Access Control Bypass (Enumeration Technique)
 
-Many APIs enforce Referer checks instead of (or in addition to) token auth. When endpoints return "RefererCheckFailed" or similar, systematically try valid Referers:
+### 6a. SPA Path Prefix Proxy Bypass (MANDATORY when SPA has base path)
+
+**LoanPlatform lesson (Bank Jago, June 2026):** When a SPA serves from a sub-path (e.g., `<base href=/app-jfs/jfs-client/>`), the SPA's reverse proxy may forward API requests placed under that prefix to backend services WITHOUT auth — even when the direct API path is blocked. This turned a 400 (Istio blocked) into 200 (full financial data access) and escalated from "needs auth" to Critical (unauth repayment execution).
+
+**When to test:** ANY SPA that has a non-root base path (check `<base href>` tag or HTML source).
+
+**Procedure:**
+1. Extract SPA base path from HTML: `<base href=/app-jfs/jfs-client/>`
+2. Extract API service prefixes from JS config/source maps (e.g., `loan/v1`, `jfs`, `private`)
+3. For each API path, test via SPA prefix: `{SPA_BASE}/{API_PATH}`
+4. Compare: if direct path returns 400/401 but SPA prefix returns 200 → **auth bypass via proxy**
+5. Test BOTH read (GET) and write (POST) methods on discovered endpoints
+
+**Key indicator:** The direct API path (e.g., `/app-jfs/loan-service/`) returns 400 "Bad Request" from Envoy/Istio (not 401/403 from the app). This means routing is blocked, but the SPA proxy provides an alternate route.
+
+See `references/spa-recon-techniques.md` §"SPA Backend Discovery via Path Prefix Proxying" for full technique.
+
+### 6b. Referer-Based Access Control Bypass (Enumeration Technique)
 
 ```bash
 # Common Referer values to try (derive from tern-site-config, dns-prefetch links, or known frontend URLs)
@@ -506,6 +531,18 @@ curl -sk "https://target.com" | grep -oE '__VIEWSTATE[^"]*"[^"]*"' | head -3
 
 ### 12. Bulk Actuator/Admin Scan (MANDATORY)
 
+**Prometheus URI Extraction → Systematic Unauth Testing (CRITICAL):**
+When /actuator/prometheus is exposed, extract ALL `uri=` labels and test EVERY discovered path without authentication. This is MORE effective than directory brute-force for Spring Boot apps because it reveals the exact registered routes.
+
+**LoanPlatform (June 2026):** Prometheus revealed 50 URI labels. Systematic unauth testing of each found `/user-resources/users/{login}` returning full PII (email, phone, roles) for all 33 users — a High finding invisible to ffuf/gobuster because the path contains a regex pattern (`{login:^[_'.@A-Za-z0-9-]*$}`). Also found `/task-approvals/created-by` leaking all usernames, `/oauth/token_key` exposing JWT public key, and 5.6MB address mapping dump — all unauthenticated.
+
+**Procedure:**
+1. `curl /actuator/prometheus | grep -oE 'uri="[^"]+"' | sort -u` → full route list
+2. For EACH uri: test with GET (no auth) → filter out 401/403/404
+3. Any 200/400/500 response = endpoint is PROCESSING without auth (investigate further)
+4. 400 with validation error = accepts input without auth (potential write access)
+5. Document all unauth-accessible endpoints as findings or attack surface
+
 ```bash
 # Run against ALL live hosts, not just priority targets
 # See references/bulk-actuator-scanning.md for the full script
@@ -648,6 +685,7 @@ curl -sI "https://registry.target.com/v2/" | grep -i "www-authenticate"
 ### Catch-All Response Detection
 - **GCP health endpoints** (e.g., `dev-data-jit.jago.com`) may return `{"ok":true}` for ALL paths — test a random UUID path first to detect catch-all behavior before marking actuator endpoints as "found."
 - **SPA catch-all:** Flutter/React/Angular apps return 200 with fixed-size HTML for all paths. Always check a random path first, note the response size, then use `--exclude-length` in gobuster or `-fs` in ffuf.
+- **SPA proxy prefix bypass (LoanPlatform, June 2026):** When a backend service path returns 400 "Bad Request" from Istio/Envoy (11 bytes, text/plain), the SPA base path may proxy the same requests WITHOUT the routing restriction. Test ALL discovered API paths (from JS/source maps) via the SPA prefix (e.g., `/app/client/api/endpoint` instead of `/app/service/api/endpoint`). Check source maps for empty `baseURL`/`serviceUrl` config — means API calls are relative to SPA base. This bypassed auth on 5,327 financial records + disbursement PII.
 - **Source map false positive:** When `.map` files return the same size as the SPA catch-all, they are NOT real source maps — they are the catch-all HTML. Always verify content-type and first bytes before concluding source maps are exposed. (bitbank.cc lesson: all 10 chunk.js.map files returned 496038 bytes = exact SPA size, content-type text/html.)
 - **Multiple catch-all sizes:** A single target may have DIFFERENT catch-all sizes for different route groups. bitbank.cc returned 40445 for root paths, 9492 for sub-404 paths, and 113446 for /announcement/* paths (client-rendered routes with more content). Test multiple random paths at different depths to map all catch-all patterns before filtering.
 - **CloudFront POST-vs-GET differential:** When CloudFront serves a cacheable-only distribution (S3 origin), GET returns the SPA catch-all for ALL paths but POST returns a CloudFront 403 ("distribution supports only cachable requests") with ~1053 bytes. Use this differential to detect real backend paths: if POST on `/prefix/path` returns 403/1053 while GET returns the SPA catch-all, there IS a backend route configured at that prefix — CloudFront is just blocking non-cacheable methods. The backend likely handles these via a different CloudFront behavior (e.g., origin pointing to an API server). Test the path on other in-scope hosts where the behavior might allow POST.

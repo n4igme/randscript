@@ -1,10 +1,13 @@
 ---
 name: ctest
-version: 1.1.1
+version: 1.2.0
 description: "Cloud and container penetration testing framework with 5 gated phases covering AWS/GCP/Azure IAM, container escape, K8s exploitation, and serverless abuse."
 tags: [cloud, aws, gcp, azure, kubernetes, container, iam, serverless, pentest]
 trigger: "cloud pentest, aws pentest, gcp pentest, azure pentest, kubernetes pentest, container escape, iam escalation, cloud security"
 argument-hint: "<command: start|status|resume|next|report|abort|cleanup>"
+notes:
+  - "v1.2.0: Added Quick Reference, Phase Entry Protocol, discovery loop-back, findings.jsonl procedure, N/A phase guidance. Aligned with ptest/mtest/atest patterns."
+  - "v1.1.1: Pitfalls extracted to references/pitfalls-and-guardrails.md. Abandon heuristics added."
 metadata:
   hermes:
     tags: [cloud, aws, gcp, azure, kubernetes, container, pentest]
@@ -14,6 +17,30 @@ metadata:
 # Cloud & Container Penetration Testing Framework
 
 Structured 5-phase workflow for engagements where cloud infrastructure is the primary target. Covers AWS, GCP, and Azure with dedicated phases for IAM, services, containers, and post-exploitation.
+
+## Quick Reference
+
+```
+Phases:  1.Scope&Discovery → 2.IAM&Access → 3.ServiceExploitation → 4.Container&Orchestration → 5.Reporting
+States:  LOCKED → OPEN → PASSED → N/A (sequential, no skipping)
+Commands: start | status | resume | next | report | abort | cleanup
+
+Key rules:
+  • Scope-type determines approach (External/Authenticated/Internal)
+  • Loop-back: new creds/endpoints from any phase → re-analyze IAM (Phase 2)
+  • Attack path chaining after every phase (individual Low → chained Critical)
+  • N/A phases documented with justification (not skipped silently)
+  • Phase 4 → N/A if no K8s/containers in scope (document why)
+  • Confidence: Confirmed > Probable > Theoretical
+
+Time caps (8-hour engagement):
+  P1: 70min  P2: 120min  P3: 120min  P4: 95min  P5: 75min
+
+Discovery loop-back:
+  • Any phase finding new creds/endpoints → append to discovery-queue.md
+  • At phase exit, drain queue with targeted re-testing before advancing
+  • Prevents "found keys in Phase 3 but never tested IAM scope" pattern
+```
 
 ## Architecture
 
@@ -107,7 +134,9 @@ Create output directory:
 ./ctest-output/
 ├── state.yaml
 ├── scope.md
+├── discovery-queue.md
 ├── findings-log.md
+├── findings.jsonl
 ├── phase1-discovery/
 ├── phase2-iam/
 ├── phase3-services/
@@ -200,6 +229,25 @@ Your approach fundamentally changes based on access level. Before starting Phase
 - Firebase Auth testing: `references/firebase-auth-testing.md` (load when Firebase Auth detected — covers email-link flow, referer bypass, session emulator pattern)
 
 **Usage:** `skill_view(name='ctest', file_path='references/phase1-scope-discovery.md')` when entering that phase.
+
+### Phase Entry Protocol (ALL phases)
+
+When entering ANY phase, before executing techniques:
+1. **Load reference file** — per Phases table above
+2. **Create/verify checklist** — `ctest-output/phase{N}-{name}/checklist.md` must exist with all techniques listed as PENDING
+3. **Record timestamp** — write `phase_N_start` in state.yaml
+
+### Discovery Loop-Back (ALL phases)
+
+When any phase reveals NEW credentials, endpoints, or access paths:
+1. Append to `./ctest-output/discovery-queue.md` with source finding ID
+2. At phase exit, before advancing: drain queue with targeted re-testing
+3. Credential findings → always loop back to Phase 2 IAM analysis
+4. Prevents "found keys in Phase 3 but never tested their IAM scope" pattern
+
+### N/A Phases
+
+If a phase is not applicable (no K8s/containers for Phase 4, no IAM access for Phase 2 in external scope), document justification in state.yaml and mark gateway `N/A`. Never skip silently.
 
 ---
 
@@ -328,10 +376,33 @@ After finding something, check if it unlocks:
 {Specific fix — policy change, configuration update, architecture recommendation}
 ```
 
+### Finding ID Assignment
+
+1. Read `findings_count` from `state.yaml`
+2. Increment by 1 → `CTEST-{count:03d}`
+3. Write updated count back immediately
+4. **Append to `findings.jsonl`** for cross-skill chaining:
+
+```python
+import json
+from datetime import datetime
+finding = {
+    "id": "CTEST-{count:03d}",
+    "skill": "ctest",
+    "severity": "{severity}",
+    "type": "{vuln_type}",  # e.g., iam_escalation, public_bucket, ssrf_metadata, container_escape
+    "target": "{resource_arn_or_uri}",
+    "summary": "{one-line description}",
+    "chain_potential": [],  # e.g., ["ptest:ssrf", "atest:api_testing", "adtest:lateral_movement"]
+    "timestamp": datetime.now().isoformat(),
+    "phase": "{current_phase}",
+    "status": "confirmed"
+}
+with open("./ctest-output/findings.jsonl", "a") as f:
+    f.write(json.dumps(finding) + "\n")
+```
+
 ---
-
-
-
 
 
 
@@ -358,10 +429,9 @@ Key: IMDSv2 needs PUT+token, K8s SA ≠ cluster-admin, terraform.tfstate has pla
 | 4 — Containers | kubectl, docker/crictl | kubeaudit, kube-hunter, trivy |
 | 5 — Reporting | (writing phase) | — |
 
+---
 
-
-
-
+## Effort Allocation
 ---
 
 ## Effort Allocation

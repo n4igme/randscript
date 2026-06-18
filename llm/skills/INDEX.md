@@ -73,11 +73,38 @@ ptest (recon) → mtest (mobile app for API discovery) → atest (API testing) �
 **Source-assisted pentest:**
 scode (find vulns in code) → ptest/atest (validate dynamically) → xdev (if exploit needed)
 
+## Shared Infrastructure
+
+| Path | Purpose |
+|------|---------|
+| `references/findings-jsonl-schema.md` | Cross-skill finding interchange format |
+| `scripts/check_cross_refs.py` | Reference integrity checker |
+| `CHANGELOG.md` | Version history for all skills |
+
 ## Shared Conventions
 
 - Finding IDs: `{SKILL}-{NNN}` (PTEST-001, MTEST-001, ATEST-001, etc.)
 - State tracking: `state.yaml` in `{skill}-output/` directory
 - Gate enforcement: `scripts/gate_check.py` (run before phase advancement)
-- Findings log: `findings.jsonl` for cross-skill chaining
+- Phase Entry Protocol: load reference → record timestamp → phase-specific prep
+- Findings log: `findings.jsonl` for cross-skill chaining (see `references/findings-jsonl-schema.md`)
+- Discovery loop-back: new findings drain at phase exit, may trigger earlier phases
 - Pitfall: Burp MCP output is 100-200KB — always parse via execute_code, never raw in context
 - Pitfall: Max 300 lines per write_file/patch operation
+
+## Skill Versions
+
+| Skill | Version | Phases |
+|-------|---------|--------|
+| ptest | 5.0.0 | 6 |
+| mtest | 4.0.0 | 7 |
+| atest | 1.3.0 | 5 |
+| ctest | 1.2.0 | 5 |
+| adtest | 1.1.0 | 6 |
+| w3hunt | 2.2.0 | 5 |
+| ttest | 1.1.0 | 5 |
+| xdev | 1.1.0 | 5 |
+| scode | 1.2.0 | 5 steps |
+| osint | 1.2.0 | 7 |
+| opsec | 1.2.0 | 6 |
+| retools | 1.1.0 | — (utility) |

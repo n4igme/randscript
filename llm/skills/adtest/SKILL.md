@@ -1,10 +1,13 @@
 ---
 name: adtest
-version: 1.0.0
+version: 1.1.0
 description: "Active Directory penetration testing framework — domain recon, user enumeration, Kerberos attacks, relay/delegation, ADCS abuse, privilege escalation to Domain Admin."
 tags: [active-directory, ad, kerberos, ntlm, windows, internal, pentest]
 trigger: "AD pentest, active directory test, domain pentest, kerberos attack, ntlm relay, internal network pentest, domain controller, ADCS"
 argument-hint: "<command: start|status|resume|next|report|abort|cleanup>"
+notes:
+  - "v1.1.0: Added Phase Entry Protocol, credential-driven discovery loop-back, findings.jsonl procedure, N/A phase guidance. Aligned with skill family patterns."
+  - "v1.0.1: Extracted pitfalls to references/pitfalls.md. Added command procedures, state.yaml schema, gate enforcement, script invocation, finding template."
 metadata:
   hermes:
     tags: [active-directory, ad, kerberos, ntlm, windows, internal, pentest]
@@ -79,6 +82,25 @@ Phase 4: Relay & Delegation → Phase 5: PrivEsc & Lateral → Phase 6: Reportin
 | 5 PrivEsc & Lateral | Domain Admin achieved OR all paths documented as blocked | `references/phase5-privesc-lateral.md` |
 | 6 Reporting | Full attack path documented with evidence | (inline below) |
 
+### Phase Entry Protocol (ALL phases)
+
+When entering ANY phase, before executing techniques:
+1. **Load reference file** — per Phase Routing table above
+2. **Record timestamp** — write `phase_N_start` in state.yaml
+3. **Check credential inventory** — review all creds collected so far, test new ones against current phase's attack paths
+
+### Credential-Driven Discovery Loop-Back (ALL phases)
+
+AD testing constantly discovers new identities. When ANY phase yields a new credential (password, hash, ticket, certificate):
+1. Append to `./adtest-output/phase2-creds/credential-inventory.md` with source phase and method
+2. Immediately test against: Kerberoast (is it an SPN?), delegation (has delegation attributes?), ACL paths (BloodHound shortest paths from this identity)
+3. At phase exit, verify all credentials have been tested against all applicable attack vectors
+4. Prevents "captured relay hash in Phase 4 but never checked if it had delegation" pattern
+
+### N/A Phases
+
+If a phase is not applicable (no Kerberos SPNs for Phase 3, signing enforced everywhere for Phase 4), document justification in state.yaml and mark gateway `N/A`. Never skip silently.
+
 ## Effort Allocation
 
 | Phase | % | 8-hour | 16-hour |
@@ -113,32 +135,7 @@ Phase 4: Relay & Delegation → Phase 5: PrivEsc & Lateral → Phase 6: Reportin
 
 ## Pitfalls
 
-- NEVER spray more than 2 passwords per lockout window — check policy FIRST
-- BloodHound collection with SharpHound triggers AV — use BOF version or Python collector
-- Responder: only poison in authorized subnet — can disrupt production
-- NTLM relay: signing enabled = relay blocked. Check LDAP signing + SMB signing first
-- Mimikatz on modern Windows: needs SeDebugPrivilege + bypass AMSI/ETW + avoid Defender
-- Kerberoast: RC4 tickets crack fast, AES tickets are nearly impossible — prioritize RC4
-- ADCS: ESC1-ESC8 each have different prereqs — Certipy `find` maps them all
-- Golden/Silver tickets: powerful but loud — use for proof, not persistence in pentests
-- Domain trust: child→parent trust is exploitable (SID History) — always check trust relationships
-- GPP passwords: still found in legacy environments — `Get-GPPPassword` or CrackMapExec
-- NTLMRELAYX SEGFAULTS (v0.13.x) — impacket v0.13.1 ntlmrelayx segfaults on some Linux hosts after accepting SMB connection. Fix: `pip3 install impacket==0.10.0`. Always validate coercion with smbserver.py BEFORE setting up relay. Proven workflow: (1) smbserver.py to capture hash → confirms coercion works, (2) kill smbserver, start ntlmrelayx, (3) re-trigger coercion.
-- COERCION VALIDATION — mimikatz `misc::spooler` "Access is denied (can be OK)" DOES trigger auth. Always capture with smbserver.py first to PROVE the callback arrives before investing in relay setup.
-- LDAP SIGNING CHECK FIRST — use `ldap3.Connection` with NTLM auth (no signing). If bind succeeds = signing not required = relay viable. Do this BEFORE any relay attempt.
-- DPAPI DECISION TREE — Domain user masterkey: needs domain backup key (requires DA) OR user's cleartext password. Local user masterkey: needs user's cleartext password (NTLM hash alone insufficient on newer Windows with SHA-512/AES-256 masterkeys). If you can't get the required key within 30 min, SKIP and pursue other escalation paths.
-- findDelegation.py FIRST — run immediately after getting domain creds. Unconstrained delegation on DC is default but constrained delegation on other accounts = instant privesc path.
-- IMPACKET VERSION COMPATIBILITY — v0.10.0 is most stable for relay attacks. v0.13.x segfaults on ntlmrelayx SMB handler. v0.9.24 missing dsinternals (LDAP attack fails). Quick check: `python3 -c "import impacket; print(impacket.__version__)"`. Downgrade: `pip3 install impacket==0.10.0`.
-- PRINTERBUG RELAY TOPOLOGY: SpoolSvc accessible ≠ exploitable. The DC must be able to CONNECT BACK to your listener on port 445. In segmented exam networks, DC may only reach the member server (.8) which already has SMB bound — no relay possible without port conflict resolution.
-- Golden/Silver tickets: powerful but loud — use for proof, not persistence in pentests
-- Domain trust: child→parent trust is exploitable (SID History injection) — always check trust relationships
-- GPP passwords: still found in legacy environments — `Get-GPPPassword` or CrackMapExec
-- SSH TUNNEL FOR IMPACKET CUSTOM PORTS: impacket tools don't support custom SMB ports. Use SSH local port forwarding (e.g., `-L 4445:DC:445`) then connect via Python SMBConnection with `sess_port=4445`. secretsdump.py cannot use custom ports natively — use the Python API directly for custom-port operations.
-- RBCD silent failure: PowerShell SetInfo() on msDS-AllowedToActOnBehalfOfOtherIdentity returns NO ERROR even without write access — always verify with read-back. Machine accounts can't write RBCD on DCs.
-- dacledit.py credential quoting: when password contains $ characters, use single-quotes with \$ escaping in SSH commands (e.g., 'secops.local/Alex:\$mypassword\$12')
-- Server 2022 DPAPI: SHA-512/AES-256 masterkeys resist NTLM-hash-only decryption. Need cleartext password or domain backup key. DPAPI_SYSTEM only decrypts backup portion.
-- Mimikatz vault::cred /patch: works for SYSTEM-context vault credentials without needing DPAPI masterkey decryption. Best quick-win for stored cmdkey credentials.
-- Machine account DCSync: PRODSERVER$ with standard WORKSTATION_TRUST_ACCOUNT (UAC 4096) does NOT have replication rights — error 0x20f7. Only DCs and accounts with explicit DS-Replication-Get-Changes ACE can DCSync.
+> Grouped by category, deduplicated: `references/pitfalls.md`
 
 ## Output Structure
 
@@ -158,4 +155,143 @@ Phase 4: Relay & Delegation → Phase 5: PrivEsc & Lateral → Phase 6: Reportin
 ├── phase5-privesc/
 │   └── attack-path.md
 └── report/
+```
+
+## Command Procedures
+
+**`start`:**
+1. Collect: domain name, DC IP, access level (unauthenticated/domain-user/local-admin), scope type (full/quickwin/adcs-only), authorization proof.
+2. Run `state_manager.init_state(workdir, name, domain, dc_ip, access_level, scope_type)` — creates output dirs + state.yaml + scope.md + findings-log.md + credential-inventory.md.
+3. Verify connectivity: `ldapsearch` or `crackmapexec smb <DC>`.
+4. Begin Phase 1 immediately. Run Quick Wins table if creds provided.
+
+**`status`:** Output current phase, gateway states (6 phases), findings count by severity, credentials collected, time elapsed, abandon check. If no engagement, suggest `start`.
+
+**`resume`:**
+1. Read `state.yaml` to determine active phase.
+2. **Staleness:** >3 days → re-verify credentials still valid. >14 days → re-run BloodHound (AD changes frequently). >30 days → treat as fresh engagement.
+3. Report status and suggest next action.
+
+**`next`:**
+1. Run gate check (see Gate Enforcement below).
+2. If NOT met: list unmet criteria, suggest what to test.
+3. If met: `state_manager.advance_phase(workdir)`.
+4. Override allowed with justification.
+
+**`abort`:**
+1. `state_manager.abandon(workdir, reason)` — marks remaining phases ABANDONED.
+2. Generate partial report if findings exist.
+3. Run cleanup.
+
+**`cleanup`:**
+1. Archive `./adtest-output/` to `adtest-output-{domain}-{date}.tar.gz`.
+2. Remove planted artifacts (tickets, certs, registry keys).
+3. Print summary: findings by severity, creds harvested, phases completed, DA achieved (yes/no).
+
+## State Schema
+
+```yaml
+engagement:
+  name: ""
+  started: ""
+  domain: ""
+  dc_ip: ""
+  access_level: ""  # unauthenticated, domain-user, local-admin
+  scope_type: ""    # full, quickwin, adcs-only
+
+gateways:
+  1_recon_enum: OPEN
+  2_cred_harvest: LOCKED
+  3_kerberos: LOCKED
+  4_relay_delegation: LOCKED
+  5_privesc_lateral: LOCKED
+  6_reporting: LOCKED
+
+findings_count: 0
+findings_by_severity: {critical: 0, high: 0, medium: 0, low: 0, info: 0}
+credentials_count: 0
+current_phase: 1
+time_tracking:
+  phase_1_start: ""
+  phase_1_end: ""
+  # ...through phase_6...
+notes: ""
+```
+
+## Gate Enforcement (MANDATORY before `next`)
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/adtest/scripts"))
+from gate_check import check_gate, print_gate_status
+
+result = check_gate(".", phase=None)
+print_gate_status(result)
+```
+
+## Script Invocation
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/adtest/scripts"))
+import state_manager
+
+workdir = "."
+state_manager.init_state(workdir, "CorpAD", domain="corp.local", dc_ip="10.0.0.1",
+    access_level="domain-user", scope_type="full")
+
+state_manager.status(workdir)
+state_manager.advance_phase(workdir)
+state_manager.add_finding(workdir, "ADTEST-001", "Kerberoastable SPN", "High", "Kerberos", "svc_backup")
+state_manager.add_credential(workdir, "hash", "svc_backup", "Kerberoast")
+state_manager.abandon(workdir, "Client terminated engagement")
+```
+
+## Finding Template
+
+```markdown
+## [ADTEST-{ID}] {Title}
+
+**Severity:** Critical / High / Medium / Low / Info
+**Category:** Recon / Credential / Kerberos / Relay / PrivEsc / Config
+**Target:** `{hostname / account / service}`
+**Attack Path:** {previous hop} → {this finding} → {next potential hop}
+
+### Description
+{What the vulnerability is and why it matters}
+
+### Reproduction
+{Exact commands used — copy-paste reproducible}
+
+### Evidence
+{Hash, ticket, screenshot, or command output}
+
+### Impact
+{What an attacker gains — be specific about privilege level}
+
+### Remediation
+{Fix with priority: immediate / short-term / architectural}
+```
+
+### Cross-Skill Chaining (findings.jsonl)
+
+When recording a finding, append to `./adtest-output/findings.jsonl` for cross-skill consumption:
+
+```python
+import json
+from datetime import datetime
+finding = {
+    "id": "ADTEST-{count:03d}",
+    "skill": "adtest",
+    "severity": "{severity}",
+    "type": "{vuln_type}",  # e.g., kerberoast, delegation_abuse, ntlm_relay, adcs_esc1, dcsync
+    "target": "{hostname_or_account}",
+    "summary": "{one-line description}",
+    "chain_potential": [],  # e.g., ["ptest:web_exploitation", "ctest:azure_ad", "xdev:binary_exploit"]
+    "timestamp": datetime.now().isoformat(),
+    "phase": "{current_phase}",
+    "status": "confirmed"
+}
+with open("./adtest-output/findings.jsonl", "a") as f:
+    f.write(json.dumps(finding) + "\n")
 ```

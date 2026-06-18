@@ -1,94 +1,49 @@
-# Intigriti Platform Recon Reference
+# Intigriti Bug Bounty Recon — Capital.com Engagement Notes
 
-## Scope Data Without Login
+## Target Selection Criteria (Wildcard + Bounty)
 
-When Intigriti login is blocked (bot detection, CAPTCHA), use the community-maintained bounty targets dataset:
+Best targets combine: wildcard scope, high max bounty, financial industry (user's expertise).
 
-```bash
-# Download Intigriti program data
-curl -s "https://raw.githubusercontent.com/arkadiyt/bounty-targets-data/main/data/intigriti_data.json" -o /tmp/intigriti.json
+Recommended from June 2026 enumeration:
+1. **Capital.com** (€15k, 4 wildcards) — fintech trading platform
+2. **Monzo** (£12.5k, *.monzo.com Tier 1) — neobank
+3. **Dropbox** ($15k, 10 wildcards) — widest attack surface
 
-# Parse programs with bounties
-python3 -c "
-import json
-with open('/tmp/intigriti.json') as f:
-    data = json.load(f)
-# Sort by max bounty
-programs = sorted(data, key=lambda p: p.get('max_bounty', {}).get('value', 0), reverse=True)
-for p in programs[:20]:
-    print(f\"{p['name']} | Max: \${p.get('max_bounty', {}).get('value', 0)} | Targets: {len(p.get('targets', {}).get('in_scope', []))} | {p['url']}\")
-"
-```
+## Capital.com Architecture (June 2026)
 
-### Data Structure
-- `id`, `name`, `company_handle`, `handle`, `url`, `status`
-- `confidentiality_level`, `tacRequired`, `twoFactorRequired`
-- `min_bounty.value`, `max_bounty.value`
-- `targets.in_scope[]` — each has `type` (url/wildcard/ios/android/iprange/other), `endpoint`, `description`
-- `targets.out_of_scope[]` — same structure
+### Domains
+- `capital.com` — Cloudflare DNS, Imperva WAF (45.60.76/85.121)
+- `backend-capital.com` — AWS Route53, direct IPs (no WAF on most)
+- `itcapital.io` — AWS Route53, internal (198.18.x.x VPN-gated)
 
-### Intigriti Rules (from memory)
-- @intigriti.me email alias for communication
-- UA: "Intigriti - <username> - <ua>"
-- X-Intigriti-Username header required
-- 5 req/sec max rate limit
-- Login: sinaubib@gmail.com
+### Key Infrastructure
+- Company entity: expcapital (from Java packages)
+- AWS eu-west-1 (Ireland) primary region
+- Spring Boot microservices (callback-service)
+- Kafka for event streaming
+- Sumsub for KYC, AppsFlyer for attribution
+- Simpplr for internal intranet (mycapital.capital.com)
 
-## CDN-Fronted Target Recon Tips
+### Attack Surface (no WAF)
+- demo-api-capital.backend-capital.com (Trading API, swagger)
+- callback.backend-capital.com (PROD webhooks)
+- test-callback.backend-capital.com (TEST webhooks + Prometheus)
 
-When targets are behind Cloudflare/CloudFront:
-1. **Port scanning is useless** — nmap will timeout against CDN IPs
-2. **ffuf/nuclei timeout** — rate limiting + WAF makes automated tools impractical
-3. **Manual targeted curl** is more effective — test specific paths with small batches
-4. **subfinder -all** for comprehensive subdomain enum
-5. **Focus on:** S3 bucket misconfigs, CSP header leaks, exposed API docs, version disclosure
-6. **PD httpx** (~/go/bin/httpx) for live host probing — NOT system httpx (Python httpx CLI)
+### Key Finding: Webhook Signature Bypass
+- All /callback/sumsub/cc/v2/* endpoints accept forged POST without HMAC
+- Content-Type validation (415), body validation (400), route specificity (500)
+- BUT invalid X-Payload-Digest → 200 (signature NOT verified)
+- Multi-jurisdiction: cc works (200), cx/cy/bel/au/mena/uk error (500)
 
-## Common Intigriti Target Patterns
-- `*.pwn.<company>.rocks` — test/staging environments
-- CloudFront + S3 for static assets
-- Vercel/DatoCMS for marketing sites
-- AWS SES for email infrastructure
+### API Auth Flow
+- X-CAP-API-KEY header → POST /session → CST + X-SECURITY-TOKEN
+- Password encryption: RSA PKCS1 (key from /session/encryptionKey)
+- Session timeout: 10 minutes
+- Rate limit: 1 req/sec on /session (inconsistent enforcement ~27%)
 
-## DigitalOcean Engagement Lessons (2026-05-27)
+### GitHub (capital-com-sv org)
+- open-api-examples, capital-api-postman, api-java-samples, capital-mcp
+- Postman collection has demo + live environment files
 
-**Program:** https://www.intigriti.com/programs/digitalocean/digitalocean/detail
-**Max bounty:** $10,000 | **Scope:** *.digitalocean.com, *.snapshooter.com, api, cloud, metadata (169.254.169.254), GitHub repos
-
-**What worked:**
-- S3 bucket listing on `repos-droplet.digitalocean.com` and `repos.insights.digitalocean.com` (open listing, no write)
-- GenAI Agent API OpenAPI spec exposed at `agent-*.ondigitalocean.app/openapi.json`
-- CSP header on `cloud.digitalocean.com` leaks extensive internal infrastructure (localdev, staging, sentry DSN)
-- **Stripe webhook signature bypass on app.snapshooter.com** — highest-value finding (High, CWE-345)
-- hackathon-tracker JWT verbose errors reveal library (jsonwebtoken)
-
-**What didn't work:**
-- JWT brute-force (500 secrets from SecLists) — secret is strong
-- GenAI API auth bypass — properly gated (403)
-- Snapshooter Laravel debug tools (telescope, ignition, log-viewer) — all 404
-- Registration on Snapshooter — needs email verification, can't get authenticated session
-- GlobalProtect VPN (clienteng-*.digitalocean.com) — version obfuscated, no exploitable CVE
-- MCP subdomains — all redirect to docs
-- Open redirect on cloud.digitalocean.com/login?next= — renders page, doesn't redirect
-- DO API CORS `*` — no credentials allowed, not exploitable
-
-**Key insight:** For heavily-Cloudflare'd targets, the highest ROI is finding subsidiary/acquired apps (Snapshooter) with weaker security posture. Main DO infrastructure is well-hardened. Authenticated testing (DO account + Snapshooter verified email) needed for deeper findings.
-
-**Out-of-scope traps:**
-- `*.ondigitalocean.app` — customer resources (OOS)
-- `*.digitaloceanspaces.com` — customer resources (OOS)
-- `*.db.ondigitalocean.com` — customer resources (OOS)
-- `registry.digitalocean.com/*` — customer resources (OOS)
-- 18 specific subdomains listed as OOS (anchor, brand, deploy, email, events, etc.)
-
-## Intigriti XSS Challenges
-
-Monthly challenges at `challenge-MMDD.intigriti.io`. Pattern:
-- Iframe embeds `/challenge` page
-- Must pop `alert()` (or `alert`1`` via tagged template)
-- No self-XSS, no MiTM, max 1 click from victim
-- Must work in latest Chrome
-- Report on Intigriti platform with PoC URL + explanation
-
-## Reference Files
-- `references/xss-filter-bypass-techniques.md` — XSS bypass: char-restricted, signature-blocked, auto-fire vectors
+### httpx (ProjectDiscovery) vs httpx (Python)
+On this macOS system, `/opt/homebrew/bin/httpx` is Python httpx (HTTP client library CLI), NOT ProjectDiscovery's httpx scanner. For batch HTTP probing, use Python concurrent.futures with curl subprocess instead.

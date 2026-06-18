@@ -32,6 +32,8 @@ Application-layer enumeration (directories, APIs, parameters) belongs in Phase 3
 
 #### 0a. Pattern-Based Permutation Brute-Force
 
+**VPN/Internal K8s targets (MANDATORY — do NOT skip):** When the target is behind VPN with a private DNS resolver (e.g., 169.254.169.254), DNS brute-force IS possible — use `dig +short {sub}.target.domain` against the VPN resolver. The fact that public resolvers return NXDOMAIN does NOT mean brute-force is impossible. LoanPlatform (June 2026): initially skipped all DNS expansion as "not possible" for VPN-gated domain. User caught the gap — 100+ permutations were then tested via VPN DNS (all NXDOMAIN, but the technique was valid and necessary for completeness). Also test vhost enumeration with `--resolve` against the ingress IP.
+
 After Phase 1 reveals naming patterns, build a custom wordlist and brute-force variations:
 
 ```bash
@@ -543,6 +545,26 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=30) as ex:
     results = [r for r in ex.map(resolve, subs) if r]
 ```
 This is 3-5x faster than sequential and actually works cross-platform.
+
+## Pitfall: VPN/Internal DNS — Never Skip DNS Expansion
+
+**Problem (LoanPlatform, June 2026):** Phase 2 DNS expansion (0a, 0b, 0c) was marked SKIPPED with reasoning "Internal K8s single target, VPN DNS — no public DNS brute-force possible." User caught the gap at review.
+
+**Why it's wrong:** VPN-gated targets with internal DNS resolvers (169.254.169.254 or custom) CAN be brute-forced — just use `dig +short {sub}.target.com` which goes through the VPN resolver. K8s ingress vhost enumeration via `--resolve` is also valid even when results are all 404 (documents strict routing rules).
+
+**Fix:** Always execute DNS expansion techniques for internal targets:
+```bash
+# Works via VPN DNS resolver
+for svc in api admin auth grafana prometheus loan scoring kyc; do
+  ip=$(dig +short "stg-${svc}.target.io" 2>/dev/null | head -1)
+  [ -n "$ip" ] && echo "[+] stg-${svc}.target.io -> $ip"
+done
+
+# VHost against K8s ingress (document even negative results)
+curl -sk --resolve "stg-test.target.io:443:10.x.x.x" "https://stg-test.target.io/"
+```
+
+Mark DONE (no new hosts) rather than SKIPPED when techniques are executed but yield nothing.
 
 ## Pitfall: Incomplete live-hosts.txt
 

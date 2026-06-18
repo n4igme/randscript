@@ -573,6 +573,27 @@ curl -s "https://api.github.com/repos/<org>/<tool-name>" | grep -q "Not Found" &
 - Internal-only tools (not on GitHub) are higher-value findings when exposed
 - Version history in open repos enables targeted CVE research
 
+## Prometheus URI → Immediate Unauth Testing (when actuator found in P1)
+
+When `/actuator/prometheus` is discovered during Phase 1 (from JS bundle analysis or path probing), extract URI labels and immediately test ALL discovered paths without authentication. Don't defer to Phase 3 — this yields High-severity findings early.
+
+```bash
+# Extract all URI paths from Prometheus metrics
+curl -sk "https://target/actuator/prometheus" | grep -oE 'uri="[^"]+"' | sort -u
+
+# For each URI, test unauth access
+for uri in $(curl -sk "https://target/actuator/prometheus" | grep -oE 'uri="[^"]+' | sed 's/uri="//' | sort -u); do
+  code=$(curl -sk -o /dev/null -w "%{http_code}" "https://target${uri}" 2>/dev/null)
+  [ "$code" != "401" ] && [ "$code" != "403" ] && [ "$code" != "404" ] && echo "[+] UNAUTH: ${uri} -> ${code}"
+done
+```
+
+**LoanPlatform (June 2026):** Prometheus had 50+ URI labels. Batch unauth testing revealed `/user-resources/users/{login}` returning full PII (emails, phones, roles) for 33 users — a High finding invisible to path fuzzing because the endpoint needs a known username in the URL path. Also found `/task-approvals/created-by` leaking the username list needed to exploit it.
+
+**Key pattern:** Prometheus URI labels + username leak endpoint = chained user enumeration + PII exposure.
+
+---
+
 ## Env-Prefix Quick-Win Check (MANDATORY before Phase 2)
 
 Before transitioning to Phase 2, scan ALL discovered subdomains for environment indicators and immediately generate prod equivalents. This is a 5-minute check that catches forgotten production assets.

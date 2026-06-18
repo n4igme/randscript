@@ -1,5 +1,34 @@
 # SPA Recon Techniques
 
+## SPA Backend Discovery via Path Prefix Proxying
+
+### JFS-Client Proxy Pattern (Bank Jago, June 2026)
+
+When a Vue/React/Angular SPA serves from a specific path prefix (e.g., `/app-jfs/jfs-client/`), the same prefix may proxy API requests to backend services WITHOUT authentication — even when the direct backend path (e.g., `/app-jfs/loan-service/`) returns 400/401.
+
+**Detection method:**
+1. Identify SPA base path from HTML: `<base href=/app-jfs/jfs-client/>`
+2. Extract API paths from JS source maps or bundles (e.g., `loan/v1/loans`, `jfs/disbursement/{id}`)
+3. Prepend the SPA base path: `/app-jfs/jfs-client/loan/v1/loans`
+4. Compare response: if SPA prefix returns 200/500 while direct path returns 400 → proxy bypass
+
+**Why this works:** The SPA's nginx/Istio routing forwards ALL requests under the SPA prefix to the backend gateway without the auth middleware that protects the direct API path.
+
+**LoanPlatform results:**
+- `/app-jfs/loan-service/loans` → 400 (Istio blocks)
+- `/app-jfs/jfs-client/jfs/batch-monitoring/search` → 200 (5,327 records)
+- `/app-jfs/jfs-client/jfs/repayments/execute` → 200 SUCCESS (Critical — financial write)
+- `/app-jfs/jfs-client/jfs/file-security/generate-key` → 200 (PGP key generated)
+
+**Checklist when SPA prefix proxy is found:**
+1. Test ALL JS-discovered paths via the SPA prefix
+2. Test both GET and POST methods
+3. Test `/private/*` paths (often exist alongside `/jfs/*` or `/api/*`)
+4. Test `foundation/system-params/*` for config endpoints
+5. Note: some proxies only forward GET (POST/PUT/DELETE = connection reset)
+
+---
+
 ## Pitfall: SPA Catch-All Detection
 
 When probing web hosts, SPAs (React/Vue/Angular) serve the same index.html for ALL paths via frontend routing. This means:

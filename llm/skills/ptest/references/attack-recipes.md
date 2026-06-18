@@ -592,6 +592,27 @@ print(r2.text)
 
 ---
 
+## RECIPE: SPA Proxy Path Prefix Bypass (LoanPlatform JFS, June 2026)
+
+**TRIGGER:** Target has SPA at path prefix (e.g., `/app/client/`) + separate API service at another prefix (e.g., `/app/service/`). API service returns 400/401 for direct access. Istio/Envoy mesh routing.
+
+**TECHNIQUE:**
+1. Find SPA base path and JS config (source maps, meta tags, webpack config)
+2. Identify relative API URL patterns: `API_LOAN: {BASE_URL: 'loan/v1'}`, `API_JFS: {BASE_URL: 'jfs'}`
+3. Call API via SPA prefix: `GET /{spa-path}/{api-base}/{endpoint}` instead of `GET /{service-path}/{endpoint}`
+4. If GET works unauth → test POST for write actions (financial operations!)
+
+**WHY IT WORKS:** SPA proxy (nginx/Istio) forwards AJAX calls to backend without enforcing auth. Proxy trusts client-side token handling. Direct service path has Istio routing rules rejecting requests missing auth headers.
+
+**DISCOVERY CLUES:**
+- Service returns 400 "Bad Request" (11 bytes, text/plain from Envoy) — NOT 401/403
+- SPA `<meta name=base_url content="">` = relative paths
+- Source maps reveal URL config objects
+
+**YIELD:** LoanPlatform (June 2026): `/app-jfs/loan-service/` → 400 blocked. `/app-jfs/jfs-client/jfs/` → 200 unauth. Result: 5,327 financial records, repayment execution (Critical), PGP key gen (High), 115-field PII IDOR, 13 business partners.
+
+---
+
 ## RECIPE: DOM XSS via Client-Side Cipher + innerHTML Sink
 
 **TRIGGER:** App uses `innerHTML` to render input AFTER a client-side transformation (cipher, encoding). If transformation preserves `<>()=;` while scrambling alphanumerics, XSS is achievable.
