@@ -12,13 +12,16 @@ sc1-recon → sc2-threat-model → sc3-vuln-scan → sc4-validate → sc5-report
 |------|-------|-------------|--------|
 | 1 | `sc1-recon` | Map codebase structure, entry points, data flows | `assessment/recon.md` |
 | 2 | `sc2-threat-model` | STRIDE analysis, attack trees, priority targets | `assessment/threat-model.md` |
-| 3 | `sc3-vuln-scan` | Orchestrate 28 focused vulnerability scanners | `assessment/vulnerabilities.md` |
+| 3 | `sc3-vuln-scan` | Orchestrate 33 focused vulnerability scanners | `assessment/vulnerabilities.md` |
 | 4 | `sc4-validate` | Re-read code, trace data flows, eliminate false positives | `assessment/validated-vulnerabilities.md` |
 | 5 | `sc5-report` | Professional report with CVSS, remediation, roadmap | `assessment/bug-bounty-report.md` |
 
 ## Quick Start
 
 ```bash
+# Quick 30-min triage (decides if full assessment is needed)
+/skill sc0-quick-review
+
 # Full assessment (run in target repo directory)
 /skill sc1-recon
 /skill sc2-threat-model
@@ -68,7 +71,7 @@ sc1-recon → sc2-threat-model → sc3-vuln-scan → sc4-validate → sc5-report
 | `vuln-web3-l2` | L2 bridges, sequencer, cross-domain |
 | `vuln-web3-intents` | Solver protocols, Dutch auctions |
 
-Shared Foundry PoC templates: `vuln-web3-modern`
+Shared Foundry PoC templates: `web3-poc-templates`
 
 ### Systems & Infrastructure (3x-a–3x-c)
 
@@ -77,6 +80,16 @@ Shared Foundry PoC templates: `vuln-web3-modern`
 | `vuln-dos` | ReDoS, algorithmic complexity, resource exhaustion |
 | `vuln-memory` | Buffer overflow, use-after-free (C/C++/Rust) |
 | `vuln-infra` | Terraform, Docker, K8s, CI/CD, Helm |
+
+### Platform-Specific (3p-a–3p-e)
+
+| Skill | Focus |
+|-------|-------|
+| `vuln-nodejs` | path.join traversal, Zip Slip, require RCE, prototype pollution |
+| `vuln-spring-boot` | Actuator, @PreAuthorize gaps, SpEL injection, mass assignment |
+| `vuln-custom-crypto` | Insecure PRNG, homegrown hashing, hardcoded keys, timing |
+| `vuln-mobile-code` | Android/iOS secrets, insecure storage, WebView, cert pinning |
+| `vuln-deployment-security` | Istio AuthorizationPolicy, mTLS, NetworkPolicy, Helm |
 
 ## Key Features
 

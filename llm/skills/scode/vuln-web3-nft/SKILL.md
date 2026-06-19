@@ -1,6 +1,6 @@
 ---
 name: vuln-web3-nft
-description: "Step 3r of bug bounty workflow. Scan for NFT-specific vulnerabilities (metadata, randomness, royalty bypass). Appends to vulnerabilities.md."
+description: "Scan for NFT-specific vulnerabilities (metadata, randomness, royalty bypass). Appends to vulnerabilities.md."
 allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Write
 argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
 ---

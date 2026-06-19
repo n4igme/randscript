@@ -1,6 +1,6 @@
 ---
 name: vuln-web3-intents
-description: "Step 3w-l of bug bounty workflow. Scan for intent/solver protocol vulnerabilities (UniswapX, Dutch auctions, cross-chain intents). Appends to vulnerabilities.md."
+description: "Scan for intent/solver protocol vulnerabilities (UniswapX, Dutch auctions, cross-chain intents). Appends to vulnerabilities.md."
 allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Write
 argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
 ---

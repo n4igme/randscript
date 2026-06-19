@@ -1,6 +1,6 @@
 ---
 name: vuln-web3-l2
-description: "Step 3w-k of bug bounty workflow. Scan for L2/Rollup vulnerabilities (bridges, sequencer, cross-domain messaging). Appends to vulnerabilities.md."
+description: "Scan for L2/Rollup vulnerabilities (bridges, sequencer, cross-domain messaging). Appends to vulnerabilities.md."
 allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Write
 argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
 ---

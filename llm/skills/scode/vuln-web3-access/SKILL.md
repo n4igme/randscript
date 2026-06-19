@@ -1,6 +1,6 @@
 ---
 name: vuln-web3-access
-description: "Step 3n-iii of bug bounty workflow. Scan for access control and proxy/upgradeability vulnerabilities in smart contracts. Appends to vulnerabilities.md."
+description: "Scan for access control and proxy/upgradeability vulnerabilities in smart contracts. Appends to vulnerabilities.md."
 allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Write
 argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
 ---

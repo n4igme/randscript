@@ -1,3 +1,10 @@
+---
+name: vuln-web3-arithmetic
+description: "Scan for integer overflow/underflow, precision loss, type truncation, and ERC-4626 vault inflation. Appends to vulnerabilities.md."
+allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Write
+argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
+---
+
 # Bug Bounty — Step 3n: Integer Overflow/Underflow & Precision Loss
 
 Scan for numeric safety issues — overflow, underflow, truncation, and precision loss in arithmetic operations.

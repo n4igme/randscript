@@ -60,6 +60,8 @@ Rank areas by:
 3. **Complexity** — simple exploitation > multi-step chains
 4. **Data sensitivity** — PII/financial > general user data > public data
 
+**Stop condition**: Cap the Priority Targets table at **15 entries**. If more exist, note "N additional lower-priority targets omitted — sc3 scanners will discover them if exploitable." This prevents the threat model from consuming excessive context on large codebases.
+
 ## Output
 
 Save to `./assessment/threat-model.md` (create the `assessment/` directory if it doesn't exist):

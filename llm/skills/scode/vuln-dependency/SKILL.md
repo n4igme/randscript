@@ -1,6 +1,6 @@
 ---
 name: vuln-dependency
-description: "Step 3l of bug bounty workflow. Scan for dependency & supply chain vulnerabilities (known CVEs, dependency confusion, outdated packages). Appends to vulnerabilities.md."
+description: "Scan for dependency & supply chain vulnerabilities (known CVEs, dependency confusion, outdated packages). Appends to vulnerabilities.md."
 allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Bash(npm *) Bash(pip *) Bash(yarn *) Bash(pnpm *) Write
 argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
 ---

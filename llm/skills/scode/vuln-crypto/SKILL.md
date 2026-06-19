@@ -1,6 +1,6 @@
 ---
 name: vuln-crypto
-description: "Step 3i of bug bounty workflow. Scan for cryptographic failure vulnerabilities (weak algorithms, key management, TLS issues). Appends to vulnerabilities.md."
+description: "Scan for cryptographic failure vulnerabilities (weak algorithms, key management, TLS issues). Appends to vulnerabilities.md."
 allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Write
 argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
 ---

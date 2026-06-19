@@ -41,6 +41,7 @@ Do NOT rely on the snippet from vulnerabilities.md alone. Go back to the actual 
 - Does the code path require preconditions an attacker can't easily meet?
 - **Can the prerequisite state actually exist?** For workflow bypass findings, trace the data lifecycle: can the "vulnerable" state (e.g., an unpaid order with an invitation) actually be reached given how other endpoints create/modify that data? A missing check is NOT a vulnerability if the precondition is enforced elsewhere in the flow.
 - **Does the rendering framework auto-escape?** For XSS findings in React/Vue/Angular, verify the exact rendering method. JSX `{value}` auto-escapes — only `dangerouslySetInnerHTML`/`v-html`/`[innerHTML]` are true sinks.
+- **Check for fix migrations**: Before confirming any database-layer finding, search for SQL files with "fix", "patch", or "migration" in the name that may have already addressed the issue. Many codebases apply schema changes incrementally — the vulnerability may exist in the original schema but be patched by a later migration (e.g., `fix-content-access-rls.sql` overriding an overly permissive `USING(true)` policy from the base schema). Read all relevant migration/fix files before marking a DB finding as confirmed.
 
 ### 2. Trace Full Data Flow
 
@@ -82,6 +83,7 @@ For each confirmed finding, answer:
 - What exact request/payload would exploit it?
 - Are there rate limits, WAF rules, or other runtime controls that would block exploitation?
 - Is the vulnerable endpoint deployed/enabled in production?
+- **For Supabase/Firebase/RLS-based apps**: Does the vulnerable function use the **admin/service-role client** (bypasses RLS) or the **user-scoped client** (RLS enforced)? A missing app-level auth check is NOT a vulnerability if the user-scoped client is used and RLS correctly restricts the operation. Conversely, any function using the admin client without proper authorization IS a vulnerability regardless of RLS.
 
 ### 4. Re-assess Severity
 

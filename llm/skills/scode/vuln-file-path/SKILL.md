@@ -1,6 +1,6 @@
 ---
 name: vuln-file-path
-description: "Step 3j of bug bounty workflow. Scan for file upload & path traversal vulnerabilities (unrestricted upload, directory traversal). Appends to vulnerabilities.md."
+description: "Scan for file upload & path traversal vulnerabilities (unrestricted upload, directory traversal). Appends to vulnerabilities.md."
 allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Write
 argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
 ---

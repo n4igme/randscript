@@ -1,6 +1,6 @@
 ---
 name: vuln-web3-aa
-description: "Step 3w-j of bug bounty workflow. Scan for Account Abstraction (ERC-4337) vulnerabilities (paymasters, bundlers, smart accounts). Appends to vulnerabilities.md."
+description: "Scan for Account Abstraction (ERC-4337) vulnerabilities (paymasters, bundlers, smart accounts). Appends to vulnerabilities.md."
 allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Write
 argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
 ---

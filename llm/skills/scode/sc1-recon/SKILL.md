@@ -38,51 +38,28 @@ If no scope is defined (small codebase), scan everything. The scope definition p
 
 ### 0. Automated Pre-Scan (run before manual review)
 
-Check tool availability first, then run whatever is installed. Missing tools are fine — they're supplementary.
-
 ```bash
-# Create assessment directory
 mkdir -p assessment
-
-# Check which tools are available and run them
-if command -v gitleaks &>/dev/null; then
-  gitleaks detect --source . --report-path assessment/gitleaks.json 2>/dev/null && echo "✓ gitleaks complete" || echo "⚠ gitleaks found issues (see report)"
-elif command -v trufflehog &>/dev/null; then
-  trufflehog filesystem . --json > assessment/trufflehog.json 2>/dev/null && echo "✓ trufflehog complete"
-else
-  echo "⊘ Skipping secret scan (install gitleaks or trufflehog)"
-fi
-
-# Dependency vulnerabilities (run whichever applies)
-[ -f package-lock.json ] && command -v npm &>/dev/null && npm audit --json > assessment/npm-audit.json 2>/dev/null && echo "✓ npm audit complete"
-[ -f requirements.txt ] && command -v pip-audit &>/dev/null && pip-audit --format json > assessment/pip-audit.json 2>/dev/null && echo "✓ pip-audit complete"
-[ -f Cargo.lock ] && command -v cargo-audit &>/dev/null && cargo audit --json > assessment/cargo-audit.json 2>/dev/null && echo "✓ cargo audit complete"
-[ -f Gemfile.lock ] && command -v bundle-audit &>/dev/null && bundle audit check --format json > assessment/bundle-audit.json 2>/dev/null && echo "✓ bundle-audit complete"
-
-# Semgrep (broad pattern matching)
-if command -v semgrep &>/dev/null; then
-  semgrep --config auto --json -o assessment/semgrep.json . 2>/dev/null && echo "✓ semgrep complete"
-else
-  echo "⊘ Skipping semgrep (install: pip install semgrep)"
-fi
-
-# IaC scanning (if Terraform/K8s/Docker present)
-if command -v checkov &>/dev/null; then
-  checkov -d . --quiet --compact --output json > assessment/checkov.json 2>/dev/null && echo "✓ checkov complete"
-else
-  echo "⊘ Skipping IaC scan (install: pip install checkov)"
-fi
 ```
 
-If no tools are available, proceed with manual analysis — the tools accelerate but don't replace code reading.
+Run any available security tools and save results to `assessment/`. Skip unavailable tools without commentary:
+
+| Tool | Command | Output |
+|------|---------|--------|
+| Secret scan | `gitleaks detect --source . --report-path assessment/gitleaks.json` (or trufflehog) | assessment/gitleaks.json |
+| Dependency audit | `npm audit --json` / `pip-audit --format json` / `cargo audit --json` | assessment/*-audit.json |
+| Pattern matching | `semgrep --config auto --json -o assessment/semgrep.json .` | assessment/semgrep.json |
+| IaC scan | `checkov -d . --quiet --compact --output json` | assessment/checkov.json |
+
+Summarize results in ≤3 lines per tool. If no tools are available, proceed with manual analysis.
 
 Feed results into the recon report:
-- Secrets found → note in "Sensitive Assets" section
-- Dependency CVEs → note in "Technology Stack" with affected packages
-- Semgrep hits → use as starting points for entry point mapping
-- IaC issues → note in "Attack Surface Notes"
+- Secrets found → "Sensitive Assets" section
+- Dependency CVEs → "Technology Stack" with affected packages
+- Semgrep hits → starting points for entry point mapping
+- IaC issues → "Attack Surface Notes"
 
-These tools are **supplementary** — they don't replace manual code reading. Many findings will be false positives. The value is speed: they highlight areas to focus manual review on.
+These tools are **supplementary** — they don't replace manual code reading.
 
 ### 1. Technology Stack
 
@@ -196,6 +173,16 @@ Save the reconnaissance report to `./assessment/recon.md` (create the `assessmen
 | User Registration | POST /api/register, GET /api/verify-email | Create → Verify | Email service | PII |
 | Order Management | POST /api/orders, GET /api/orders/:id, PUT /api/orders/:id/cancel | Create → Read → Cancel | Payment, Inventory | Financial |
 ...
+
+## Database Access Control
+
+| Table | RLS Enabled | SELECT Policy | Write Policies | Issues |
+|-------|-------------|---------------|----------------|--------|
+| users/profiles | Yes | USING(true) ⚠️ | Own row only | Overly permissive SELECT |
+| orders | Yes | Own orders only | Own orders only | — |
+...
+
+{For each table with RLS: read and document the actual policy expressions. Note any USING(true), OR true, or missing policies. This section is critical — RLS misconfigurations are a top source of High-severity findings.}
 
 ## Sensitive Assets
 

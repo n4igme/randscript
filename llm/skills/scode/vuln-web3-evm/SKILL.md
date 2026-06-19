@@ -1,3 +1,10 @@
+---
+name: vuln-web3-evm
+description: "Scan for low-level EVM vulnerabilities (storage slots, returnbomb, dirty bits, gas griefing, ABI encoding). Appends to vulnerabilities.md."
+allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Write
+argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
+---
+
 # Bug Bounty — Step 3s: Low-Level EVM & Assembly Vulnerabilities
 
 Scan for vulnerabilities in inline assembly, raw storage manipulation, and EVM-specific edge cases.

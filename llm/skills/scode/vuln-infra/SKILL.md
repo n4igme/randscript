@@ -1,6 +1,6 @@
 ---
 name: vuln-infra
-description: "Step 3t of bug bounty workflow. Scan for infrastructure-as-code vulnerabilities (Terraform, Dockerfile, K8s, CI/CD, Helm). Appends to vulnerabilities.md."
+description: "Scan for infrastructure-as-code vulnerabilities (Terraform, Dockerfile, K8s, CI/CD, Helm). Appends to vulnerabilities.md."
 allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Write
 argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
 ---

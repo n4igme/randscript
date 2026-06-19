@@ -1,6 +1,6 @@
 ---
 name: vuln-data-exposure
-description: "Step 3c of bug bounty workflow. Scan for sensitive data exposure (secrets, verbose errors, logging PII, missing encryption). Appends to vulnerabilities.md."
+description: "Scan for sensitive data exposure (secrets, verbose errors, logging PII, missing encryption). Appends to vulnerabilities.md."
 allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Write
 argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
 ---

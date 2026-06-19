@@ -1,6 +1,6 @@
 ---
 name: vuln-misconfig
-description: "Step 3f of bug bounty workflow. Scan for security misconfigurations (CORS, CSP, debug mode, default creds). Appends to vulnerabilities.md."
+description: "Scan for security misconfigurations (CORS, CSP, debug mode, default creds). Appends to vulnerabilities.md."
 allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Write
 argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
 ---

@@ -1,3 +1,10 @@
+---
+name: vuln-web3-mev
+description: "Scan for front-running/MEV, sandwich attacks, flash loan exploits, and oracle manipulation. Appends to vulnerabilities.md."
+allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Write
+argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
+---
+
 # Bug Bounty — Step 3n: Front-Running/MEV & Flash Loan/Oracle Manipulation
 
 Scan for transaction ordering exploits and economic manipulation via flash loans and oracle attacks.

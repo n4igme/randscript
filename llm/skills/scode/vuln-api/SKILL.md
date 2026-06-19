@@ -1,6 +1,6 @@
 ---
 name: vuln-api
-description: "Step 3m of bug bounty workflow. Scan for API-specific vulnerabilities (mass assignment, GraphQL, rate limiting, versioning). Appends to vulnerabilities.md."
+description: "Scan for API-specific vulnerabilities (mass assignment, GraphQL, rate limiting, versioning). Appends to vulnerabilities.md."
 allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Write
 argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
 ---

@@ -1,6 +1,6 @@
 ---
-name: vuln-web3-modern
-description: "Shared Foundry PoC templates for modern DeFi scanners. See vuln-web3-restaking, vuln-web3-aa, vuln-web3-l2, vuln-web3-intents for focused scanning."
+name: web3-poc-templates
+description: "Shared Foundry PoC templates for Web3 vulnerability scanners. Reference for writing exploit proofs, not a scanner itself."
 allowed-tools: Read Write
 argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
 ---

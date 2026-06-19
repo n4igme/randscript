@@ -2,6 +2,30 @@
 
 All notable changes to the bug bounty skills are documented here.
 
+## [2025-06-19] — Architecture Consolidation
+
+### Added
+- **sc0-quick-review** — Standalone 30-min security triage skill
+- **vuln-nodejs** — Node.js-specific scanner (path.join traversal, Zip Slip, require RCE, prototype pollution, vm escape)
+- **vuln-spring-boot** — Spring Boot scanner (actuator, @PreAuthorize gaps, SpEL, mass assignment)
+- **vuln-custom-crypto** — Custom cryptography scanner (insecure PRNG, homegrown hashing, timing attacks, OTP)
+- **vuln-mobile-code** — Mobile app scanner (Android/iOS/RN/Flutter secrets, storage, WebView, cert pinning)
+- **vuln-deployment-security** — Deployment config scanner (Istio, mTLS, NetworkPolicy, Helm)
+- **references/** — 13 cross-cutting knowledge files (PoC cookbook, decision trees, exploit DB, etc.)
+- **sc3-vuln-scan/scripts/scan_progress.py** — Fixed progress tracker (33 real scanners, no phantom entries)
+
+### Removed
+- **scode/** orchestrator — redundant wrapper with broken Python scripts merged into standalone skills
+- 25 duplicate reference files that were subsets of standalone SKILL.md content
+
+### Changed
+- Scanner count: 28 → 33 (5 new platform-specific scanners)
+- Removed step numbers from scanner descriptions (maintenance-prone, not used by Kiro)
+- Fixed `vuln-web3-modern` file permissions (600 → 644)
+- sc3-vuln-scan updated with new scanner tables, skip rules, and parallelism groups
+
+---
+
 ## [2025-05-28] — Structural Improvements
 
 ### Added

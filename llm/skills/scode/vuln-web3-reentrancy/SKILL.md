@@ -1,3 +1,10 @@
+---
+name: vuln-web3-reentrancy
+description: "Scan for reentrancy vulnerabilities (classic, cross-function, cross-contract, read-only, unchecked calls, delegatecall). Appends to vulnerabilities.md."
+allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Write
+argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
+---
+
 # Bug Bounty — Step 3n: Reentrancy & Unchecked External Calls
 
 Scan for unsafe external call patterns — reentrancy attacks and unchecked call return values.

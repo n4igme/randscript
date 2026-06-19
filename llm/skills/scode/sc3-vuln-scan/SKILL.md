@@ -54,6 +54,16 @@ This step is split into focused sub-scanners. Run them in order (or pick specifi
 | 3x-b | `vuln-memory` | Buffer overflow, use-after-free, format strings (C/C++/Rust/native) |
 | 3x-c | `vuln-infra` | Terraform, Dockerfile, K8s manifests, CI/CD pipelines, Helm charts |
 
+### Platform-Specific Scanners (3p-a–3p-e)
+
+| Step | Skill | Focus |
+|------|-------|-------|
+| 3p-a | `vuln-nodejs` | path.join traversal, Zip Slip, dynamic require, prototype pollution, vm escape |
+| 3p-b | `vuln-spring-boot` | Actuator exposure, missing @PreAuthorize, SpEL injection, mass assignment |
+| 3p-c | `vuln-custom-crypto` | Insecure PRNG, homegrown hashing, hardcoded keys, timing attacks |
+| 3p-d | `vuln-mobile-code` | Android/iOS hardcoded secrets, insecure storage, WebView, cert pinning |
+| 3p-e | `vuln-deployment-security` | Istio AuthorizationPolicy, mTLS, NetworkPolicy, Helm misconfig |
+
 ## Parallelism Guidance
 
 Scanners within the same group are independent and can run in parallel. Scanners across groups are also independent unless noted.
@@ -70,8 +80,8 @@ Scanners within the same group are independent and can run in parallel. Scanners
 **Parallel Group D** (all Web3 scanners — independent of each other):
 - All `vuln-web3-*` scanners can run in parallel
 
-**Parallel Group E** (systems — independent of each other):
-- `vuln-dos`, `vuln-memory`, `vuln-infra`
+**Parallel Group E** (systems + platform-specific — independent of each other):
+- `vuln-dos`, `vuln-memory`, `vuln-infra`, `vuln-nodejs`, `vuln-spring-boot`, `vuln-custom-crypto`, `vuln-mobile-code`, `vuln-deployment-security`
 
 Groups A–E are all independent of each other. The only ordering constraint is: run `sc1-recon` and `sc2-threat-model` before any scanner.
 
@@ -96,6 +106,7 @@ Scale scanner effort to codebase size. These are guidelines — spend more time 
 - All priority targets from threat model have been checked
 - No new patterns found in the last 5 minutes of searching
 - Scanner has exceeded 2× its time budget without findings
+- **Max findings per scanner: 7.** If you find more, keep the top 7 by severity and note "N additional lower-severity patterns observed but omitted." This prevents noise that sc4-validate must wade through.
 
 ## Usage
 
@@ -129,6 +140,11 @@ Run all sub-scanners sequentially:
 /skill vuln-dos
 /skill vuln-memory
 /skill vuln-infra
+/skill vuln-nodejs
+/skill vuln-spring-boot
+/skill vuln-custom-crypto
+/skill vuln-mobile-code
+/skill vuln-deployment-security
 ```
 
 Or run only the ones relevant to your threat model's priority targets.
@@ -137,19 +153,25 @@ Or run only the ones relevant to your threat model's priority targets.
 
 Before running all scanners, check `./assessment/recon.md` and skip scanners that don't apply:
 
-| Tech Stack | Skip These Scanners |
-|------------|-------------------|
-| No Solidity/Vyper/smart contracts | All `vuln-web3-*` (12 scanners) |
-| No C/C++/Rust/native code | `vuln-memory` |
-| No IaC files (no *.tf, Dockerfile, K8s manifests, CI configs) | `vuln-infra` |
-| No file upload endpoints | `vuln-file-path` (still check path traversal) |
-| No XML/SOAP processing | `vuln-deserialization` (still check JSON deserialization) |
-| Pure API (no HTML rendering) | `vuln-client-side` (still check open redirect) |
-| No third-party dependencies | `vuln-dependency` |
-| No restaking/AVS logic | `vuln-web3-restaking` |
-| No ERC-4337/smart accounts | `vuln-web3-aa` |
-| No L2/bridge/rollup code | `vuln-web3-l2` |
-| No intent/solver logic | `vuln-web3-intents` |
+| Tech Stack | Skip These Scanners | Prioritize These Scanners |
+|------------|-------------------|---------------------------|
+| No Solidity/Vyper/smart contracts | All `vuln-web3-*` (12 scanners) | — |
+| No C/C++/Rust/native code | `vuln-memory` | — |
+| No IaC files (no *.tf, Dockerfile, K8s manifests, CI configs) | `vuln-infra` | — |
+| No file upload endpoints | `vuln-file-path` (still check path traversal) | — |
+| No XML/SOAP processing | `vuln-deserialization` (still check JSON deserialization) | — |
+| Pure API (no HTML rendering) | `vuln-client-side` (still check open redirect) | — |
+| No third-party dependencies | `vuln-dependency` | — |
+| No Node.js/JavaScript | `vuln-nodejs` | — |
+| No Spring Boot/Java | `vuln-spring-boot` | — |
+| No mobile app code (Android/iOS/RN/Flutter) | `vuln-mobile-code` | — |
+| No K8s/Helm/Istio deployment configs | `vuln-deployment-security` | — |
+| dangerouslySetInnerHTML/v-html found | — | `vuln-injection` (XSS focus) |
+| Raw SQL or string interpolation in queries | — | `vuln-injection` (SQLi focus) |
+| RLS policies with USING(true) or role from user input | — | `vuln-access-control` |
+| fetch/axios with user-controlled URLs | — | `vuln-ssrf` |
+| Admin/service-role client used in user-facing paths | — | `vuln-access-control` |
+| Custom auth implementation (not framework-provided) | — | `vuln-authn-session` |
 
 ### Web3 Skip-Fast Check
 
@@ -160,6 +182,29 @@ find . -name "*.sol" -o -name "*.vy" | head -1
 ```
 
 If no results → mark ALL Web3 scanners as `SKIPPED (no smart contract code)` in `scan-progress.md` and skip them entirely. This saves invoking 12 scanners individually just to have each one say "not applicable."
+
+### Pre-Flight Verification Checks
+
+Before running each scanner, do a 30-second heuristic check to confirm the attack surface exists. Skip or deprioritize scanners where the surface is absent:
+
+```bash
+# Before XSS-focused scanning (vuln-injection):
+grep -r "dangerouslySetInnerHTML\|v-html\|\[innerHTML\]\|bypassSecurity" --include="*.tsx" --include="*.jsx" --include="*.vue" --include="*.html" . | grep -v node_modules | head -1
+
+# Before SQLi scanning (vuln-injection):
+grep -r "raw\|rawQuery\|execute.*\${\|\.query.*\${\|sequelize\.literal" --include="*.ts" --include="*.js" . | grep -v node_modules | head -1
+
+# Before SSRF scanning (vuln-ssrf):
+grep -r "fetch\|axios\|http\.get\|request(" --include="*.ts" --include="*.js" . | grep -v node_modules | grep -iE "req\.|param\.|body\.|query\." | head -1
+
+# Before file upload scanning (vuln-file-path):
+grep -r "multer\|formidable\|busboy\|upload\|multipart" --include="*.ts" --include="*.js" . | grep -v node_modules | head -1
+
+# Before deserialization scanning (vuln-deserialization):
+grep -r "xml\|xpath\|parseXml\|DOMParser\|yaml\.load\|pickle\|unserialize\|ObjectInputStream" . | grep -v node_modules | head -1
+```
+
+If a check returns no results, the scanner can still run (code patterns vary) but should deprioritize that attack surface and focus time on threat-model priority targets instead.
 
 Each sub-skill appends its findings to `./assessment/vulnerabilities.md`.
 
@@ -206,6 +251,13 @@ Each sub-scanner's output section is identified by its header (e.g., `# Vulnerab
 
 This allows re-running a scanner without producing duplicates.
 
+### Re-Running a Single Scanner
+
+To re-run one scanner (e.g., after sc4-validate reveals a missed pattern):
+1. Invoke the scanner again — its idempotency rule replaces its section in `vulnerabilities.md`
+2. Re-run `sc4-validate` to incorporate the new/updated findings
+3. Update `scan-progress.md` with the revised finding count
+
 ## Severity Rubric
 
 All sub-scanners must use this shared rubric for consistent severity ratings:
@@ -238,9 +290,28 @@ Every finding must include a **Confidence** field indicating how certain the sca
 - `./assessment/recon.md` must exist (run `sc1-recon` first)
 - `./assessment/threat-model.md` must exist (run `sc2-threat-model` first)
 
+## ⚠️ Sub-Agent File Access
+
+If delegating scanners to sub-agents (via subagent pipelines or parallel execution), note that sub-agents may lack file-reading tools. To avoid wasted compute:
+
+- **Option A**: Read relevant file contents in the main agent and pass them in the sub-agent prompt
+- **Option B**: Run scanners directly in the main agent context (sequential but reliable)
+- **Option C**: Use sub-agents only for analysis of already-read content (pass code snippets, not file paths)
+
+Sub-agents returning "cannot read files" is a common failure mode — plan for it.
+
 ## Next Step
 
 After scanning, run `sc4-validate` to confirm findings before generating the final report.
+
+## Context Budget Management
+
+When scanning sequentially through many scanners, context window fills fast. To avoid losing findings to compaction:
+
+- **Write findings to `vulnerabilities.md` immediately** after each scanner completes — don't accumulate in memory
+- The file is the source of truth, not your context window
+- If running low on context mid-scan, write current findings, then continue with remaining scanners in a fresh context (re-read `vulnerabilities.md` to avoid duplicates)
+- Each scanner section is idempotent (see Idempotency Rule above) — safe to re-run after context reset
 
 ## Progress Tracking
 
@@ -279,9 +350,42 @@ Before running scanners, create `./assessment/scan-progress.md` (or update if it
 | 3x-a | vuln-dos | PENDING | — | |
 | 3x-b | vuln-memory | PENDING | — | |
 | 3x-c | vuln-infra | PENDING | — | |
+| 3p-a | vuln-nodejs | PENDING | — | |
+| 3p-b | vuln-spring-boot | PENDING | — | |
+| 3p-c | vuln-custom-crypto | PENDING | — | |
+| 3p-d | vuln-mobile-code | PENDING | — | |
+| 3p-e | vuln-deployment-security | PENDING | — | |
 ```
 
 After each scanner completes, update its row:
 - `DONE (N findings)` — scanner ran, found N issues
 - `SKIPPED (reason)` — not applicable to this codebase
 - `FAILED (reason)` — scanner encountered an error
+
+## Automation (Optional)
+
+For automated progress tracking via Python:
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.kiro/skills/sc3-vuln-scan/scripts"))
+from scan_progress import init, done, skip, status, next_scanner
+
+# Initialize (auto-skips inapplicable scanners)
+init(".", has_web3=False, has_native=False, has_infra=True)
+
+# After each scanner completes
+done(".", "injection", findings=2)
+skip(".", "web3-reentrancy", reason="no smart contracts")
+
+# Check progress
+status(".")
+next_scanner(".")  # returns next pending scanner name
+```
+
+## References
+
+Cross-cutting knowledge for deeper scanning:
+- `~/.kiro/skills/references/pitfalls-false-positives.md` — FP prevention rules
+- `~/.kiro/skills/references/proven-patterns.md` — Patterns that reliably find bugs
+- `~/.kiro/skills/references/validation-decision-trees.md` — Framework-specific decision trees

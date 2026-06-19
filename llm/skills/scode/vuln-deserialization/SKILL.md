@@ -1,6 +1,6 @@
 ---
 name: vuln-deserialization
-description: "Step 3e of bug bounty workflow. Scan for insecure deserialization and XXE vulnerabilities. Appends to vulnerabilities.md."
+description: "Scan for insecure deserialization and XXE vulnerabilities. Appends to vulnerabilities.md."
 allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Write
 argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
 ---

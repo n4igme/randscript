@@ -1,3 +1,10 @@
+---
+name: vuln-web3-token
+description: "Scan for token standard flaws (ERC-20/721/1155), signature replay/malleability, permit issues. Appends to vulnerabilities.md."
+allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Write
+argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
+---
+
 # Bug Bounty — Step 3n: Token & Signature Vulnerabilities
 
 Scan for ERC-20/721/1155 token implementation flaws and cryptographic signature misuse.

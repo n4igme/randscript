@@ -1,6 +1,6 @@
 ---
 name: vuln-access-control
-description: "Step 3b of bug bounty workflow. Scan for access control vulnerabilities (IDOR, missing authz, privilege escalation). Appends to vulnerabilities.md."
+description: "Scan for access control vulnerabilities (IDOR, missing authz, privilege escalation). Appends to vulnerabilities.md."
 allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Write
 argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
 ---

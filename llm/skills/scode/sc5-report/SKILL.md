@@ -90,11 +90,25 @@ Save to `./assessment/bug-bounty-report.md`:
 | Medium | X | {brief titles} |
 | Low | X | {brief titles} |
 
+**Validation**: {original_count} raw findings → {confirmed_count} confirmed ({false_positive_count} false positives eliminated, {duplicate_count} duplicates merged). This demonstrates the rigor of the validation process.
+
 ### Top Recommendations
 
 1. {Most impactful fix}
 2. {Second priority}
 3. {Third priority}
+
+### ⚡ Quick Wins (< 30 minutes total)
+
+Fixes that close all Critical and High findings with minimal effort:
+
+| # | Change | Closes | Time |
+|---|--------|--------|------|
+| 1 | {one-line description} | CRITICAL-001 | ~5 min |
+| 2 | {one-line description} | HIGH-001 | ~5 min |
+| 3 | {one-line description} | HIGH-002, HIGH-003 | ~10 min |
+
+This section gives engineering leads an immediate action list they can execute before the next standup. Prioritize fixes that are low-effort AND close high-severity findings.
 
 ---
 

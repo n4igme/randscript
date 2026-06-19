@@ -1,6 +1,6 @@
 ---
 name: vuln-client-side
-description: "Step 3k of bug bounty workflow. Scan for client-side vulnerabilities (open redirect, clickjacking, prototype pollution, DOM-based attacks). Appends to vulnerabilities.md."
+description: "Scan for client-side vulnerabilities (open redirect, clickjacking, prototype pollution, DOM-based attacks). Appends to vulnerabilities.md."
 allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Write
 argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
 ---

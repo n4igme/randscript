@@ -1,6 +1,6 @@
 ---
 name: vuln-authn-session
-description: "Step 3h of bug bounty workflow. Scan for authentication & session management vulnerabilities (broken auth, JWT flaws, session fixation). Appends to vulnerabilities.md."
+description: "Scan for authentication & session management vulnerabilities (broken auth, JWT flaws, session fixation). Appends to vulnerabilities.md."
 allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Write
 argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
 ---

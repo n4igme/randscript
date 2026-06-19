@@ -1,6 +1,6 @@
 ---
 name: vuln-web3-restaking
-description: "Step 3w-i of bug bounty workflow. Scan for restaking/AVS vulnerabilities (EigenLayer, Symbiotic, slashing, operator delegation). Appends to vulnerabilities.md."
+description: "Scan for restaking/AVS vulnerabilities (EigenLayer, Symbiotic, slashing, operator delegation). Appends to vulnerabilities.md."
 allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Write
 argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
 ---

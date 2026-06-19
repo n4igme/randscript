@@ -1,6 +1,6 @@
 ---
 name: vuln-web3-defi
-description: "Step 3q of bug bounty workflow. Scan for DeFi protocol vulnerabilities (AMM, lending, bridges, governance). Appends to vulnerabilities.md."
+description: "Scan for DeFi protocol vulnerabilities (AMM, lending, bridges, governance). Appends to vulnerabilities.md."
 allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Write
 argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
 ---

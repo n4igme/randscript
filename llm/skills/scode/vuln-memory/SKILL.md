@@ -1,6 +1,6 @@
 ---
 name: vuln-memory
-description: "Step 3p of bug bounty workflow. Scan for memory safety vulnerabilities (buffer overflow, use-after-free, format strings) in C/C++/Rust/native code. Appends to vulnerabilities.md."
+description: "Scan for memory safety vulnerabilities (buffer overflow, use-after-free, format strings) in C/C++/Rust/native code. Appends to vulnerabilities.md."
 allowed-tools: Read Bash(find *) Bash(grep *) Bash(head *) Bash(wc *) Bash(cat *) Bash(ls *) Write
 argument-hint: <path to threat-model.md, defaults to ./assessment/threat-model.md>
 ---
