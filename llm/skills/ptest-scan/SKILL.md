@@ -142,8 +142,7 @@ When adding a NEW Hermes security skill (not just a ptest module), follow this p
 - `## Retry / Timeout Patterns` — operation-specific timeouts and retry counts
 - `## Error Handling` — failure modes and recovery actions
 - `## Concurrent Execution Safety` — state.yaml locking, subagent handoff, parallel scanning
-- `## Commands
-
+- `## Commands` or `## Command Procedures` — lifecycle commands
 
 ## Findings (findings.jsonl)
 
@@ -153,9 +152,10 @@ When adding a NEW Hermes security skill (not just a ptest module), follow this p
 
 **Example:**
 ```json
-{"finding_id": "RETOOLS-001", "title": "Hardcoded API key", "severity": "High", "category": "secrets", "target": "app.apk", "confidence": 0.95, "timestamp": "2026-06-22T10:00:00Z"}
+{"finding_id": "PTEST-SCAN-001", "title": "Missing auth on endpoint", "severity": "High", "category": "auth", "target": "api.target.com", "confidence": 0.95, "timestamp": "2026-06-22T10:00:00Z"}
 ```
-` or `## Command Procedures` — lifecycle commands
+
+**Mandatory SKILL.md sections (continued):**
 - `### Phase Entry Protocol` — load reference, record timestamp, check prerequisites, review findings.jsonl
 - `### Evidence Standards` — reference `../references/evidence-standards.md`
 - `### Severity Mapping` — reference `../references/severity-mapping.md`
@@ -285,6 +285,64 @@ When adding a NEW Hermes security skill (not just a ptest module), follow this p
 - FP suppression (`FP_SKIP_DIRS` + `FP_SKIP_PATTERNS`): skips test dirs, ORM parameterized queries, Django/JPA safe patterns
 - Source: patterns adopted from `~/.hermes/skills/security/scode/references/` (vuln-nodejs, vuln-spring-boot, vuln-api, vuln-authn-session, pitfalls-false-positives)
 
+## Code Review Pitfalls (Recurring Patterns)
+
+These are patterns found during code review that tend to recur. Check for them when reviewing or modifying ptest code.
+
+### asyncio Forward Compatibility
+- **NEVER** use `asyncio.get_event_loop()` — deprecated 3.10, broken in 3.12+
+- **ALWAYS** use `asyncio.get_running_loop()` inside async functions
+- Grep check: `grep -r "get_event_loop" pipeline/ tools/` should return zero hits
+
+### Exception Handler Ordering
+```python
+# CORRECT — CancelledError (BaseException) before Exception
+except (KeyboardInterrupt, asyncio.CancelledError):
+    session.status = "interrupted"
+    ...
+except Exception as e:
+    mark_failed(session, str(e))
+    ...
+```
+CancelledError inherits BaseException in 3.9+ but putting Exception first catches it on some edge paths. Always put BaseException-derived handlers first.
+
+### Imports in Hot Paths
+Move frequently-called imports (`random`, `re`, `json`) to module-level. `import X` inside a function called at 50 req/s adds measurable overhead. Only use deferred imports for circular-dependency breaking or optional heavy deps.
+
+### Boolean Blind Detection Thresholds
+- Minimum response length difference: **200+ bytes** (not 50 — dynamic content noise: CSRF tokens, timestamps, ads easily cause 50-byte deltas)
+- Normal response must be close to **exactly ONE** side (XOR check, not OR)
+- Use proportional distance: `dist < diff * 0.3` rather than absolute comparison
+
+### Crawl Dedup During Collection
+Always maintain a `seen_endpoint_keys: set[str]` during endpoint collection. Without it, the endpoints list grows O(pages × forms × links) before final dedup — problematic at brutal profile (500 pages). Key format: `f"{ep.url}|{ep.method}"`.
+
+### Progress Persistence Pattern
+**DON'T** do disk I/O (load_session + save_session) inside inner module-completion loops. Instead:
+- Accept a `progress_callback: Callable[[int, int], None] | None` parameter
+- Caller provides the callback that does the session save
+- Avoids redundant JSON parse/serialize per module (23+ times per scan)
+
+### Module Runner Error Handling
+`_run_module()` must catch exceptions and return `[]` — otherwise `asyncio.as_completed` propagates them and any `isinstance(result, Exception)` check in the consumer loop is dead code:
+```python
+async def _run_module(m):
+    async with sem:
+        try:
+            return await asyncio.wait_for(m.run(...), timeout=120)
+        except asyncio.TimeoutError:
+            return []
+        except (httpx.HTTPError, OSError, ConnectionError) as e:
+            logger.warning(f"[hunt] module {m.name} failed: {e}")
+            return []
+```
+
+### Reproduction Script Coverage
+`reporting/reproduce.py` MODULE_GENERATORS must cover all high-frequency modules. Missing generators fall through to `_gen_generic` which just does a blind GET. Currently covered: sqli, ssrf, xxe, idor, cmdi, xss, lfi. When adding a new module, add its repro generator too.
+
+### Test API Drift
+When refactoring module interfaces (e.g. renaming `set_cookies` → `configure`), grep tests immediately: `grep -r "old_method_name" tests/`. The IDOR module test drift went unnoticed because tests weren't run after the rename.
+
 ## Error Handling
 
 | Failure Mode | Action |
@@ -318,18 +376,20 @@ When adding a NEW Hermes security skill (not just a ptest module), follow this p
 - Each scan gets unique `run_id` — no cross-contamination
 - API server uses SSE streaming; multiple clients can consume same scan
 
+## Design Notes & Conventions
+
 - BFS queues: use `collections.deque` not `list.pop(0)` (O(1) vs O(n))
 - Time-based SQLi: always measure baseline response time first, flag only on delta
 - ScanType enum lives in `models.py` — `config.py` imports it from there
 - `config.ScanConfig` is frozen dataclass — fields must be set at construction
 - `models.Target` is also frozen — computed properties (`base_url`, `domain`) use `@property`
-- pipeline/__init__.py imports from pipeline.orchestrator — circular import risk if orchestrator imports from __init__
-- profiles: stealth=passive-only, normal=read-only/5rps, aggressive=blind+write/10rps, brutal=destructive+DoS/50rps
-- Profile design: each tier unlocks a DAMAGE CATEGORY, not just bigger numbers. User explicitly rejected "same tests with higher counts" approach.
-- Dual-cookie IDOR: `--cookie-b` enables horizontal privesc testing; IDORModule uses response similarity (email/UUID/JSON structure) not just "different response"
-- CLI design: user prefers auto-detection over explicit --scan-type flags. `ptest jago.com` not `ptest scan jago.com --scan-type web`.
+- `pipeline/__init__.py` imports from `pipeline.orchestrator` — circular import risk if orchestrator imports from __init__
+- Profiles: stealth=passive-only, normal=read-only/5rps, aggressive=blind+write/10rps, brutal=destructive+DoS/50rps
+- Profile design: each tier unlocks a DAMAGE CATEGORY, not just bigger numbers
+- Dual-cookie IDOR: `--cookie-b` enables horizontal privesc testing; IDORModule uses response similarity
+- CLI design: auto-detection over explicit --scan-type flags. `ptest jago.com` not `ptest scan jago.com --scan-type web`
 - User prefers 'scode' not 'code_repo' for source code scan type
-- `execute_code` hermes_tools: `read_file()` returns dict with numbered lines in content field — strip `N|` prefix before string matching
+- `execute_code` hermes_tools: `read_file()` returns dict with numbered lines — strip `N|` prefix before matching
 - `run_tool()` returns tuple `(stdout, stderr, code)` — always unpack all three
-- State management uses shared base libraries (`security/scripts/base_state.py`, `base_gate.py`) with thin per-skill wrappers. This keeps engagement state in local files (state.yaml) rather than conversation context, minimizing AI cost.
-- Source of truth for security skill code: `~/Project/myherms/skills/security`. The `.hermes/skills/security` deployment should mirror it.
+- State management uses shared base libraries with thin per-skill wrappers (local state.yaml minimizes AI cost)
+- Source of truth for security skill code: `~/Project/myherms/skills/security`
