@@ -37,12 +37,69 @@ Key rules:
 Time caps (for 2-day/16hr engagement):
   P1: 45min  P2: 2.5hr  P3: 1.5hr  P4: 1.5hr  P5: 4hr  P6: 2.5hr  P7: 45min
 
+Reference file mapping (v4.0.0 10→7 phase compression; names unchanged):
+  Phase 1 → references/phase1-preflight.md
+  Phase 2 → references/phase2-static-core.md + references/phase2-extended-checks.md
+  Phase 3 → references/phase3-bypass.md
+  Phase 4 → references/phase4-traffic.md + references/phase5-attack-surface.md
+  Phase 5 → references/phase6-runtime.md + references/phase6-test-categories.md + references/phase7-execution-procedures.md + references/phase7-vuln-analysis.md
+  Phase 6 → references/phase8-api.md + references/phase9-exploitation.md
+  Phase 7 → references/phase10-reporting.md
+
 Discovery loop-back:
   • P5/P6 findings revealing new endpoints/creds → append to discovery-queue.md
   • At phase exit, drain queue with targeted re-testing before advancing
 ```
 
-## Commands
+## When to Use / When NOT to Use
+
+**Use when:**
+- Target matches skill scope (see Quick Reference phases)
+- You have required access level (credentials, API token, device, etc.)
+- Authorization is confirmed (written permission for pentest, own assets for research)
+
+**Avoid when:**
+- Target is explicitly out of scope
+- No credentials/token/device available and skill requires authenticated testing
+- Time budget is insufficient for minimum viable engagement (< 15 min)
+- Legal/ToS constraints block required techniques
+- No device/emulator available
+- App requires physical hardware (NFC, biometric, Bluetooth)
+- Jailbreak/root is strictly prohibited and pinning is unpatchable
+
+## Error Handling
+
+| Failure Mode | Action |
+|--------------|--------|
+| Tool exits non-zero | Capture stderr, check if partial output is usable |
+| API rate limit (429) | Back off, retry once. If persistent, document and pivot |
+| Credential expired | Re-acquire or document as finding (credential rotation issue) |
+| Target unreachable | Retry 3x with 30s gap. If still down, mark host UNREACHABLE |
+| Permission denied | Try alternative auth method. If blocked, document scope gap |
+| WAF blocking | Try 3 bypass techniques max, then document WAF and move on |
+| Frida detach | Retry with `-f` spawn mode. 3 failures → anti-Frida, escalate |
+
+**Rules:**
+- Never retry blindly — understand the error first
+- Save partial results before retrying (power loss, network drop)
+- Document blocker findings with evidence (screenshot, HTTP status)
+- On repeated failure (>3 attempts): mark as BLOCKED, continue to other surface
+
+## Concurrent Execution Safety
+
+**State conflicts:**
+- `state.yaml` is not atomic — serialize `advance_phase` and `add_finding` calls
+- Use file lock if running multiple agents: `with open(state_path + '.lock', 'w') as lock:`
+- Temp files: use `{finding-id}-{timestamp}.tmp` to avoid collisions
+
+**Parallel Frida sessions:**
+- Only one Frida session per process — multiple hooks in single script, not multiple scripts
+- If running separate bypass + instrumentation scripts, merge into one combined `.js`
+
+**Subagent handoff:**
+- Document phase status before spawning subagents (state.yaml must be consistent)
+- Subagents read state only — they should not advance phases or write findings directly
+- Parent agent validates subagent output before marking phase PASSED
 
 | Command | Action |
 |---------|--------|
@@ -142,7 +199,11 @@ current_phase: 1
 notes: ""
 ```
 
-### Finding ID Assignment
+#### Evidence Standards
+
+All findings must follow `../references/evidence-standards.md` for required/optional evidence capture and redaction rules.
+
+## Finding ID Assignment
 
 1. Read `findings_count` from `state.yaml`
 2. Increment by 1 → `MTEST-{count:03d}`
@@ -161,6 +222,7 @@ finding = {
     "chain_potential": [],  # Fill if applicable: ["atest:api_testing", "ptest:ssrf", "ctest:credential_access"]
     "timestamp": datetime.now().isoformat(),
     "phase": "{current_phase}",
+    "confidence": "confirmed",  # confirmed / probable / theoretical
     "status": "confirmed"
 }
 with open("./mtest-output/findings.jsonl", "a") as f:
@@ -177,7 +239,17 @@ with open("./mtest-output/findings.jsonl", "a") as f:
 | Backend URL discovered in strings | ptest | Add to attack surface |
 | OAuth token in local storage | atest | Token scope testing, replay attacks |
 
-### Command Procedures
+#### Postmortem
+
+After engagement closes, run shared retrospective:
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/scripts"))
+from postmortem import run_postmortem
+run_postmortem(workdir, "mtest")
+```
+
+## Command Procedures
 
 **`start`:**
 1. Define scope: app name, package/bundle ID, platform(s), version, engagement type (internal/bounty).
@@ -287,6 +359,14 @@ Critical/High findings MUST be validated dynamically in Phase 6 before final rep
 
 **Bug bounty phase jumping:** When a high-value lead is found during any phase (e.g., promising deep link in Phase 2), validate immediately — don't wait for sequential gate progression. Track the finding under the phase where it was proven. Resume sequential flow after the lead is resolved.
 
+Concrete triggers:
+- Exported component with intent-filter data leak (Phase 2) → skip to Phase 6
+- Deep link with host/path parameter (Phase 2) → skip to Phase 6
+- WebView loading arbitrary URLs (Phase 2/3) → skip to Phase 5/6
+- Hardcoded API key with broad scope (Phase 2) → skip to Phase 6
+- Attestation bypass complete + API endpoints discovered (Phase 3) → skip to Phase 6
+- Protected broadcast/intent injection (Phase 4) → skip to Phase 6
+
 ---
 
 ## Dual-Platform Engagement (Android + iOS)
@@ -348,6 +428,9 @@ Load: `references/bug-bounty-fast-path.md`
 
 ---
 
+### Severity Mapping
+
+Cross-skill severity normalization: `../references/severity-mapping.md`
 
 ## Pitfalls
 

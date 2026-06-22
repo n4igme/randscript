@@ -65,4 +65,15 @@
 
 **Reference:** `references/linux-userland.md`, `references/linux-kernel.md`, `references/arm64-exploitation.md`, `references/ios-webkit-chain.md`
 
+### Fuzzing Tools (integration points)
+
+| Target | Tool | Notes |
+|--------|------|-------|
+| General userspace | AFL++, libFuzzer | Instrumented fuzzing for known parsers |
+| Windows kernel | WinAFL | IOCTL-driven fuzzing |
+| Browser JS engine | js-fuzz, Fuzzilli | JIT-focused, generates valid JS |
+| Android kernel | syzkaller | Directed at Android configs |
+| Network protocols | boofuzz, Peach Fuzzer | Stateful protocol fuzzing |
+| File formats | PE-sieve, binbloom | Format-aware corpus generation |
+
 ---

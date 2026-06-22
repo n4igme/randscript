@@ -177,7 +177,9 @@ def run(workdir, lessons=None):
     print(f"  Submitted:      {metrics['submitted_count']}")
 
     # Append to engagement-roi-metrics.md
-    metrics_path = os.path.expanduser("~/.hermes/skills/security/w3hunt/references/engagement-roi-metrics.md")
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    metrics_path = os.path.join(script_dir, "..", "references", "engagement-roi-metrics.md")
+    metrics_path = os.path.normpath(metrics_path)
     if os.path.isfile(metrics_path):
         # Append table row
         table_row = f"| {slug} | {platform} | {scope_type} | {total_hours} | {phase_found} | {outcome} | {payout_display} | {dollar_per_hour} | {date_str} |"

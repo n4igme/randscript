@@ -1,6 +1,6 @@
 ---
 name: w3hunt
-version: 2.2.0
+version: 2.3.0
 description: "Web3 bug bounty hunting on Immunefi and similar platforms. Target selection, scope verification, DeFi-specific recon, and attack vector prioritization for hybrid web+contract programs."
 tags: [web3, bug-bounty, immunefi, defi, smart-contract, recon]
 trigger: "immunefi, web3 hunting, defi bug bounty, smart contract bounty, web3 recon"
@@ -38,365 +38,49 @@ Oracle prerequisite check (all 3 required — see Strategy section):
   If ANY fails → pivot to web scope or different bug class
 ```
 
+## When to Use / When NOT to Use
+
+**Use when:**
+- Bug bounty program has both web/app AND smart contract scope
+- Target is DeFi protocol on EVM chain (Ethereum, Arbitrum, Optimism, Base, Polygon, BSC)
+- You have web pentest skills applying to frontend + off-chain components
+
+**Avoid when:**
+- No web + smart contract hybrid scope (pure SC → scode only)
+- Program is paused or out of scope
+- Prior contest exhausted high-value bugs
+- Time budget < 4 hours (minimum viable engagement is 4-8h)
+
+## Retry / Timeout Patterns
+
+| Operation | Timeout | Retry | Backoff |
+|-----------|---------|-------|---------|
+| HTTP requests | 30s | 3x | 5s linear |
+| Blockchain RPC | 10s | 3x | 5s |
+| Subsquid/GraphQL | 30s | 2x | 10s |
+
+**Rules:**
+- On timeout: retry once. If persistent, document as blocker.
+- On 429/503: exponential backoff, max 3 attempts.
+- On partial output: save what you have, note the gap, continue.
+- Long-running scans: use background terminal with `notify_on_complete=true`.
+
 ## Commands
 
-| Command | Action |
-|---------|--------|
-| `start` | Initialize new target — create working directory, save scope, run Phase 1 triage |
-| `next` | Check gate condition and advance to next phase |
-| `recon` | Phase 2: Subdomain enum, GitHub repos, frontend analysis, API mapping |
-| `scope` | Re-verify program scope mid-engagement (check for changes since start) |
-| `targets` | Research and shortlist suitable programs from Immunefi |
-| `status` | Show current target, phase, findings, time spent |
-| `resume` | Resume interrupted hunting session from last checkpoint |
-| `report` | Generate finding report in platform-specific format (Immunefi/YesWeHack) |
-| `abort` | Terminate hunt early — external reason (program paused, legal, scope invalidated) |
-| `cleanup` | Archive engagement output, sanitize sensitive data |
-| `postmortem` | Record engagement outcome: hours, payout, lessons, update ROI metrics |
 
-### `start` Procedure
+## Findings (findings.jsonl)
 
-1. **Create working directory** — `~/PenTest/Hunting/Immunefi/<target>/`
-2. **Save scope** — extract ALL assets into `scope.txt`. Include: rules, targets, impacts, payout structure, severity version, FULL asset list.
-3. **Initialize state.yaml** — `state_manager.init_state(workdir, name, slug, platform, scope_type)`
-4. **Run Phase 1 triage** — `phase1_triage.run(workdir, slug, platform)`
-5. If GO → `state_manager.advance_phase(workdir)` to enter Phase 2. If NO-GO → `state_manager.abandon(workdir, reason)`.
+**Format:** JSONL, one JSON object per line.
 
-### `next` Procedure
+**Required fields:** `finding_id`, `title`, `severity`, `category`, `target`, `confidence` (0.0-1.0), `timestamp`
 
-1. Read state.yaml → determine `current_phase`.
-2. Run gate check:
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/w3hunt/scripts"))
-from gate_check import check_gate, print_gate_status
-
-result = check_gate(os.path.expanduser("~/PenTest/Hunting/Immunefi/<target>"), phase=None)
-print_gate_status(result)
-# Only advance if result["passed"] is True
-```
-3. Gate conditions per phase:
-   - Phase 1: GO/NO-GO decision documented
-   - Phase 2: minimum viable recon checklist complete (5 items)
-   - Phase 3: quick-kill checklist done, OR "web layer hardened" documented
-   - Phase 4: at least one batch tested with PoC, OR "SC dead/skipped" documented
-   - Phase 5: PoC validated + report submitted
-3. If NOT met: list what's missing, suggest actions.
-4. If met: `state_manager.advance_phase(workdir)`, report advancement.
-5. Override: record justification in `notes` and proceed.
-
-### `resume` Procedure
-
-1. Read `state.yaml` to determine current phase and time spent.
-2. Re-verify program is still live.
-3. Re-check scope hasn't changed.
-4. **Staleness:** >3 days → re-verify findings. >14 days → re-run Phase 2 recon (10 min).
-5. Report status and suggest next action.
-
-### `report` Procedure
-
-1. Load finding from `findings/finding-NNN.md`.
-2. Format per platform template (see `references/immunefi-report-template.md`).
-3. Verify: PoC runs, output matches claimed impact, asset is in scope.
-4. Output formatted report ready for submission.
-
-### `abort` Procedure
-
-**Valid reasons:** program paused/removed, scope invalidated, legal concern, platform dispute.
-
-1. Record reason in state.yaml: `status → "aborted"`, mark gateways `ABORTED`.
-2. If findings exist but unsubmitted → ask user: submit now or discard?
-3. Run cleanup.
-
-### `cleanup` Procedure
-
-1. Archive target directory to `<target>-<date>.tar.gz`.
-2. Remove any mainnet private keys or tokens from PoC files.
-3. Update state.yaml: `status → "closed"`.
-4. Print summary: time spent, findings submitted, outcomes.
-
-### `postmortem` Procedure
-
-Run after every engagement closes (accepted, rejected, abandoned, duplicate).
-
-1. Run `scripts/postmortem.py` — auto-calculates hours, payout, $/hr, phase found, time-to-first.
-2. Answer lessons: what worked, what wasted time, transferable pattern?, skill gaps?
-3. Script appends to `references/engagement-roi-metrics.md` automatically.
-4. If new pitfall discovered → patch `references/operational-rules.md`.
-5. If finding generalizes → patch ptest `references/attack-recipes.md` with new recipe.
-
-## Cross-Skill Handoffs
-
-**Into w3hunt (from other skills):**
-- atest finds smart contract interaction via API → invoke w3hunt
-- scode finds Solidity/Vyper code in repo → invoke w3hunt + scode (web3 scope)
-- ptest discovers DeFi webapp → invoke w3hunt for contract-level testing
-
-**Out of w3hunt (to other skills):**
-- Web frontend found on DeFi app → hand to ptest (standard web pentest)
-- API layer between frontend and contracts → hand to atest
-- Contract source code needs review → hand to scode (web3 scope type)
-- Off-chain oracle/keeper exploitable → hand to ctest (if cloud-hosted)
-
-### `scope` Procedure
-
-Use when: resuming after >24h, before submitting, or when unsure about asset coverage.
-
-1. Re-fetch program page — check if assets were added/removed.
-2. Diff against saved `scope.txt` — flag changes.
-3. Update `scope.txt` with changes and timestamp.
-
-### Target Refresh
-
-```bash
-python3 ~/.hermes/skills/security/w3hunt/scripts/target_refresh.py \
-  --min-payout 10000 \
-  --output ~/.hermes/skills/security/w3hunt/references/immunefi-targets-v3.md
+**Example:**
+```json
+{"finding_id": "RETOOLS-001", "title": "Hardcoded API key", "severity": "High", "category": "secrets", "target": "app.apk", "confidence": 0.95, "timestamp": "2026-06-22T10:00:00Z"}
 ```
 
-### `status` Procedure
 
-1. Read state.yaml → extract target name, current phase, status.
-2. Calculate elapsed time from `target.started`.
-3. Show gateway states (OPEN/LOCKED/PASSED/ABANDONED).
-4. Count findings by status (draft/validated/submitted).
-5. Run `state_manager.should_abandon(workdir)` — display result.
-6. Output:
-```
-─── w3hunt status ───────────────────────────
-Target:   <name> (<platform>)
-Phase:    <N> (<phase_name>) — <gateway_status>
-Elapsed:  <X.X>h / 8h budget
-Findings: <N> total (<N> draft, <N> submitted)
-Abandon:  <yes/no> — <reason if yes>
-─────────────────────────────────────────────
-```
-
-### `targets` Procedure
-
-**Data source (try in order):**
-1. arkadiyt/bounty-targets-data repo (structured JSON, updated daily):
-   `curl -s "https://raw.githubusercontent.com/arkadiyt/bounty-targets-data/main/data/immunefi_data.json"`
-2. Immunefi explore page (fallback): `https://immunefi.com/explore/`
-
-**Steps:**
-1. Fetch + filter: "Websites and Applications" scope, active, $10K+ Critical payout.
-2. Apply selection criteria: hybrid web+SC, mid-tier, EVM chains.
-3. Apply ROI-weighted scoring (from `references/engagement-roi-metrics.md`):
-   ```
-   Score = base_payout × type_multiplier × freshness_bonus × negative_signals
-
-   type_multiplier:  consumer_app=1.5, security_co=1.4, infra=1.3, defi_hybrid=1.0, defi_vault_sc=0.4
-   freshness_bonus:  <30d=1.3, <90d=1.1, >1yr=0.8
-   negative_signals: prior_c4/sherlock=×0.6, no_web_scope=×0.3, api_dead=×0.0
-   ```
-4. Quick-check top 5 candidates (2 min per): web scope? fresh? prior contest? payout?
-5. Output ranked shortlist with: slug, payout, scope type, score, rationale.
-6. Suggest `start <slug>` for top pick.
-
-**Staleness:** Cached shortlist in `references/immunefi-targets-v3.md` — refresh when >7 days old.
-
-See `references/immunefi-targets-v3.md` for current shortlist.
-
----
-
-## Phase Routing
-
-When entering a phase, load the corresponding reference file:
-
-| Phase | File | Gate Summary |
-|-------|------|-------------|
-| 1 | `references/phase1-triage.md` | GO/NO-GO decision made, prerequisites checked |
-| 2 | `references/phase2-recon.md` | Subdomains mapped, GitHub cloned, APIs discovered, framework identified |
-| 3 | `references/phase3-web-assessment.md` | Quick-kill checklist done, OR "web layer hardened" |
-| 4 | `references/phase4-sc-audit.md` | At least one batch tested with PoC, OR "SC dead/skipped" |
-| 5 | `references/phase5-exploit.md` | PoC validated + report submitted |
-
-**Load only the active phase file.**
-
-### Phase Entry Protocol (ALL phases)
-
-When entering ANY phase, before executing techniques:
-1. **Load reference file** — per Phase Routing table above
-2. **Record timestamp** — write `phase_N_start` in state.yaml
-3. **Check budget** — elapsed time vs. 8hr cap. If >75% spent with zero findings → trigger abandon check
-
----
-
-## Strategy
-
-**Core edge:** Most Immunefi hunters are Solidity-focused. Web pentest skills applied to DeFi frontends, APIs, and off-chain components face far less competition.
-
-**Target selection criteria:**
-- BOTH web/app scope AND smart contract scope (hybrid programs)
-- Mid-tier payout: $10K-$100K for Critical (avoid over-audited top-tier)
-- Protocols with: DeFi frontends, admin panels, APIs, off-chain components
-- Active programs on EVM chains (Ethereum, Arbitrum, Optimism, Base, Polygon, BSC)
-- Multi-chain deployments preferred (larger attack surface, inconsistency bugs)
-
-**Priority by web pentest edge:**
-- HIGH: CeFi/DeFi hybrids, multi-chain aggregators, platforms with complex APIs
-- MEDIUM: Trading UIs, yield farming dashboards, DCA/scheduling frontends
-- LOWER: Pure contract protocols with minimal web layer
-
-**Pattern transferability prerequisite check (MANDATORY before SC source review):**
-All THREE required for oracle bug class:
-1. ✅ Permissionless trigger function (harvest, compound, rebase callable by anyone)
-2. ✅ On-chain oracle-dependent swap (not just transfer to strategist)
-3. ✅ Slippage/minAmountOut calculated FROM oracle price (not user-supplied)
-If ANY is missing → pivot to web scope or switch bug class.
-
-**Decision tree:**
-- Web scope exists → WEB-FIRST (default)
-- No web, SC prerequisites pass → SC-FIRST
-- $50K+ program with both surfaces → PARALLEL (delegate_task)
-
-**Effort:** Total 4-8 hours. P1: 15m, P2: 1h, P3: 30m-2h, P4: 2-3h (conditional), P5: 30m.
-
-**Early-finding fast-track:** Critical/High during Phase 2/3 → skip to Phase 5 immediately. Submit → return for more.
-
----
-
-## Framework
-
-### State Tracking
-
-```yaml
-target:
-  name: ""
-  slug: ""
-  platform: "immunefi"
-  url: ""
-  started: ""
-  status: "active"
-  scope_type: "hybrid"
-
-current_phase: 1
-
-gateways:
-  1_triage: OPEN
-  2_recon: LOCKED
-  3_web_assessment: LOCKED
-  4_sc_audit: LOCKED
-  5_exploit_submit: LOCKED
-
-scope:
-  has_web: false
-  has_sc: false
-  web_targets: []
-  sc_addresses: []
-  max_payout_web: ""
-  max_payout_sc: ""
-
-prerequisites:
-  program_live: false
-  prior_contest: false
-  oracle_permissionless: null
-  oracle_swap_onchain: null
-  oracle_slippage_derived: null
-
-findings_count: 0
-submitted_count: 0
-
-time_tracking:
-  phase_1_start: ""
-  phase_1_end: ""
-  phase_2_start: ""
-  phase_2_end: ""
-  phase_3_start: ""
-  phase_3_end: ""
-  phase_4_start: ""
-  phase_4_end: ""
-  phase_5_start: ""
-  phase_5_end: ""
-
-notes: ""
-```
-
-**Time enforcement:** Elapsed > 8 hours + no findings → trigger abandon. Use `state_manager.should_abandon()`.
-
-### Output Structure
-
-```
-~/PenTest/Hunting/Immunefi/<target>/
-├── state.yaml
-├── scope.txt
-├── submissions.yaml       # Created on first submit
-├── subdomains.txt
-├── frontend-recon.txt
-├── recon-summary.txt
-├── github-repos.txt
-├── api-endpoints.txt
-├── findings/
-│   └── finding-001.md
-└── poc/
-    └── poc_001.py
-```
-
-### Finding Template
-
-```markdown
-# Finding-NNN: {Title}
-
-**Severity:** Critical / High / Medium
-**Impact Category:** {Exact Immunefi category wording}
-**Affected Asset:** {Contract address or URL — MUST be in scope list}
-**Chain:** {Ethereum / Arbitrum / Polygon / etc.}
-**Phase Discovered:** {2/3/4}
-**Status:** draft / validated / submitted / accepted / rejected
-
-## Description
-## Steps to Reproduce
-## PoC
-File: `../poc/poc_NNN.py`
-Output: {actual execution output}
-## Impact
-## Fix Suggestion
-## Scope Proof
-```
-
-### Cross-Skill Chaining (findings.jsonl)
-
-When recording a finding, append to `findings.jsonl` for cross-skill consumption:
-
-```python
-import json
-from datetime import datetime
-finding = {
-    "id": "W3HUNT-{count:03d}",
-    "skill": "w3hunt",
-    "severity": "{severity}",
-    "type": "{vuln_type}",  # e.g., oracle_manipulation, signature_replay, csp_bypass, ssrf, idor
-    "target": "{contract_address_or_url}",
-    "summary": "{one-line description}",
-    "chain_potential": [],  # e.g., ["ptest:web_exploitation", "atest:api_testing", "scode:contract_review"]
-    "timestamp": datetime.now().isoformat(),
-    "phase": "{current_phase}",
-    "status": "draft"  # draft → validated → submitted → accepted/rejected
-}
-with open("./findings.jsonl", "a") as f:
-    f.write(json.dumps(finding) + "\n")
-```
-
-### Script Failure Protocol
-
-| Exit Condition | Action |
-|----------------|--------|
-| Exit 0 | Parse output, continue |
-| Exit 1 (partial) | Parse successful results, continue manually for failed items |
-| Exit 2+ (total failure) | Fall back to manual execution |
-| Timeout | Retry once. If persistent, execute manually. |
-
-Phase gates are NOT satisfied by failed scripts.
-
-### Severity & Reporting
-
-See `references/immunefi-severity-v2.2.md` for severity tables and decision tree.
-See `references/immunefi-report-template.md` for report format and impact framing.
-
----
-
-## Operational
+## Error Handling
 
 ### Post-Submission Protocol
 
@@ -408,6 +92,23 @@ See `references/immunefi-report-template.md` for report format and impact framin
 | "Out of scope" | Check if reframeable (frontend bundle proof). If not, lesson learned. |
 | "Accepted" | 🎉 Note pattern. Look for same bug class on similar targets. |
 
+## Concurrent Execution Safety
+
+**Parallel recon:**
+- Subdomain enum + GitHub clone + API mapping can run in parallel
+- Save intermediate results to files — do not rely on in-memory state
+- Nuclei scan: rate-limit to 150 req/s to avoid IP block
+
+**State safety:**
+- `state.yaml` is single-writer — only parent agent advances phases
+- Findings file `findings.jsonl` is append-only — safe for concurrent writers
+- PoC scripts in `poc/` use unique filenames (finding-id + timestamp)
+
+**Subagent handoff:**
+- Document target slug + scope before spawning
+- Child agents read-only on `scope.txt` — do not modify
+- Parent validates findings.jsonl additions before marking phase PASSED
+
 ### Abandon Decision
 
 **Triggers:** hour 6 with no High+, OR Phase 3 yields nothing and SC prerequisites fail.
@@ -416,11 +117,15 @@ See `references/immunefi-report-template.md` for report format and impact framin
 2. Document in `recon-summary.txt`: what was tested, why it's hardened/dead
 3. Move to Next Target Decision Tree (fresh target criteria: payout × novelty × recency × hybrid)
 
+### Severity Mapping
+
+Cross-skill severity normalization: `../references/severity-mapping.md`
+
 ## Pitfalls
 
 > Full pitfalls and operational rules: `references/operational-rules.md`
 
-**Engagement file naming:** ALWAYS prefix target-specific references with `engagement-` (e.g., `engagement-ens.md`, `engagement-grab-ovo.md`). These patterns are gitignored from public backup repos via `llm/skills/**/engagement-*`. Files without the prefix trigger GitHub secret scanning alerts when they contain contract addresses, API keys, or wallet details found during testing.
+**Engagement file naming:** ALWAYS prefix target-specific references with `engagement-` (e.g., `engagement-ens.md`, `engagement-grab-ovo.md`). These patterns are gitignored from public backup repos via `llm/skills/**/engagement-*` and the template in `../references/engagement-gitignore-template`. Files without the prefix trigger GitHub secret scanning alerts when they contain contract addresses, API keys, or wallet details found during testing.
 
 **Top 5 instant-rejection rules:**
 1. **NEVER claim impact you haven't proven end-to-end** — theoretical = rejected
@@ -435,6 +140,10 @@ See `references/immunefi-report-template.md` for report format and impact framin
 - `references/platform-operational-notes.md` — Platform-specific notes
 - `references/immunefi-severity-v2.2.md` — Severity tables
 - `references/immunefi-report-template.md` — Report format
+
+### Evidence Standards
+
+All findings must follow `../references/evidence-standards.md` for required/optional evidence capture and redaction rules.
 - `references/operational-rules.md` — Full operational rules
 - `references/immunefi-targets-v3.md` — Target shortlist
 - `references/engagement-stakewise.md` — Signature replay (Critical)

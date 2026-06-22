@@ -36,6 +36,17 @@ def extract_phase_count(skill_name: str) -> dict:
     if step_nums:
         return {"phases": max(int(n) for n in step_nums), "error": None}
 
+    # Final fallback: read config.py PHASES dict
+    config_file = SECURITY_ROOT / skill_name / "scripts" / "config.py"
+    if config_file.exists():
+        config_text = config_file.read_text()
+        # Match PHASES dict keys
+        phase_keys = re.findall(r"'PHASES':\s*\{([^}]+)\}", config_text)
+        if phase_keys:
+            nums = re.findall(r'(\d+):', phase_keys[0])
+            if nums:
+                return {"phases": max(int(n) for n in nums), "error": None}
+
     return {"phases": None, "error": "no phase/step numbers found"}
 
 

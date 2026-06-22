@@ -1,0 +1,1 @@
+SKILL_CONFIG = {'NAME': 'tyk-gateway-audit', 'OUTPUT_DIR': 'tyk-audit-output', 'PHASES': {1: 'load', 2: 'match', 3: 'verify', 4: 'report'}, 'GATEWAYS': {1: '1_load', 2: '2_match', 3: '3_verify', 4: '4_report'}, 'SUBDIRS': ['phase1-load', 'phase2-match', 'phase3-verify', 'report'], 'BUDGET_HOURS': 4}

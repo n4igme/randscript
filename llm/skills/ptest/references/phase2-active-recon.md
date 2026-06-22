@@ -566,6 +566,8 @@ curl -sk --resolve "stg-test.target.io:443:10.x.x.x" "https://stg-test.target.io
 
 Mark DONE (no new hosts) rather than SKIPPED when techniques are executed but yield nothing.
 
+**LoanPlatform resolution (June 2026):** VPN DNS at 169.254.169.254 resolved `bankartos.io` domain. Python concurrent brute-force (2595 permutations, 20 threads) found `stg-admin.bankartos.io` on a DIFFERENT IP (10.105.50.20 vs 10.105.50.9), plus `dev-workflow-web`, `pt-workflow-web`, `dev-admin`, `pt-admin`, and `monitoring.bankartos.io` (Dynatrace on 10.101.198.4). VHost enum against the ingress IP confirmed `stg-workflow-web.bankartos.io` shares the ingress — this led to discovering an unauthenticated Netflix Conductor UI exposing 34 internal K8s service URLs (see references/conductor-workflow-engine-exploitation.md). TLS SAN analysis was the initial signal; DNS brute-force confirmed additional hosts. The Python concurrent resolver approach (ThreadPoolExecutor, 20 workers) completed 2595 lookups in ~30s vs sequential which would have taken 40+ minutes.
+
 ## Pitfall: Incomplete live-hosts.txt
 
 **Problem (Bank Jago, May 2026):** Phase 2 live-hosts.txt contained only 67 entries when the master subdomain list had 343. This caused Phase 3 to miss 184 subdomains entirely until the user caught it at sign-off.

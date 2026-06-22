@@ -31,9 +31,36 @@ Key rules:
   • Reliability > speed — a 90% reliable exploit beats a 50% one
   • Document every dead end (saves time on retry)
   • Test on exact target version (mitigations vary by patch level)
+
+Quick Primitives (mid-engagement entry):
+  - Crash PoC in hand → reproduce 3x, collect crash dump, identify crash type (SEGV/abort/assert)
+  - Source code available → trace input to vulnerable sink, identify control flow
+  - Patch/diff available → find root cause, check if fix is complete or bypassable
+  - No crash yet → fuzz with AFL++/libFuzzer for 30min before static analysis
 ```
 
 ## Architecture
+
+**state.yaml schema:**
+```yaml
+engagement:
+  name: string
+  started: ISO8601
+  target_binary: string
+  exploit_type: string
+current_phase: int
+gateways:
+  1_analysis: OPEN|PASSED|LOCKED
+  2_primitives: ...
+  3_mitigations: ...
+  4_construction: ...
+  5_documentation: ...
+findings_count: int
+time_tracking:
+  phase_1_start: ISO8601
+  # ... per phase
+notes: string
+```
 
 ```
 Phase 1: Vuln Analysis → Phase 2: Primitive Dev → Phase 3: Mitigation Bypass → Phase 4: Exploit Construction → Phase 5: Documentation
@@ -58,7 +85,43 @@ result = check_gate(".", phase=None)
 print_gate_status(result)
 ```
 
-## Commands
+## When to Use / When NOT to Use
+
+**Use when:**
+- Target matches skill scope (see Quick Reference phases)
+- You have required access level (credentials, API token, device, etc.)
+- Authorization is confirmed (written permission for pentest, own assets for research)
+
+**Avoid when:**
+- Target is explicitly out of scope
+- No credentials/token/device available and skill requires authenticated testing
+- Time budget is insufficient for minimum viable engagement (< 15 min)
+- Legal/ToS constraints block required techniques
+- No crash PoC or fuzzer output
+- Target is userland app with no binary access (use ptest/scode)
+- Bug is in unreachable code (no attacker-controlled trigger)
+
+## Error Handling
+
+| Failure Mode | Action |
+|--------------|--------|
+| Tool exits non-zero | Capture stderr, check if partial output is usable |
+| API rate limit (429) | Back off, retry once. If persistent, document and pivot |
+| Credential expired | Re-acquire or document as finding (credential rotation issue) |
+| Target unreachable | Retry 3x with 30s gap. If still down, mark host UNREACHABLE |
+| Permission denied | Try alternative auth method. If blocked, document scope gap |
+| WAF blocking | Try 3 bypass techniques max, then document WAF and move on |
+| Frida detach | Retry with `-f` spawn mode. 3 failures → anti-Frida, escalate |
+
+**Rules:**
+- Never retry blindly — understand the error first
+- Save partial results before retrying (power loss, network drop)
+- Document blocker findings with evidence (screenshot, HTTP status)
+- On repeated failure (>3 attempts): mark as BLOCKED, continue to other surface
+
+## Concurrent Execution Safety
+
+See `../references/concurrent-execution-safety.md` for state locking, parallel scanning, and subagent handoff rules.
 
 | Command | Action |
 |---------|--------|
@@ -72,7 +135,17 @@ print_gate_status(result)
 
 If no command is given, show current status and suggest next action.
 
-### Command Procedures
+#### Postmortem
+
+After engagement closes, run shared retrospective:
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/scripts"))
+from postmortem import run_postmortem
+run_postmortem(workdir, "xdev")
+```
+
+## Command Procedures
 
 **`start`:**
 1. Collect: platform, architecture, vuln class, trigger (PoC/crash), target version, known mitigations, goal.
@@ -233,7 +306,6 @@ Firmware/embedded (no allocator / flat memory)
 
 ---
 
-
 ## Phases (load reference for full methodology)
 
 | Phase | Gate | Reference |
@@ -393,8 +465,15 @@ If a phase is not applicable (firmware with no mitigations → Phase 3 N/A, info
 - **Data Safety** — kernel exploits can corrupt filesystems. Always snapshot before testing. Document destructive failure modes.
 - **Scope Creep** — if exploitation requires chaining 3+ separate bugs, reassess whether the complexity is justified for the engagement. Document the chain even if you can't complete it.
 
-
 ---
+
+### Evidence Standards
+
+All findings must follow `../references/evidence-standards.md` for required/optional evidence capture and redaction rules.
+
+### Severity Mapping
+
+Cross-skill severity normalization: `../references/severity-mapping.md`
 
 ## Pitfalls
 
@@ -421,6 +500,7 @@ finding = {
     "chain_potential": [],  # e.g., ["ptest:post_exploit", "mtest:mobile_chain", "ctest:cloud_pivot"]
     "timestamp": datetime.now().isoformat(),
     "phase": "{current_phase}",
+    "confidence": "confirmed",  # confirmed / probable / theoretical
     "status": "confirmed",
     "reliability": "{percentage}"
 }

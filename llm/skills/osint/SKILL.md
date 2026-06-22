@@ -36,11 +36,76 @@ Key rules:
   • Search engines are dead for automation (CAPTCHA) — use direct APIs
 ```
 
+## Quick Handle Check (15-minute entry)
+
+| Platform | URL | Time |
+|----------|-----|------|
+| GitHub | `https://github.com/{handle}` | 30s |
+| GitHub API | `https://api.github.com/users/{handle}` | 10s |
+| HackerOne | `https://hackerone.com/{handle}` | 20s |
+| Bugcrowd | `https://bugcrowd.com/{handle}` | 20s |
+| Keybase | `https://keybase.io/{handle}` | 20s |
+| Reddit | `https://reddit.com/user/{handle}` | 20s |
+| Telegram | `https://t.me/{handle}` | 10s |
+| YouTube | `https://youtube.com/@{handle}` | 20s |
+| TikTok | `https://tiktok.com/@{handle}` | 20s |
+| LinkedIn | `https://linkedin.com/in/{handle}` | 30s |
+
+Total: ~3 minutes for 10 platforms with parallel requests.
 ## Architecture
 
 `Seed (Initial Data)` → `Expansion (Discovery)` → `Correlation (Linking)` → `Report (Findings)`
 
-## Commands
+## When to Use / When NOT to Use
+
+**Use when:**
+- Target matches skill scope (see Quick Reference phases)
+- You have required access level (credentials, API token, device, etc.)
+- Authorization is confirmed (written permission for pentest, own assets for research)
+
+**Avoid when:**
+- Target is explicitly out of scope
+- No credentials/token/device available and skill requires authenticated testing
+- Time budget is insufficient for minimum viable engagement (< 15 min)
+- Legal/ToS constraints block required techniques
+- No seed data (handle, email, domain) — common names alone are insufficient
+- Target is offline-only (no public digital footprint)
+- Legal constraints prohibit platform enumeration
+
+## Error Handling
+
+| Failure Mode | Action |
+|--------------|--------|
+| Tool exits non-zero | Capture stderr, check if partial output is usable |
+| API rate limit (429) | Back off, retry once. If persistent, document and pivot |
+| Credential expired | Re-acquire or document as finding (credential rotation issue) |
+| Target unreachable | Retry 3x with 30s gap. If still down, mark host UNREACHABLE |
+| Permission denied | Try alternative auth method. If blocked, document scope gap |
+| WAF blocking | Try 3 bypass techniques max, then document WAF and move on |
+| Frida detach | Retry with `-f` spawn mode. 3 failures → anti-Frida, escalate |
+
+**Rules:**
+- Never retry blindly — understand the error first
+- Save partial results before retrying (power loss, network drop)
+- Document blocker findings with evidence (screenshot, HTTP status)
+- On repeated failure (>3 attempts): mark as BLOCKED, continue to other surface
+
+## Retry / Timeout Patterns
+
+| Operation | Timeout | Retry | Backoff |
+|-----------|---------|-------|---------|
+| HTTP requests | 30s | 3x | 5s linear |
+| nuclei scan | 300s | 2x | 30s |
+| Frida attach | 10s | 3x | 5s |
+| Burp request | 60s | 2x | 10s |
+| Cloud CLI | 120s | 2x | 30s |
+| Git clone | 60s | 2x | 10s |
+
+**Rules:**
+- On timeout: wait for backoff, retry once. If persistent, document as blocker.
+- On 429/503: exponential backoff (5s → 25s → 125s), max 3 attempts.
+- On partial output: save what you have, note the gap, continue.
+- Long-running scans: use background terminal with `notify_on_complete=true`.
 
 | Command | Action |
 |---------|--------|
@@ -61,7 +126,44 @@ Key rules:
 | `chain` | Phase 7: Build cross-reference chain map |
 | `report` | Compile full OSINT report |
 
-### Command Procedures
+#### Postmortem
+
+After engagement closes, run shared retrospective:
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/scripts"))
+from postmortem import run_postmortem
+run_postmortem(workdir, "osint")
+```
+
+#### Cross-Skill Chaining (findings.jsonl)
+
+When recording a finding, append to `./osint-output/findings.jsonl`:
+```python
+import json
+from datetime import datetime
+finding = {
+    "id": "OSINT-{count:03d}",
+    "skill": "osint",
+    "severity": "{severity}",
+    "type": "{type}",  # e.g., credential_leak, domain_exposure, social_profile
+    "target": "{target}",
+    "summary": "{one-line description}",
+    "chain_potential": [],
+    "timestamp": datetime.now().isoformat(),
+    "phase": "phase{current_phase}",
+    "confidence": "confirmed",
+    "status": "confirmed"
+}
+with open("./osint-output/findings.jsonl", "a") as f:
+    f.write(json.dumps(finding) + "\n")
+```
+
+## Concurrent Execution Safety
+
+See `../references/concurrent-execution-safety.md` for state locking, parallel scanning, and subagent handoff rules.
+
+## Command Procedures
 
 **`start`:**
 1. Collect seed data (minimum 1 unique identifier): name, handle, email, phone, domain, company, location, profile URL.
@@ -238,6 +340,9 @@ for e in sorted(emails): print(e)
 "
 ```
 
+### Git Commit Audit (full methodology)
+For comprehensive git history exposure assessment: `../references/gitops-security.md`
+
 ### Public Events API
 ```bash
 curl -s "https://api.github.com/users/{user}/events/public" | \
@@ -401,8 +506,12 @@ Always distinguish: **Publicly derived** vs **Prior knowledge** vs **Inferred**.
 **Bot-friendly:** GitHub API, Wayback Machine, crt.sh, DNS/WHOIS, YouTube, TikTok, HackerOne, Bugcrowd.
 **Blocked:** All search engines, LinkedIn (content), X/Twitter, Medium, Facebook.
 
-### Pitfalls
-1. Rate limiting — GitHub: 60 req/hr unauthenticated
+#### Severity Mapping
+
+Cross-skill severity normalization: `../references/severity-mapping.md`
+
+## Pitfalls
+1. Rate limiting — GitHub: 60 req/hr unauthenticated; use `gh auth login` or `GITHUB_TOKEN` env var for 5,000 req/hr
 2. False positives — common names match multiple people; verify with 2+ data points
 3. Common names — demand at least one unique identifier before starting
 4. Auth walls — LinkedIn, X, Facebook require login for full data
@@ -429,11 +538,16 @@ Always distinguish: **Publicly derived** vs **Prior knowledge** vs **Inferred**.
 ### Tools (if available)
 `sherlock`/`maigret` (username enum), `holehe` (email registration check), `theHarvester` (email/subdomain harvesting)
 
-### Script Invocation
+#### Evidence Standards
+
+All findings must follow `../references/evidence-standards.md` for required/optional evidence capture and redaction rules.
+
+## Script Invocation
 
 ```python
 import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/osint/scripts"))
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/scripts"))
+from config import SKILL_CONFIG
 import state_manager, handle_check
 from gate_check import check_gate, print_gate_status
 

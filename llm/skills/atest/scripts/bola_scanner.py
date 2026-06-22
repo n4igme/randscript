@@ -4,8 +4,10 @@
 Usage (via execute_code):
     from hermes_tools import terminal
     import sys, os
-    sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/atest/scripts"))
-    import bola_scanner
+    sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/scripts"))
+    import state_manager
+    
+    # Then use state_manager.init_state(workdir, name)
 
     results = bola_scanner.scan(
         base_url="https://api.target.com",

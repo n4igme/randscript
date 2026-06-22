@@ -82,6 +82,25 @@ If all 4 behaviors match → real processing, not a catch-all 200.
 - Kafka topic: ums.docValidation.callback.v2
 - Impact: Forged KYC events reach downstream consumer on regulated financial platform
 
+## Multi-Service Callback Forgery (Capital.com Re-assessment, June 2026)
+
+When a callback service handles MULTIPLE third-party providers, test ALL routes — not just the highest-impact one. Same root cause (missing HMAC) often applies to every provider.
+
+**All endpoints unverified on callback.backend-capital.com:**
+- `/callback/sumsub/cc/v2/*` — KYC (High, submitted first)
+- `/callback/voip/v2/calls/completed` — Call records (Medium, F-9, Kafka proof: 39→40)
+- `/callback/fxstreet/eventDate-{created,updated,deleted}` — Financial news (Medium, F-10)
+- `/callback/appsflyer/push` — Attribution fraud (Medium, F-8)
+- `/callback/3cx/call` — VoIP (accepts empty body, 200)
+- `/callback/track-metric` — Metric injection (200)
+
+**VoIP proof pattern (field validation reveals required structure):**
+Send `{}` → get validation error listing all fields → craft valid payload → 202 Accepted + counter increment.
+
+**Jurisdiction testing:** Routes with jurisdiction prefixes (`/cc/`, `/cx/`, `/bel/`) — only `/cc/` worked (200), 13 others returned 500. Verify via Prometheus that 500 = BEFORE Kafka write (counter unchanged = not exploitable for those jurisdictions).
+
+**Submission strategy:** Submit each service SEPARATELY (different impact). Emphasize: MiFID II for call records, market manipulation for news, KYC bypass for identity.
+
 ## Pitfall: Prod vs Test Prometheus
 
 Production endpoints often have Prometheus disabled (500). Test environments may expose it. The proof is still valid — same codebase, same processing logic. Document that both PROD and TEST accept forged events identically (same status codes, same behavior), then show the counter proof on TEST where Prometheus is accessible.

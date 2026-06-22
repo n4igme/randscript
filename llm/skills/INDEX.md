@@ -6,10 +6,10 @@ Quick decision guide for selecting the right skill based on engagement type.
 
 | Engagement | Primary Skill | Secondary | Notes |
 |------------|---------------|-----------|-------|
-| Web pentest (external) | ptest | atest (if API-heavy) | Full 8-phase framework |
+| Web pentest (external) | ptest | atest (if API-heavy) | Full 6-phase framework |
 | Web pentest (internal) | ptest | ctest (if cloud) | Add AD refs if Windows domain |
 | API-only scope | atest | ptest (for web context) | 4-phase, skip infra recon |
-| Mobile app (Android/iOS) | mtest | atest (for APIs found) | 10-phase, feature-driven |
+| Mobile app (Android/iOS) | mtest | atest (for APIs found) | 7-phase, feature-driven |
 | Cloud/container pentest | ctest | ptest (for web apps found) | 5-phase, IAM-first |
 | Source code review | scode | ptest/atest (dynamic validation) | 23 sub-scanners |
 | Bug bounty (web) | ptest | scode (if source available) | Fast-track on first High |
@@ -98,13 +98,13 @@ scode (find vulns in code) → ptest/atest (validate dynamically) → xdev (if e
 |-------|---------|--------|
 | ptest | 5.0.0 | 6 |
 | mtest | 4.0.0 | 7 |
-| atest | 1.3.0 | 5 |
+| atest | 1.3.0 | 4 |
 | ctest | 1.2.0 | 5 |
 | adtest | 1.1.0 | 6 |
-| w3hunt | 2.2.0 | 5 |
+| w3hunt | 2.3.0 | 5 |
 | ttest | 1.1.0 | 5 |
 | xdev | 1.1.0 | 5 |
 | scode | 1.2.0 | 5 steps |
 | osint | 1.2.0 | 7 |
 | opsec | 1.2.0 | 6 |
-| retools | 1.1.0 | — (utility) |
+| retools | 1.2.0 | — (utility) |

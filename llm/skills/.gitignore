@@ -1,0 +1,8 @@
+# Security skills
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+
+# Engagement output (tracked per-engagement, not here)
+*-output/state.yaml

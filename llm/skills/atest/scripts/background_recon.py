@@ -6,7 +6,7 @@ Fire these during Phase 1 exit, harvest results in Phase 2/3 entry.
 Usage (from execute_code):
     from hermes_tools import terminal
     # Start in background:
-    terminal("python3 ~/.hermes/skills/security/atest/scripts/background_recon.py "
+    terminal("python3 ~/.hermes/skills/security/ptest/scripts/background_recon.py "
              "--mode auth-diff --base-url https://api.target.com "
              "--endpoints /tmp/endpoints.txt "
              "--token-a 'eyJ...' --token-b 'eyJ...' "

@@ -1,0 +1,1 @@
+SKILL_CONFIG = {'NAME': 'atest', 'BUDGET_HOURS': 4, 'OUTPUT_DIR': 'atest-output', 'GATEWAYS': {1: '1_recon', 2: '2_authn_authz', 3: '3_injection_logic', 4: '4_reporting'}, 'PHASES': {1: 'recon', 2: 'authn-authz', 3: 'injection-logic', 4: 'reporting'}, 'SUBDIRS': ['phase1-recon', 'phase2-authz', 'phase3-injection', 'report']}

@@ -1,6 +1,6 @@
 ---
 name: retools
-version: 1.1.0
+version: 1.2.0
 description: "Reverse engineering tooling skill covering Ghidra, radare2, IDA, and Binary Ninja workflows. Setup, scripting, plugin management, and integration with MCP for automated analysis."
 tags: [reverse-engineering, ghidra, radare2, ida, binary-ninja, re, disassembly, decompilation]
 trigger: "ghidra setup, ghidra extension, r2 analysis, radare2, ida script, binary ninja, reverse engineering tools, RE tooling, ghidra mcp, decompile binary"
@@ -18,7 +18,108 @@ metadata:
 
 Utility skill for RE tool setup, scripting, and integration. Supports xdev (exploit dev), mtest (mobile native RE), and ptest (binary analysis during pentests).
 
+## When to Use / When NOT to Use
+
+**Use when:**
+- Target matches skill scope (see Quick Reference phases)
+- You have required access level (credentials, API token, device, etc.)
+- Authorization is confirmed (written permission for pentest, own assets for research)
+
+**Avoid when:**
+- Target is explicitly out of scope
+- No credentials/token/device available and skill requires authenticated testing
+- Time budget is insufficient for minimum viable engagement (< 15 min)
+- Legal/ToS constraints block required techniques
+- No binary file to analyze
+- Binary is interpreted script (JS/Python) — read source directly
+- Source code is available (use scode instead)
 ## Commands
+
+
+## Findings (findings.jsonl)
+
+**Format:** JSONL, one JSON object per line.
+
+**Required fields:** `finding_id`, `title`, `severity`, `category`, `target`, `confidence` (0.0-1.0), `timestamp`
+
+**Example:**
+```json
+{"finding_id": "RETOOLS-001", "title": "Hardcoded API key", "severity": "High", "category": "secrets", "target": "app.apk", "confidence": 0.95, "timestamp": "2026-06-22T10:00:00Z"}
+```
+
+### Evidence Standards
+
+All findings must follow `../references/evidence-standards.md` for required/optional evidence capture and redaction rules.
+
+### Severity Mapping
+
+Cross-skill severity normalization: `../references/severity-mapping.md`
+
+### Postmortem
+
+After engagement closes, run shared retrospective:
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/scripts"))
+from postmortem import run_postmortem
+run_postmortem(workdir, "retools")
+```
+
+### Gate Enforcement (MANDATORY before advancing)
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/retools/scripts"))
+from gate_check import check_gate, print_gate_status
+
+result = check_gate(".", phase=None)
+print_gate_status(result)
+```
+
+
+### Phase Entry Protocol (ALL phases)
+
+When entering ANY phase:
+1. **Load reference file** — `skill_view(name='retools', file_path='references/<phase-file>')`
+2. **Record timestamp** — write `phase_N_start` in state.yaml
+3. **Check prerequisites** — verify prior phase gate is PASSED
+4. **Review findings** — check `findings.jsonl` for chain opportunities before starting
+
+## Error Handling
+
+| Failure Mode | Action |
+|--------------|--------|
+| Binary not found | Verify path; check file permissions |
+| Tool timeout | Increase timeout, retry once. If persistent, document blocker. |
+| Decompilation fails | Try alternative tool (jadx → ghidra → r2) |
+| Patch breaks binary | Restore original, try different offset |
+| Symbol not found | Search with grep/strings, check stripped binary |
+
+**Rules:**
+- Always backup original binary before patching
+- Test each patch in isolation (one change at a time)
+- Document exact bytes/offsets modified for reproducibility
+
+## Concurrent Execution Safety
+
+See `../references/concurrent-execution-safety.md` for state locking, parallel scanning, and subagent handoff rules.
+
+## Retry / Timeout Patterns
+
+| Operation | Timeout | Retry | Backoff |
+|-----------|---------|-------|---------|
+| HTTP requests | 30s | 3x | 5s linear |
+| nuclei scan | 300s | 2x | 30s |
+| Frida attach | 10s | 3x | 5s |
+| Burp request | 60s | 2x | 10s |
+| Cloud CLI | 120s | 2x | 30s |
+| Git clone | 60s | 2x | 10s |
+
+**Rules:**
+- On timeout: wait for backoff, retry once. If persistent, document as blocker.
+- On 429/503: exponential backoff (5s → 25s → 125s), max 3 attempts.
+- On partial output: save what you have, note the gap, continue.
+- Long-running scans: use background terminal with `notify_on_complete=true`.
 
 | Command | Action |
 |---------|--------|
@@ -32,7 +133,7 @@ Utility skill for RE tool setup, scripting, and integration. Supports xdev (expl
 
 ---
 
-## Environment (macOS)
+## Environment (macOS primary; paths below map to Linux/Windows equivalents)
 
 ### Ghidra
 - Binary: `/opt/homebrew/bin/ghidraRun`
@@ -110,6 +211,7 @@ mcp_jadx_mcp_server_get_android_manifest()
 mcp_jadx_mcp_server_get_methods_of_class(class_name)
 mcp_jadx_mcp_server_get_xrefs_to_method(class_name, method_name)
 ```
+> **Verify:** Run `mcp_jadx_mcp_server_list_tools()` or check JADX MCP server logs if these endpoints return errors — tool names may change across JADX MCP plugin versions.
 
 ### APKEditor (repack/patch)
 ```bash
@@ -397,7 +499,29 @@ bv.file.close()
 
 ## Cross-Tool Patterns
 
-### Architecture Identification
+### Architecture
+
+**state.yaml schema:**
+```yaml
+engagement:
+  name: string
+  started: ISO8601
+  target_file: string
+  tool: ghidra|r2|ida|binja
+current_phase: int
+gateways:
+  1_setup: OPEN|PASSED|LOCKED
+  2_analysis: ...
+  3_extraction: ...
+  4_patch: ...
+  5_report: ...
+time_tracking:
+  phase_1_start: ISO8601
+  # ... per phase
+findings_count: int
+notes: string
+```
+ Identification
 ```bash
 # Quick arch check
 file ./binary

@@ -45,7 +45,60 @@ Cross-skill integration:
 Phase 1: Recon & Setup → Phase 2: Traffic Analysis → Phase 3: Local Analysis → Phase 4: Business Logic → Phase 5: Reporting
 ```
 
-## Commands
+## When to Use / When NOT to Use
+
+**Use when:**
+- Target matches skill scope (see Quick Reference phases)
+- You have required access level (credentials, API token, device, etc.)
+- Authorization is confirmed (written permission for pentest, own assets for research)
+
+**Avoid when:**
+- Target is explicitly out of scope
+- No credentials/token/device available and skill requires authenticated testing
+- Time budget is insufficient for minimum viable engagement (< 15 min)
+- Legal/ToS constraints block required techniques
+- No app binary or installer
+- App is web-only (use ptest/atest)
+- Thin wrapper around web app with no client-side logic
+
+## Error Handling
+
+| Failure Mode | Action |
+|--------------|--------|
+| Tool exits non-zero | Capture stderr, check if partial output is usable |
+| API rate limit (429) | Back off, retry once. If persistent, document and pivot |
+| Credential expired | Re-acquire or document as finding (credential rotation issue) |
+| Target unreachable | Retry 3x with 30s gap. If still down, mark host UNREACHABLE |
+| Permission denied | Try alternative auth method. If blocked, document scope gap |
+| WAF blocking | Try 3 bypass techniques max, then document WAF and move on |
+| Frida detach | Retry with `-f` spawn mode. 3 failures → anti-Frida, escalate |
+
+**Rules:**
+- Never retry blindly — understand the error first
+- Save partial results before retrying (power loss, network drop)
+- Document blocker findings with evidence (screenshot, HTTP status)
+- On repeated failure (>3 attempts): mark as BLOCKED, continue to other surface
+
+## Concurrent Execution Safety
+
+See `../references/concurrent-execution-safety.md` for state locking, parallel scanning, and subagent handoff rules.
+
+## Retry / Timeout Patterns
+
+| Operation | Timeout | Retry | Backoff |
+|-----------|---------|-------|---------|
+| HTTP requests | 30s | 3x | 5s linear |
+| nuclei scan | 300s | 2x | 30s |
+| Frida attach | 10s | 3x | 5s |
+| Burp request | 60s | 2x | 10s |
+| Cloud CLI | 120s | 2x | 30s |
+| Git clone | 60s | 2x | 10s |
+
+**Rules:**
+- On timeout: wait for backoff, retry once. If persistent, document as blocker.
+- On 429/503: exponential backoff (5s → 25s → 125s), max 3 attempts.
+- On partial output: save what you have, note the gap, continue.
+- Long-running scans: use background terminal with `notify_on_complete=true`.
 
 | Command | Action |
 |---------|--------|
@@ -81,7 +134,7 @@ What type of thick client?
 │   ├── Patch: modify app.asar directly
 │   ├── Proxy: --proxy-server="http://127.0.0.1:8080" flag
 │   ├── Local: %AppData%/{app}/, IndexedDB, localStorage, keytar
-│   ├── Key findings: nodeIntegration XSS→RCE, preload script abuse, IPC abuse
+│   ├── Key findings: nodeIntegration XSS→RCE, preload script abuse, IPC abuse, contextIsolation bypass
 │   └── Reference: `references/electron-testing.md`
 │
 ├── Native (C/C++ / Delphi / Qt)
@@ -166,6 +219,10 @@ If a phase is not applicable (offline app → Phase 2 Traffic minimal, simple ut
 - **App auto-updates mid-test** → document version change, re-verify findings still reproduce
 - **Source fully recovered (.NET/Java)** → hand to scode, shift ttest focus to runtime behavior only
 
+### Severity Mapping
+
+Cross-skill severity normalization: `../references/severity-mapping.md`
+
 ## Pitfalls
 
 - .NET `ProtectedData` (DPAPI): decryptable only as same user on same machine — prove it, don't assume
@@ -175,6 +232,17 @@ If a phase is not applicable (offline app → Phase 2 Traffic minimal, simple ut
 - Proxifier: process-level rules, not system-wide. Match exact executable name.
 - Non-HTTP protocols: Wireshark first to identify, THEN choose interception tool
 - License bypass alone is often "accepted risk" for internal apps — chain with data access for impact
+- Windows modern protections: WDAG (Defender Application Guard) and Smart App Control block untrusted installers and scripts. Test in VM first; check `windefend` service status + `AppLocker`/`Windows Defender Application Control` policies before DLL/sideload tests.
+
+### Postmortem
+
+After engagement closes, run shared retrospective:
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/scripts"))
+from postmortem import run_postmortem
+run_postmortem(workdir, "ttest")
+```
 
 ## Command Procedures
 
@@ -239,11 +307,16 @@ result = check_gate(".", phase=None)
 print_gate_status(result)
 ```
 
+### Evidence Standards
+
+All findings must follow `../references/evidence-standards.md` for required/optional evidence capture and redaction rules.
+
 ## Script Invocation
 
 ```python
 import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/ttest/scripts"))
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/scripts"))
+from config import SKILL_CONFIG
 import state_manager
 
 workdir = "."
@@ -297,6 +370,7 @@ finding = {
     "chain_potential": [],  # e.g., ["atest:api_testing", "scode:code_review", "xdev:exploit_dev"]
     "timestamp": datetime.now().isoformat(),
     "phase": "{current_phase}",
+    "confidence": "confirmed",  # confirmed / probable / theoretical
     "status": "confirmed"
 }
 with open("./ttest-output/findings.jsonl", "a") as f:

@@ -7,8 +7,11 @@ license: MIT
 trigger: "pentest, penetration test, web pentest, infrastructure pentest, network pentest, external pentest, internal pentest, red team"
 argument-hint: "<command: start|preflight|status|resume|next|escalate|abort|cleanup|recon-passive|recon-active|enumerate-confirm|assess-exploit|post-exploit|report>"
 notes:
+  - "v5.0.1: Added mandatory self-check rule: before declaring any phase PASSED, re-read the phase reference checklist and verify every row. LoanPlatform (June 2026): user caught missed port scan (P2) and missed Prometheus URI batch test (P1) on review — both yielded critical findings."
   - "v5.0.0: Compressed 8 phases → 6. Merged Enumerate+AttackSurface into 'Enumerate & Confirm'. Merged VulnAssess+Exploit into 'Assess & Exploit'. PostExploit+Chain&Escalate merged. Discovery loop-back mechanism added. Reference files unchanged — routing remapped."
+  - "v5.0.1: Added references/engagement-loanplatform-jfs.md — Prometheus URI batch testing, SPA proxy bypass, Spring Security filter gap pattern, Conductor workflow exposure."
   - "v4.7.0: Trigger table extracted to references/vulnerability-trigger-index.md. Pitfalls deduplicated. New attack recipes."
+  - "RULE: Before declaring any phase PASSED, re-read that phase's reference file checklist. Verify every row has status DONE/SKIPPED(reason)/N/A(reason). Never declare phase complete from memory alone."
   - "v4.6.0: Hub model — SKILL.md handles routing + framework rules. Phase techniques in references/phase*.md."
   - "scripts/ contains hermes_tools-based phase scripts; see references/execute-code-integration.md for tier definitions and usage"
   - "TOKEN OPTIMIZATION: Gate Enforcement + Script Invocation appear once each (bottom of file). Do NOT duplicate them during future patches."
@@ -52,8 +55,56 @@ Discovery loop-back:
 
 ## Architecture
 
+
+**state.yaml schema:**
+```yaml
+engagement:
+  name: string
+  started: ISO8601
+  scope: string
+current_phase: int
+gateways:
+  1_passive_recon: OPEN|PASSED|LOCKED
+  2_active_recon: ...
+  3_enumerate_confirm: ...
+  4_assess_exploit: ...
+  5_post_exploit_impact: ...
+  6_reporting: ...
+time_tracking:
+  phase_1_start: ISO8601
+  phase_6_end: ISO8601
+findings_count: int
+notes: string
+```
+
+
 `Gateway (Quality Gate)` → `Phase (Pentest Stage)` → `Tasks (Techniques)`
 
+### Postmortem
+
+After engagement closes, run shared retrospective:
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/scripts"))
+from postmortem import run_postmortem
+run_postmortem(workdir, "ptest")
+```
+
+## When to Use / When NOT to Use
+
+**Use when:**
+- Target matches skill scope (see Quick Reference phases)
+- You have required access level (credentials, API token, device, etc.)
+- Authorization is confirmed (written permission for pentest, own assets for research)
+
+**Avoid when:**
+- Target is explicitly out of scope
+- No credentials/token/device available and skill requires authenticated testing
+- Time budget is insufficient for minimum viable engagement (< 15 min)
+- Legal/ToS constraints block required techniques
+- Target is API-only (use atest)
+- Target is mobile app (use mtest)
+- Target is pure cloud infra with no network layer (use ctest)
 ## Commands
 
 | Command | Action |
@@ -62,18 +113,33 @@ Discovery loop-back:
 | `start` | Initialize a new engagement — prompt for scope, targets, and authorization |
 | `preflight` | Check mandatory tool availability and install missing tools |
 | `status` | Show current gateway state, progress, and pending techniques |
-| `resume` | Resume an interrupted engagement — read existing output and continue from last checkpoint |
-| `next` | Attempt to advance to the next phase (runs exit criteria check) |
-| `escalate` | Trigger critical finding escalation |
-| `abort` | Terminate engagement early — records reason, generates partial report |
-| `cleanup` | Archive engagement output, sanitize sensitive data |
+| `resume` | Resume from most recent phase |
+| `next` | Advance to next phase after gate check |
+| `report` | Generate final report |
+| `abort` | Abandon engagement with reason |
+| `cleanup` | Archive output and reset state |
 | **Phase Execution** | |
 | `recon-passive` | Execute passive recon techniques |
 | `recon-active` | Execute active recon techniques |
 | `enumerate-confirm` | Enumerate applications + confirm attack surface with user [MANDATORY STOP at exit] |
 | `assess-exploit` | Threat model, vuln scan, and exploit top vectors |
-| `post-exploit` | Post-exploitation + chain & escalate |
-| `report` | Generate final pentest report |
+
+## Error Handling
+
+| Failure Mode | Action |
+|--------------|--------|
+| Tool exits non-zero | Capture stderr, check if partial output is usable |
+| API rate limit (429) | Back off, retry once. If persistent, document and pivot |
+| Credential expired | Re-acquire or document as finding (credential rotation issue) |
+| Target unreachable | Retry 3x with 30s gap. If still down, mark host UNREACHABLE |
+| Permission denied | Try alternative auth method. If blocked, document scope gap |
+| WAF blocking | Try 3 bypass techniques max, then document WAF and move on |
+
+**Rules:**
+- Never retry blindly — understand the error first
+- Save partial results before retrying (power loss, network drop)
+- Document blocker findings with evidence (screenshot, HTTP status)
+- On repeated failure (>3 attempts): mark as BLOCKED, continue to other surface
 
 If no command is given, show current status and suggest next action.
 
@@ -230,6 +296,7 @@ If `state.yaml` cannot be read:
 6. Inform user of reconstructed state and ask for confirmation before proceeding.
 
 ### Reference Files
+- `references/ptest-tool-architecture.md` — Architecture doc for the ~/Project/ptest automated scanner tool (modules, pipeline, OOB, auth, evidence, WAF feedback, roadmap status)
 - `references/xss-csp-bypass-techniques.md` — CSP nonce bypass research, null-byte search oracle, meta refresh exfil constraints, dangling markup patterns
 
 ### Staleness Check
@@ -259,7 +326,6 @@ Staleness is calculated from the most recent timestamp in `state.yaml` (last pha
 | 6 | Reporting | `references/phase8-reporting-process.md` | Final report delivered, pre-delivery checklist passed |
 
 ---
-
 
 ## Mandatory Quality Gates
 
@@ -294,9 +360,36 @@ Adjust based on scope size:
 
 ---
 
+### Evidence Standards
+
+All findings must follow `../references/evidence-standards.md` for required/optional evidence capture and redaction rules.
+
 ## Finding Template
 
 > Full template, ID assignment, and deduplication rules: `references/finding-template-full.md`
+
+Cross-skill findings chaining (JSONL schema): `../references/findings-jsonl-convention.md`
+
+When recording a finding, append to `./ptest-output/findings.jsonl`:
+```python
+import json
+from datetime import datetime
+finding = {
+    "id": "PTEST-{count:03d}",
+    "skill": "ptest",
+    "severity": "{severity}",
+    "type": "{vuln_type}",  # e.g., xss, sqli, ssrf, auth_bypass, idor
+    "target": "{affected_host_or_endpoint}",
+    "summary": "{one-line description}",
+    "chain_potential": [],
+    "timestamp": datetime.now().isoformat(),
+    "phase": "phase{current_phase}",
+    "confidence": "confirmed",
+    "status": "confirmed"
+}
+with open("./ptest-output/findings.jsonl", "a") as f:
+    f.write(json.dumps(finding) + "\n")
+```
 
 Every finding uses `FINDING-{ID}` (auto-incremented from `state.yaml`). Must include: severity, CVSS, affected asset, environment tag, steps to reproduce, evidence, impact, and remediation. Only **Confirmed** findings (with direct proof) go into the final report.
 
@@ -313,7 +406,6 @@ Every finding uses `FINDING-{ID}` (auto-incremented from `state.yaml`). Must inc
 4. If borderline → document WHY it's different from the exclusion before proceeding
 
 ---
-
 
 ## Operational Lifecycle
 
@@ -435,7 +527,6 @@ Each target gets independent state tracking. Finding IDs are unique per-target. 
 
 ---
 
-
 ## Exploitation Mindset & Post-Exploitation Rules
 
 > Full content: `references/exploitation-mindset.md` — load when entering Phase 4-5.
@@ -455,7 +546,6 @@ See `references/guardrails.md` for full rules. Critical:
 - PoC scripts must contain real tested values, never placeholders
 - Scope enforcement: confirm before testing undocumented assets
 
-
 ## Cross-Skill Triggers
 
 See `references/cross-skill-triggers.md` for full decision tree. Quick ref:
@@ -472,44 +562,47 @@ When selecting bug bounty targets from platforms (Intigriti, HackerOne, YesWeHac
 - Filter by: wildcard scope + bounty range + industry match to operator's experience
 - Engagement intel files: `references/intel-{target}-{platform}.md` — load when resuming
 
-
 ## Finding More Vulnerabilities
 
 > **Full trigger→reference mapping (80+ entries):** `references/vulnerability-trigger-index.md` — load at phase transitions to identify which technique references apply to the current target.
 
 Quick-access patterns:
 - Tomcat Manager RCE (WAR deploy): `references/tomcat-manager-rce.md`
-- Windows hash dump via webshell (no SMB): `references/windows-hash-extraction-via-webshell.md`
-- Tomcat manager RCE: `references/tomcat-manager-exploitation.md`
-- Windows hash dump via webshell: `references/windows-hash-exfiltration-webshell.md`
+- Tomcat manager (default creds/WAR deploy): `references/tomcat-manager-exploitation.md`
+- Tomcat WAR deploy (GUI-only): `references/tomcat-war-deploy-rce.md`
+- Windows hash exfil (webshell, no SMB): `references/windows-hash-exfiltration-webshell.md`
 - AD lateral movement/privesc: `references/ad-lateral-movement-checklist.md`
 - DPAPI credential decryption: `references/dpapi-credential-decryption.md`
-- Tomcat WAR deploy (GUI-only): `references/tomcat-manager-war-deploy.md`
 - Docker breakout via host mount: `references/docker-breakout-host-mount.md`
-- Tomcat WAR deploy (GUI-only): `references/tomcat-war-deploy-rce.md`
+- Snowplow collector event injection + stored XSS: `references/snowplow-collector-exploitation.md`
+- MCP/Agent protocol unauthenticated exploitation (Mintlify docs): see Phase 1 `references/phase1-passive-recon.md` §"MCP/Agent Protocol Files"
+- MCP server discovery & exploitation (.well-known/mcp): `references/mcp-server-exploitation.md`
 - CDN-fronted targets: `references/cdn-aware-phase5.md`
 - Firebase auth: `references/firebase-auth-bypass.md`
 - SQLi with WAF: `references/sqli-payloads-and-bypass.md`
 - XSS filter bypass: `references/xss-filter-bypass-techniques.md`
 - CSP nonce bypass + blind search oracle: `references/blind-search-oracle-html-injection.md`
-- Tomcat manager (default creds/WAR deploy): `references/tomcat-manager-exploitation.md`
-- Windows hash exfil (webshell, no SMB): `references/windows-hash-exfiltration-webshell.md`
+- Spring Boot unauth recon (actuator, user enum, JS extraction, broken-auth): `references/spring-boot-unauth-recon.md`
 - File upload RCE: `references/attack-recipes.md` §"Avatar Upload Path Traversal"
 - XXE in SPA: `references/attack-recipes.md` §"Base64-Encoded XML Submission"
 - DOM XSS cipher: `references/attack-recipes.md` §"DOM XSS via Client-Side Cipher"
+- SPA proxy path prefix bypass (Istio/K8s): `references/attack-recipes.md` §"SPA Proxy Path Prefix Bypass"
 - Webhook signature bypass (Prometheus→route leak→forge): `references/webhook-signature-bypass.md`
 - Prometheus→webhook endpoint discovery: `references/prometheus-webhook-discovery.md`
-- SPA proxy path prefix bypass (Istio/K8s): `references/attack-recipes.md` §"SPA Proxy Path Prefix Bypass"
 - Istio 400 "Bad Request" ≠ auth failure: `references/istio-mesh-assessment.md`
 - K8s/Istio internal enumeration (path routing, Prometheus URI, VPN DNS): `references/k8s-istio-internal-enumeration.md`
-- Capital.com engagement intel: `references/engagement-capital-com-intigriti.md`
-- Predictable reset token: `references/predictable-token-patterns.md`
 - Predictable reset token: `references/predictable-token-patterns.md`
 - Lambda SSRF (file:// + IAM creds): `references/lambda-ssrf-credential-theft.md`
-- Webhook signature bypass + Prometheus counter proof: `references/webhook-signature-bypass.md`
+- GraphQL introspection bypass (error message enumeration): `references/graphql-introspection-bypass.md`
+- GraphQL schema enumeration via error messages: `references/graphql-schema-enumeration-via-errors.md`
 - SPA proxy auth bypass (jfs-client pattern): `references/spa-proxy-auth-bypass.md`
+- Rate limit bypass via X-Forwarded-For + device-id rotation: `references/rate-limit-bypass-header-rotation.md`
+- Uphold (Intigriti bounty): `references/intel-uphold-intigriti.md`
 - Stuck at 40-50% budget: `references/stuck-playbook.md`
 - Capital.com (Intigriti bounty): `references/intel-capital-com-program.md`
+- Monzo (Intigriti bounty): `references/intel-monzo-intigriti.md`
+- Next.js __NEXT_DATA__ runtimeConfig extraction: `references/nextjs-runtime-config-extraction.md`
+- Next.js source maps + runtimeConfig extraction: `references/nextjs-source-map-recon.md`
 - Docker breakout (disk mount, socket, cgroup, nsenter): `references/docker-breakout-techniques.md`
 
 - Client presentation / verbal delivery: `references/client-presentation-storytelling.md`
@@ -535,6 +628,10 @@ Reference files use prefixes to indicate loading rules:
 - Everything else — reusable technique references. Load based on cross-skill-triggers signal matching.
 
 **Public repo safety:** engagement/intel files contain extracted API keys, auth tokens, and target-specific secrets. Always gitignore: `**/engagement-*`, `**/intel-*`, and any file with auth flow captures (e.g., `jago-auth-flow.md`).
+
+### Severity Mapping
+
+Cross-skill severity normalization: `../references/severity-mapping.md`
 
 ## Pitfalls
 
@@ -562,101 +659,45 @@ Split compound items into atomic rows. Every DONE needs an output artifact refer
 - TEST WRITE METHODS ON PROD UNAUTH — POST/DELETE on action endpoints without cookies
 - PREDICTABLE RESET TOKEN — TEST SIMPLEST HYPOTHESIS FIRST — register 2+ accounts, get real tokens, check length (32=MD5, 40=SHA1, 64=SHA256, 128=SHA512), test `hash(email)` BEFORE trying Host header/IDOR. Takes 10 seconds, catches the most common pattern.
 
-### Situational Pitfalls (one-liners — see `references/pitfalls.md` for details)
+### Situational Pitfalls
+
+> **Full situational pitfalls with engagement-specific details:** `references/pitfalls.md`
+>
+> Load at Phase 4+ entry or when a technique is failing. Contains engagement lessons from
+> LoanPlatform, Capital.com, Monzo, Uphold, BlueSpider, WinTicket, SecOps exams.
+
+Key one-liners (see reference for full context):
 - TRANSPARENT PROXY FALSE POSITIVES — Shodan InternetDB as ground truth
 - NUCLEI TIMEOUT — tag-specific scans, never mark DONE on 0-result timeout
 - SUBDOMAIN ENUM — multiple sources (subfinder + crt.sh)
 - SHODAN ON ALL IPs — every unique IP, not just primary
-- GOOGLE/GITHUB NEVER "N/A" — even for internal apps. Execute the search and mark DONE with "0 results" rather than SKIPPED. LoanPlatform (June 2026): Wayback/Google dorks were marked SKIPPED without executing — user caught it at P1/P2 review.
-- VPN-GATED INTERNAL K8S ≠ SKIP DNS BRUTE — when target resolves only via VPN DNS (169.254.169.254), you CAN still brute-force subdomains using `dig` against the VPN resolver. "Internal domain" is never a valid reason to skip DNS expansion. Test 100+ service name permutations with stg-/dev-/uat- prefixes.
-- PHASE SELF-REVIEW BEFORE ADVANCING — user repeatedly caught gaps by asking "did we miss something?" LoanPlatform (June 2026): P1 dorks/Wayback skipped without execution, env-prefix missing; P2 DNS expansion skipped; P3 missed batch Swagger test; P4 missed injection points table. Rule: reload phase reference, diff every row, verify DONE has tool output evidence.
-- PHASE 4 CHECKLIST ≠ REFERENCE — diff before advancing
-- PHASE 2 ≠ JUST PORT SCAN — brute-force, vhost, zone xfer, methods, headers
-- VPN/INTERNAL ≠ SKIP DNS EXPANSION — when target resolves via VPN DNS (169.254.169.254, private resolver), ALL DNS brute-force techniques still apply using that resolver. "Internal domain" is not a valid reason to skip permutation/vhost/reverse-DNS. LoanPlatform (June 2026): user caught all 3 DNS expansion items improperly SKIPPED.
-- PROMETHEUS ENDPOINT DISCOVERY — when actuator/prometheus is exposed, extract `uri=` labels for hidden routes, `topic=` for Kafka architecture, `class=` for service structure, `vendor=` for integrations. Then test each discovered webhook on PROD for signature bypass (see `references/prometheus-webhook-discovery.md`). Capital.com (June 2026): Prometheus on test instance revealed 15 callback URIs; prod accepted forged Sumsub KYC webhooks without signature verification.
+- GOOGLE/GITHUB NEVER "N/A" — execute the search, mark DONE with "0 results"
 - OPENAPI SPEC IS THE WORDLIST — batch-test all paths unauth
-- ISTIO 400 ≠ AUTH REQUIRED — Istio/Envoy returning 400 "Bad Request" (11 bytes, text/plain, x-envoy-upstream-service-time header) means the request didn't reach the backend at all. This is a ROUTING issue, not authentication. The service may be accessible via a different path prefix (see SPA PROXY PATH BYPASS). Don't confuse with app-level 401/403. LoanPlatform (June 2026): spent hours testing headers/tokens on /app-jfs/loan-service/* (always 400) when the same endpoints were wide open via /app-jfs/jfs-client/* prefix.
-- INTIGRITI SCOPE GATED — Algolia API gives metadata only (name, bounty, industry). Full scope/exclusions require login. Confirm OOS before investing exploit time.
 - SPRING BOOT CONTEXT PATH — probe outside /api/** filter
-- SPA PREFIX AS API PROXY — when a backend returns 400 via its direct path (e.g., `/app-jfs/loan-service/`) but the SPA's `<base href>` prefix routes differently, try the SPA path as proxy (e.g., `/app-jfs/jfs-client/jfs/endpoint`). K8s/Istio routing may enforce auth headers on the service path but the SPA's nginx proxy passes requests through unvalidated. LoanPlatform (June 2026): `/app-jfs/loan-service/*` returned 400 (Istio "Bad Request") for all endpoints, but `/app-jfs/jfs-client/jfs/*` proxied the same requests to the backend and returned 200 with financial data (5,327 records, disbursement PII). The SPA's nginx catch-all was proxying API calls without auth enforcement.
-- SPA PROXY PATH BYPASS — when /app-prefix/service-name/ returns 400 (Istio/Envoy routing block), test /app-prefix/frontend-client/{service-path} instead. SPAs often proxy API calls through their own path prefix (nginx/Istio catches frontend path and forwards to backend without auth). LoanPlatform (June 2026): /app-jfs/loan-service/jfs/* returned 400 but /app-jfs/jfs-client/jfs/* returned 200 with full financial data (5,327 records, 22,330 pending repayments). The SPA's base path acts as an unauthenticated API gateway. Always test: (1) identify SPA base path from HTML `<base href=...>`, (2) append backend service paths (from JS config/source maps) to the SPA base, (3) compare responses vs direct service path. If SPA path returns 200/401/500 where service path returns 400, the proxy is forwarding without auth. Full technique: `references/spa-proxy-path-bypass.md`
-- n8n OAUTH SCOPE ESCALATION — test arbitrary scopes on registration
-- OAUTH PARAM TESTING — bare GET 302 ≠ gated
-- ATEST HANDOFF FOR API TARGETS — when ptest discovers API endpoints behind auth (trading APIs, demo APIs with Postman collections), delegate to atest subagent DURING Phase 4 (not after). The atest agent can work auth bypass, BOLA, injection in parallel. Capital.com lesson: atest found 8 additional findings (CORS, rate limit, stack traces) that ptest Phase 3 missed because ptest focused on webhook endpoints only.
 - POST+JSON+XHR BYPASSES 302 — Java/JBoss session redirect
-- CORS RE-TEST IN PHASE 6 — new backends found during exploit
 - SPA CATCH-ALL — baseline with random UUID first
 - WEBPACK CHUNKS — business logic in lazy-loaded chunks
 - JS BUNDLE DIFF — dev vs prod early in Phase 3
-- PARAM TYPE BRUTE-FORCE — config endpoint wildcard values
-- RATE-LIMITED TARGETS — JS route extraction over ffuf
-- ANGULAR PRE-RENDERED — ng-version without bundles = server-side
-- VPN SPLIT-TUNNEL — separate .ovpn, delete stale manual routes
-- TLS CIPHER TESTING — pin `-tls1_2` or server upgrades to 1.3
-- WEAK CSRF — empty rejected but random accepted = not session-tied
-- FORGOT-PW FLOODING — 20+ rapid = DoS finding
-- BURP MCP SEND VS REPEATER — `mcp_burpsuite_send_http2_request` sends directly and returns response but does NOT appear in Burp proxy history. Use `mcp_burpsuite_create_repeater_tab_http2` for named tabs visible in Burp Repeater UI. Always use create_repeater_tab when user asks to "send to Burp."
-- PROMETHEUS URI EXTRACTION → UNAUTH ENDPOINT TESTING — when /actuator/prometheus is exposed, `grep uri=` for full route map, then test EVERY path without auth. More effective than ffuf for Spring Boot (reveals regex paths like `{login:^[_'.@A-Za-z0-9-]*$}` that fuzzing never hits). LoanPlatform (June 2026): Prometheus → 50 URIs → systematic GET testing → found `/user-resources/users/{login}` returning full PII for 33 users (High), plus username leak, JWT key, 5.6MB data dump — all invisible to directory brute-force.
-- SOURCE MAPS = WHITE-BOX ANALYSIS — always check `{bundle}.map` for every JS file. Source maps expose full original source (auth flows, crypto implementations, API configs, service URLs). It's both a finding AND the key to Phase 4 exploitation. LoanPlatform (June 2026): 11.7MB source maps revealed PBKDF2(password, username) auth implementation and full service architecture.
-- PREDICTABLE RESET TOKEN — test hash(email) FIRST: sha512, md5, sha256. Token length reveals algo (128=SHA512, 64=SHA256, 40=SHA1, 32=MD5). 10 seconds to verify.
-- AJAX LOGIN + CURL — use browser for page access, curl for API only
-- CRYPTOJS PBKDF2 ≠ PYTHON HASHLIB — CryptoJS.PBKDF2(password, salt) uses different defaults than Python's hashlib.pbkdf2_hmac. ALWAYS use Node.js `require('crypto-js')` to match exact output. See `references/cryptojs-pbkdf2-login-testing.md`.
-- SPA PROXY PREFIX BYPASS — when /app/service/ returns 400 (Istio routing) but the SPA is at /app/client/, try calling backend APIs via the SPA prefix. SPAs often proxy API calls through their own serving path, bypassing Istio auth headers. See `references/spa-proxy-auth-bypass-pattern.md`. Trigger: Istio 400 (not 401) + SPA on same ingress + empty base_url in meta.
-- PHASE SELF-REVIEW BEFORE ADVANCING — before marking ANY phase complete, ask yourself: "If the user asks 'did we miss something?' can I defend every checklist row with evidence?" Load the phase reference file, diff it against the checklist, and fill gaps BEFORE requesting sign-off. LoanPlatform (June 2026): user asked "did we miss something?" on every phase 1-6, catching gaps each time (Google dorks skipped, env-prefix missing, batch endpoint testing incomplete, OAuth redirect_uri untested).
-- BURP MCP: send_http_request vs create_repeater_tab — `mcp_burpsuite_send_http2_request` sends directly (NOT through proxy), so requests WON'T appear in Proxy HTTP History. Use `mcp_burpsuite_create_repeater_tab_http2` to create named tabs visible in Burp Repeater. User expects to SEE requests in Burp UI — always use Repeater tabs for evidence/documentation.
-- SPA PATH PREFIX PROXY BYPASS — when SPA has `<base href=/prefix/>`, test ALL API paths via that prefix. Direct API path returning 400/401 does NOT mean the endpoint is auth-gated — the SPA proxy may forward requests without auth. LoanPlatform (June 2026): /loan-service/loans→400, but /jfs-client/jfs/repayments/execute→200 SUCCESS (Critical financial write). See `references/spa-recon-techniques.md`.
-- SELF-AUDIT AT EVERY PHASE EXIT — before marking a phase PASSED, load the phase reference file and diff EVERY checklist row against what was actually done. LoanPlatform (June 2026): user asked "did we miss something?" at P1, P2, P3, P4, and P5 exits — found gaps EVERY time (Google dorks skipped, DNS brute-force skipped, batch Swagger testing missing, entry point tables missing, nikto not run). The agent's self-review is unreliable without re-reading the reference. Rule: `skill_view` the phase reference → compare line-by-line → fix gaps BEFORE presenting "phase complete" to user.
-- SPA PROXY PREFIX BYPASS — when K8s/Istio returns 400 "Bad Request" (text/plain from Envoy) on a direct service path, test the SAME endpoints via the SPA's base path prefix. The SPA catch-all proxies API requests without the routing header Istio requires. LoanPlatform (June 2026): `/app-jfs/loan-service/*` = 400, but `/app-jfs/jfs-client/jfs/*` = 200 with financial data. Check JS source maps for empty `baseURL` config = relative to SPA base.
-- BURP MCP VISIBILITY — `mcp_burpsuite_send_http2_request` bypasses proxy history (invisible to user). Use `mcp_burpsuite_create_repeater_tab_http2` for user-visible evidence in Burp Repeater. Use send for automated validation; create_repeater_tab for documentation.
 - SQLi DECOY DATA — enumerate ALL rows with LIMIT N,1
 - CHAIN PoCs MANDATORY — no diagrams without executable proof
 - CREDENTIAL INVENTORY BEFORE PHASE 6 — or wasted exploits
 - JWT BRUTE FALSE POSITIVES — re-verify 3x, network flakes cause hits
 - UNAUTH WRITE ON PROD — verify login after reset before claiming ATO
-- PREDICTABLE RESET TOKEN — test SHA-512/256/1/MD5(email) FIRST
-- WEBHOOK SIGNATURE BYPASS (CRITICAL for fintech) — when target uses third-party KYC/payment webhooks (Sumsub, Stripe, AppsFlyer), test ALL callback endpoints for missing HMAC verification: (1) POST valid JSON with invalid/missing X-Payload-Digest header, (2) verify 415 on wrong Content-Type + 400 on empty body + 500 on nonexistent path (proves real processing, not catch-all 200), (3) check Prometheus metrics for URI paths revealing all callback routes. Capital.com (June 2026): 7 Sumsub KYC endpoints accepted forged webhooks on PROD without signature check → KYC bypass on regulated financial platform.
-- PROMETHEUS METRICS = ENDPOINT MAP — when /actuator/prometheus is accessible, grep `uri="` for complete API route list. This is MORE reliable than ffuf/gobuster for Spring Boot apps. Also reveals: Kafka topics, vendor integrations, class names, sharding config.
-- IMPERVA WAF BLOCKS ALL AUTOMATION — capital.com pattern: Imperva JS challenge blocks curl, Python, AND headless browsers without residential proxy. No bypass from automated tooling. Account registration on Imperva-fronted sites requires manual browser. Document as access constraint, not methodology gap.
-- PHASE REVIEW SELF-AUDIT — when the user asks "did we miss something?" or "have we done all activities properly?", LOAD the phase reference file and diff every checklist row against actual work done. Common gaps found in reviews: (1) techniques marked SKIPPED without execution (Wayback, Google dorks — "GOOGLE/GITHUB NEVER N/A"), (2) env-prefix quick-win check missing, (3) scope viability assessment not documented, (4) DNS expansion via VPN resolver skipped for "internal" targets, (5) batch-testing all Swagger endpoints unauth, (6) File Upload / Injection Points tables missing from Phase 4. LoanPlatform (June 2026): Phase 1-2 review caught 6 gaps, Phase 3 review caught 6 more gaps, Phase 4 caught 3 documentation gaps. Always re-read the reference file before answering "yes, complete."
-- USER ASKS "DID WE MISS SOMETHING?" = LOAD PHASE REFERENCE AND DIFF — when user questions completeness, ALWAYS reload the phase reference file and systematically diff every checklist item against what was actually executed. LoanPlatform (June 2026): user asked this 3 times (P1/P2 review, P3, P4), each time revealing real gaps (env-prefix check, batch Swagger testing, SPA proxy path bypass). Never answer from memory — load the reference and verify. The user expects you to find your own gaps before they do.
-- PHASE 1-2 SELF-AUDIT: SKIPPED ≠ N/A — LoanPlatform (June 2026): User caught Phase 1-2 marked PASSED with Google dorks SKIPPED ("internal domain"), Wayback SKIPPED, DNS brute-force SKIPPED ("VPN-only"). Rule: (1) ALWAYS execute the technique even if you expect empty results — mark DONE with "0 results" not SKIPPED, (2) VPN DNS resolver IS usable for brute-force (dig against 169.254.169.254), (3) internal domains CAN be indexed via partner links/error pages — always try site: and org: searches, (4) env-prefix quick-win is MANDATORY before P2 exit
-- K8S/ISTIO INTERNAL TARGETS — when target is behind K8s ingress with Istio: (1) vhost enum against ingress IP (all return 404 = strict routing, not failure), (2) PATH-BASED service discovery is primary technique — services share one ingress via different path prefixes (/app-jfs/idm/, /app-jfs/loan-service/), (3) 400 "Bad Request" (11 bytes, text/plain) from Envoy = service alive but needs auth token injected by mesh, NOT broken endpoint, (4) Prometheus URI extraction is MORE valuable than ffuf for Spring Boot behind Istio — grep uri= for complete route map
-- OPENAPI SPEC BATCH UNAUTH TESTING (MANDATORY) — LoanPlatform (June 2026): Manual spot-checking of 77 Swagger endpoints found ~20 unauth. Python batch test of ALL 77 found 28 unauth including /pending-tasks/approve and /pending-tasks/fail WRITE endpoints returning 200. Rule: when OpenAPI spec is found, IMMEDIATELY batch-test EVERY endpoint for missing auth using Python requests loop. Filter by: status != 401 AND status != 404. POST endpoints with empty JSON body {}. This is a 2-minute script that catches what manual testing misses.
-- VPN/INTERNAL DNS ≠ SKIP DNS EXPANSION — when target is VPN-gated with internal DNS (169.254.169.254 or custom resolver), DNS brute-force IS possible via that resolver. Never SKIP 0a/0b in Phase 2 with "internal domain" reasoning. Use `dig +short {sub}.target.com` against VPN DNS for permutation testing. LoanPlatform (June 2026): Phase 2 skipped all DNS expansion claiming "no public DNS possible" — user caught it at review. VHost enum against K8s ingress IP (--resolve) is also valid even if all return 404 (documents strict routing).
-- PROMETHEUS URI EXTRACTION → IMMEDIATE UNAUTH TESTING — when /actuator/prometheus is found in ANY phase, extract ALL `uri=` labels AND immediately test each discovered path without auth. Don't defer to Phase 3. LoanPlatform (June 2026): Prometheus had 50+ URI labels; testing them unauth revealed /user-resources/users/{login} returning full PII (emails, phones, roles) for all 33 users — a High finding that was invisible to path fuzzing because the endpoint requires a known username in the URL.
-- REGISTRATION BLOCKED ≠ SKIP AUTHENTICATED TESTING — if signup page is WAF-blocked via browser, try: (1) API self-registration endpoint, (2) different User-Agent/headers, (3) use a real browser manually, (4) ask the user to register. Never accept "can't register" without exhausting alternatives. The demo API key is available from platform Settings after manual signup — it's not an impossible blocker
-- WEBHOOK SIGNATURE BYPASS — when target has third-party webhook callbacks (Sumsub, Stripe, AppsFlyer), ALWAYS test: (1) POST with invalid/missing signature header, (2) POST with valid JSON body, (3) check differential behavior (415/400/500/200). If 200 with forged signature → webhook signature not verified → HIGH finding on financial platforms (KYC/payment bypass). Capital.com lesson (June 2026): Sumsub KYC webhook accepted forged applicantReviewed events on PROD without HMAC verification — 7 endpoints all vulnerable.
-- FULL HTTP PROBE ALL SUBDOMAINS — don't just probe "interesting" subs. Use Python concurrent.futures (40 threads) to batch-probe ALL 4000+ subs. httpx (ProjectDiscovery) vs httpx (Python lib) are DIFFERENT tools — check `httpx --help` output before using. If Python httpx: use curl subprocess approach instead.
-- EXAM KALI BOX AS PIVOT — when an exam provides a dedicated Kali system on the target subnet, ALL scanning MUST be done from Kali. Target hosts may firewall traffic from outside the /28. SecOps (June 2026): external nmap found only 2 hosts (.9, .10); Kali nmap with -Pn found 4 hosts including .7 (DC, RDP 3389) and .8 (Tomcat 8080, RDP 3389). Always `nmap -Pn -sV` the full /28 from Kali before concluding host count.
-- VPN-GATED EXAM TARGETS: BROWSER VS CURL DIVERGENCE — when targets are behind VPN (exam/lab), the browser tool may resolve DNS differently than manual `curl --resolve`. If curl shows one app (e.g., OpenVPN-AS) but the browser shows a completely different app (e.g., "SecOps Labs"), it means the VPN pushes DNS or the target uses vhost routing. ALWAYS verify with `browser_navigate` first before spending time on curl-based discovery. SecOps exam (June 2026): curl to 172.27.224.1:443 hit OpenVPN-AS; browser hit a web app with XSS/SQLi labs and robots.txt with `/supersecret/` containing the flag.
-- EXAM KALI BOX — check available tools on Kali IMMEDIATELY after getting creds. Install impacket (`pip3 install impacket`) early. Scripts at `/usr/share/doc/python3-impacket/examples/`. Kali may lack xfreerdp, evil-winrm, crackmapexec — plan accordingly.
-- VPN-GATED K8S INTERNAL TARGETS — "internal domain, VPN DNS only" is NOT a valid reason to SKIP DNS expansion, env-prefix checks, or OSINT techniques. VPN DNS resolver (169.254.169.254) CAN be brute-forced with dig. Google/Wayback should be EXECUTED and marked "DONE (0 results)", never SKIPPED. Env-prefix quick-win (strip stg-/dev-/uat- from known hostnames, test bare equivalents) is mandatory. LoanPlatform (June 2026): initially skipped all DNS expansion claiming "no public DNS possible" — VPN resolver was available the whole time.
-- SKIPPED ≠ DONE (0 RESULTS) — when a technique yields zero results (Wayback, Google dorks, GitHub search on internal domains), mark it "DONE | N/A | Executed: 0 results (reason)". SKIPPED means NOT EXECUTED and requires justification. LoanPlatform (June 2026): Wayback/Google marked SKIPPED "not indexed" without executing the query — user caught it at review. The query takes 5 seconds; always run it.
-- SCOPE VIABILITY ASSESSMENT AT P1 EXIT — mandatory. Document HIGH/MEDIUM/LOW expected yield in scope.md before advancing. If missed, user will ask "did we do all activities properly?" and the answer is no.
-- SWAGGER BATCH-TEST ALL ENDPOINTS UNAUTH — when OpenAPI/Swagger spec is found, batch-test EVERY endpoint without auth using Python requests loop. Don't hand-pick "interesting" ones. LoanPlatform (June 2026): manual testing found 10 unauth endpoints; systematic batch-test of all 77 found 28 unauth (200) including write actions (/pending-tasks/approve, /pending-tasks/fail) that manual testing missed entirely.
-
-- WEBHOOK 200 ≠ IMPACT — a webhook returning 200 is NOT proof of exploitation. Prove processing via: (1) input validation differential (415/400/500/200), (2) Prometheus counter increment before/after, (3) Kafka produce counter increment. See `references/webhook-signature-bypass.md`. Capital.com (June 2026): triager would reject "returns 200" alone — the Prometheus counter proof (98→99 received, 633→634 produced) elevated from Low to High.
-- SPA PROXY PATH BYPASS — when /app-prefix/service-name/ returns 400 (Istio routing block), try /app-prefix/spa-client-name/{api-path}. SPAs often proxy API requests through their own nginx/path prefix to the backend without auth enforcement. LoanPlatform JFS (June 2026): /app-jfs/loan-service/* returned 400 for ALL paths, but /app-jfs/jfs-client/jfs/* and /app-jfs/jfs-client/loan/v1/* proxied directly to backends returning 200 with financial data (5327 records, disbursement PII fields). The SPA catch-all serves index.html for unknown JS routes but PROXIES known API prefixes to backend services. Test ALL discovered API prefixes (from JS source/config) under the SPA's base path.
-- BURP MCP send_http2_request BYPASSES PROXY HISTORY — requests sent via Burp MCP's send_http*_request tools go direct (like Repeater), NOT through the proxy interceptor. User won't see them in HTTP history. Use create_repeater_tab_http2 instead to create visible tabs the user can interact with.
-- WEBHOOK SIGNATURE BYPASS — PROVE PROCESSING, NOT JUST 200 — a 200 response alone will be rejected by triagers. Use Prometheus counter observation (before/after) to prove events enter the processing pipeline. If prod lacks Prometheus, use test env (same codebase). Full technique: `references/webhook-signature-bypass.md`
-- IMPERVA WAF BLOCKS ACCOUNT REGISTRATION — when the target uses Imperva with JS challenge on signup pages, automated registration (curl, browser tool, Python) will fail. Only real browser with residential IP works. Document as access constraint in the report, not a methodology gap. Focus exploitation on unauthenticated endpoints.
-- DOCKER/CONTAINER BREAKOUT PATTERNS — when SSH leads to a container (hostname looks like hex, /proc/1/cgroup shows docker): (1) check for host filesystem mounts: `find / -name "mnt" -o -name "host" 2>/dev/null`, look for /mnt/host or /host. (2) check docker socket: `ls -la /var/run/docker.sock`. (3) check SUID binaries: `find / -perm -4000 2>/dev/null` for custom binaries. (4) If host FS mounted + root in container → write SSH key to /mnt/host/root/.ssh/authorized_keys for host access. SecOps exam (June 2026): container had /mnt/host mount + SUID PATH hijack → host root.
-- DOMAIN-JOINED WINDOWS SYSTEM SHELL → LOAD ADTEST — when you get SYSTEM on a domain-joined host, immediately load the adtest skill. Ad-hoc AD attacks (trying RBCD, DCSync, password guessing) without the structured adtest workflow wastes hours. SecOps exam (June 2026): spent 2+ hours on ad-hoc AD escalation before loading adtest which identified unconstrained delegation + LDAP signing disabled as the correct relay path.
-- NTLM RELAY TOOLING FAILURES — impacket ntlmrelayx v0.13.x segfaults on some systems. Fallback: downgrade to v0.10.0 (`pip3 install impacket==0.10.0`). Always validate coercion FIRST with smbserver.py capture, THEN set up relay. Never assume coercion worked without proof.
-- DPAPI CREDENTIAL DECRYPTION DECISION TREE — Domain user masterkey: needs domain backup key (DC admin) OR user's password. Local user masterkey: needs user's cleartext password (NTLM hash alone insufficient on newer Windows with SHA-512/AES-256 masterkeys). If neither available, SKIP after 30 min and find another path. Tools: mimikatz dpapi::masterkey (/rpc, /system, /password, /hash, /sid). Check dwDomainKeyLen: if 0 = local-only (no domain backup possible).
-- LAB/EXAM PASSWORD CRACKING STRATEGY — when rockyou fails: (1) online lookup (hashes.com, crackstation.net, ntlm.pw), (2) context-based wordlist (company name + year + symbols: "SecOps2023!", "Evident@2023"), (3) rule-based: john --rules=best64/dive, (4) if still fails after 15 min → MOVE ON, find another path. Machine account hashes (120+ char random) are NEVER crackable.
-- EXAM/LAB TIME MANAGEMENT — if blocked on a single escalation path for >45 min after trying 3+ techniques, STOP. Enumerate OTHER paths before continuing. Common trap: spending 2+ hours on DPAPI/NTLM relay when an easier path exists elsewhere.
-- SSH NON-STANDARD PORT (2222) + KEY-ONLY ON 22 = DOCKER — this pattern strongly suggests a container. Check: hostname (hex-like), /proc/1/cgroup, /mnt/host or /host mounts, docker.sock, SUID binaries. Container root + host FS mount = host root via SSH key injection.
-- HTTPX BINARY CONFUSION (macOS) — `httpx` from Homebrew is the Python HTTPIE client (encode.io), NOT ProjectDiscovery's httpx scanner. It uses completely different CLI syntax (`httpx <URL> [OPTIONS]` vs piped input). For batch subdomain probing without PD httpx, use Python `concurrent.futures.ThreadPoolExecutor` + curl subprocess (40 workers, 5s timeout). See `references/parallel-http-probing.md` for the pattern. Install PD httpx with: `go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest` (requires Go).
-- PIVOT HOST TOOLING READINESS — when gaining access to multiple hosts (Kali, Linux pivot, Windows), run a quick tool inventory on EACH before deciding where to launch attacks: `python3 -c "import impacket; print(impacket.__version__)"`, `which smbclient ntlmrelayx.py secretsdump.py nmap responder crackmapexec certipy`. Choose the host with best tooling for relay/exploitation. Don't discover tool gaps mid-attack.
-- BLOCKED PATHS DOCUMENTATION — when an escalation path is exhausted (3+ techniques tried, all failed), add a "BLOCKED" entry to findings-log.md: path name, techniques tried, evidence of failure, reason blocked. Prevents re-attempting the same dead end after context compaction or session resume.
-- TOMCAT MANAGER TEXT 403 — if /manager/text returns 403 (manager-gui only, no manager-script), use HTML multipart upload with CSRF nonce in same session (requests.Session + regex CSRF_NONCE + POST multipart)
-- OPENSSH KEY FORMAT — leaked keys from pastebin/web often have broken line wrapping. Decode full base64, re-wrap at 70 chars, add proper BEGIN/END headers. Verify with `ssh-keygen -y -f key` before use.
-- DOCKER HOST MOUNT — containers with host filesystem at `/mnt/host/` = instant root on host. Write attacker SSH key to `/mnt/host/root/.ssh/authorized_keys`, then SSH to port 22 as root.
-- DPAPI DOMAIN USER CREDS — for domain users, masterkey decryption requires: domain backup key (via DC RPC), OR user's cleartext password + SID. Machine DPAPI_SYSTEM keys only decrypt the BACKUP portion (not usable for credential blob decryption). Don't waste time with backup key on the credential blob.
-- EXAM KALI BOX — check Kali tool availability FIRST (impacket, crackmapexec, xfreerdp). Install missing tools early. Kali may have limited impacket; use `pip3 install impacket` + scripts at `/usr/share/doc/python3-impacket/examples/`.
-- MIMIKATZ UPLOAD VIA WEBSHELL — use PowerShell `[IO.File]::AppendAllText()` in 8KB chunks via POST, then `certutil -decode`. Verify file size matches before decoding. `Add-Content -NoNewline` doesn't work reliably for large binary base64.
-
+- AJAX LOGIN + CURL — use browser for page access, curl for API only
+- CORS RE-TEST IN PHASE 6 — new backends found during exploit
+- WEAK CSRF — empty rejected but random accepted = not session-tied
+- FORGOT-PW FLOODING — 20+ rapid = DoS finding
+- n8n OAUTH SCOPE ESCALATION — test arbitrary scopes on registration
+- OAUTH PARAM TESTING — bare GET 302 ≠ gated
+- VPN SPLIT-TUNNEL — separate .ovpn, delete stale manual routes
+- TLS CIPHER TESTING — pin `-tls1_2` or server upgrades to 1.3
+- PARAM TYPE BRUTE-FORCE — config endpoint wildcard values
+- RATE-LIMITED TARGETS — JS route extraction over ffuf
+- ANGULAR PRE-RENDERED — ng-version without bundles = server-side
+- SKIPPED ≠ DONE (0 RESULTS) — execute and mark with result, never skip
+- OPENSSH KEY FORMAT — re-wrap base64, verify with ssh-keygen before use
+- DOCKER HOST MOUNT — /mnt/host/ = instant root via SSH key injection
+- MIMIKATZ UPLOAD VIA WEBSHELL — PowerShell AppendAllText + certutil -decode
 
 ## Gate Enforcement (MANDATORY before `next`)
 
@@ -691,21 +732,20 @@ Phase scripts live in `scripts/`. Two tiers: **Tier 1** (phase setup, run once a
 **state_manager.py — engagement lifecycle:**
 ```python
 import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/ptest/scripts"))
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/scripts"))
+from config import SKILL_CONFIG
 import state_manager
 
 workdir = "."
 state_manager.init_state(workdir, "Target Corp", scope_type="web",
     targets=["example.com", "api.example.com"], budget_hours=16)
 state_manager.status(workdir)
-state_manager.advance_phase(workdir)  # NOTE: at final phase (8), returns "Already at final phase" — manually set 8_reporting: PASSED + phase_8_end in state.yaml
+state_manager.advance_phase(workdir)  # NOTE: at final phase (6), returns "Already at final phase" — manually set 6_reporting: PASSED + phase_6_end in state.yaml
 state_manager.add_finding(workdir, "FINDING-1", "Stored XSS", "High", "app.example.com")
 state_manager.escalate(workdir, "FINDING-2", "RCE via SSTI", "Critical", "api.example.com")
 should, reason = state_manager.should_abandon(workdir, budget_hours=16)
 state_manager.abandon(workdir, "Authorization revoked")
 ```
-
-
 
 ### Script Failure Protocol
 

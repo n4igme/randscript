@@ -19,6 +19,18 @@ metadata:
 
 Structured methodology for assessing and reducing your own digital exposure. Think of it as pentesting yourself — finding leaks in your personal digital footprint before adversaries do.
 
+## When to Use / When NOT to Use
+
+**Use when:**
+- Target has identifiable digital footprint (handles, emails, domains)
+- Authorization confirmed for self-assessment (self) or target (third-party with permission)
+- Seed data available (at least one unique identifier)
+
+**Avoid when:**
+- No identifiable public presence
+- Assessment scope is third-party (use osint on external targets)
+- Legal constraints prohibit platform enumeration
+
 ## Quick Reference
 
 ```
@@ -35,7 +47,39 @@ Key rules:
   • Don't overreact — focus on what enables real attacks, not theoretical exposure
 ```
 
+## Quick Self-Audit (30-minute entry)
+
+| Check | Tool/Command | Time |
+|-------|--------------|------|
+| Git email exposure | `git log --format="%ae" \| sort -u` | 5 min |
+| GitHub handle correlation | `gh api user/repos --paginate \| xargs gh api repos/{}/commits` | 10 min |
+| Breach check | haveibeenpwned.com/account/{email} | 5 min |
+| Public SSH keys | `ssh-keyscan {host}` for your domains | 5 min |
+| Social cross-links | GitHub sidebar → X/LinkedIn/website | 5 min |
 ## Architecture
+
+**state.yaml schema:**
+```yaml
+engagement:
+  name: string
+  started: ISO8601
+  target_handle: string
+current_phase: int
+gateways:
+  1_inventory: OPEN|PASSED|LOCKED
+  2_exposure: ...
+  3_scoring: ...
+  4_chain: ...
+  5_remediation: ...
+  6_audit: ...
+findings_count: int
+time_tracking:
+  phase_1_start: ISO8601
+  # ... per phase
+notes: string
+remediations: list
+chain_hops: int
+```
 
 `Inventory (What exists)` → `Assessment (What's exposed)` → `Scoring (How bad)` → `Remediation (Fix it)`
 
@@ -51,7 +95,9 @@ Scripts in `~/.hermes/skills/security/opsec/scripts/`:
 python3 ~/.hermes/skills/security/opsec/scripts/exposure_check.py --github-user <handle> --check-platforms
 ```
 
-## Commands
+Full git commit audit methodology: `../references/gitops-security.md`
+
+---
 
 | Command | Action |
 |---------|--------|
@@ -70,7 +116,70 @@ python3 ~/.hermes/skills/security/opsec/scripts/exposure_check.py --github-user 
 | `audit` | Phase 6: Periodic audit checklist |
 | `report` | Compile full OPSEC assessment report |
 
-### Command Procedures
+#### Postmortem
+
+After engagement closes, run shared retrospective:
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/scripts"))
+from postmortem import run_postmortem
+run_postmortem(workdir, "opsec")
+```
+
+#### Cross-Skill Chaining (findings.jsonl)
+
+When recording a finding, append to `./opsec-output/findings.jsonl`:
+```python
+import json
+from datetime import datetime
+finding = {
+    "id": "OPSEC-{count:03d}",
+    "skill": "opsec",
+    "severity": "{severity}",
+    "type": "{type}",  # e.g., breach_exposure, domain_leak, credential_reuse
+    "target": "{target}",
+    "summary": "{one-line description}",
+    "chain_potential": [],
+    "timestamp": datetime.now().isoformat(),
+    "phase": "phase{current_phase}",
+    "confidence": "confirmed",
+    "status": "confirmed"
+}
+with open("./opsec-output/findings.jsonl", "a") as f:
+    f.write(json.dumps(finding) + "\n")
+```
+
+## Retry / Timeout Patterns
+
+| Operation | Timeout | Retry | Backoff |
+|-----------|---------|-------|---------|
+| HTTP requests | 30s | 3x | 5s linear |
+| nuclei scan | 300s | 2x | 30s |
+| Frida attach | 10s | 3x | 5s |
+| Burp request | 60s | 2x | 10s |
+| Cloud CLI | 120s | 2x | 30s |
+
+**Rules:**
+- On timeout: wait for backoff, retry once. If persistent, document as blocker.
+- On 429/503: exponential backoff (5s → 25s → 125s), max 3 attempts.
+- On partial output: save what you have, note the gap, continue.
+
+## Error Handling
+
+| Failure Mode | Action |
+|--------------|--------|
+| Tool exits non-zero | Capture stderr, check if partial output is usable |
+| API rate limit (429) | Back off, retry once. If persistent, document and pivot |
+| Credential expired | Re-acquire or document as finding (credential rotation issue) |
+| Target unreachable | Retry 3x with 30s gap. If still down, mark host UNREACHABLE |
+| Permission denied | Try alternative method. If blocked, document scope gap |
+| WAF blocking | Try 3 bypass techniques max, then document WAF and move on |
+
+## Concurrent Execution Safety
+
+See `../references/concurrent-execution-safety.md` for state locking, parallel scanning, and subagent handoff rules.
+
+## Command Procedures
 
 **`start`:** Collect ALL identifiers → create `./opsec-output/` → write `state.yaml` + `inventory.md` → advance to Phase 2.
 
@@ -151,6 +260,11 @@ Collect ALL known identifiers (be honest — adversaries will find them anyway):
 
 > Priority 1-6 remediation steps: `references/phase5-remediation.md`
 
+**Breach data removal:** After remediation, request removal from breach databases:
+- HaveIBeenPwnened: https://haveibeenpwned.com/DataRemoval
+- DeHashed: https://dehashed.com/removal
+- IntelX: https://intelx.io/account/delete
+
 ## Phase 6: Periodic Audit Checklist
 
 > Quarterly checklist: `references/phase6-audit.md`
@@ -158,6 +272,10 @@ Collect ALL known identifiers (be honest — adversaries will find them anyway):
 ## Report Template
 
 > Full template: `references/report-template.md`
+
+### Severity Mapping
+
+Cross-skill severity normalization: `../references/severity-mapping.md`
 
 ## Pitfalls
 
@@ -196,6 +314,10 @@ print_gate_status(result)
 - **Breach correlation:** osint `references/breach-correlation.md` covers HIBP/DeHashed techniques — use in Phase 2.5
 - **Proven patterns:** osint `references/proven-patterns.md` has handle/email discovery patterns — reverse them to find YOUR leaks
 
+### Evidence Standards
+
+All findings must follow `../references/evidence-standards.md` for required/optional evidence capture and redaction rules.
+
 ## Script Invocation
 
 Scripts are in `~/.hermes/skills/security/opsec/scripts/`. Invoke via `execute_code`.
@@ -203,7 +325,8 @@ Scripts are in `~/.hermes/skills/security/opsec/scripts/`. Invoke via `execute_c
 **state_manager.py — assessment lifecycle:**
 ```python
 import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/opsec/scripts"))
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/scripts"))
+from config import SKILL_CONFIG
 import state_manager
 
 workdir = "."

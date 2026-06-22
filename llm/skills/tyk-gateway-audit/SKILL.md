@@ -1,5 +1,6 @@
 ---
 name: tyk-gateway-audit
+version: 1.1.0
 description: "Tyk API gateway policy analysis: whitelist/blacklist extraction, OJK audit cross-referencing, prefix mismatch detection for exposure verification."
 tags: [tyk, api-gateway, audit, ojk, whitelist, blacklist, exposure-analysis]
 triggers:
@@ -12,11 +13,41 @@ triggers:
 
 # Tyk Gateway Audit — Exposure Verification
 
+## When to Use / When NOT to Use
+
+**Use when:**
+- Auditing API gateway exposure against whitelist/blacklist
+- Cross-referencing OJK audit sheets with Tyk configs
+- Verifying prefix mismatch due to listen_path stripping
+
+**Avoid when:**
+- No Tyk gateway config or OJK audit sheets
+- Target uses different API gateway (Kong, Apigee, AWS API Gateway)
+- Scope is endpoint behavior, not gateway policy
+
 ## Purpose
 
 Cross-reference API endpoint inventories (OJK audit lists, pentest scope sheets) against Tyk API gateway whitelist/blacklist configurations to determine actual exposure status.
 
 ## Key Concepts
+
+**state.yaml schema:**
+```yaml
+engagement:
+  name: string
+  started: ISO8601
+  target: string
+current_phase: int
+gateways:
+  1_load: OPEN|PASSED|LOCKED
+  2_match: ...
+  3_verify: ...
+  4_report: ...
+findings_count: int
+time_tracking:
+  phase_1_start: ISO8601
+notes: string
+```
 
 - **Whitelist** = endpoint IS reachable through the gateway (exposed). Column F = "No" (not exposed via blacklist).
 - **Blacklist** = endpoint IS blocked by the gateway. Column F = "Yes" (exposed via blacklist mechanism, meaning it needed explicit blocking).
@@ -32,7 +63,57 @@ assessment/    — Extracted CSVs:
   blacklist-endpoints.csv  — columns: api_file, listen_path, auth_type, blocked_path, blocked_methods, ignore_case, env, notes
 ```
 
+## Concurrent Execution Safety
+
+See `../references/concurrent-execution-safety.md` for state locking, parallel scanning, and subagent handoff rules.
+
 ## Workflow
+
+### Phase Entry Protocol (ALL phases)
+
+When entering ANY phase:
+1. **Load reference file** — `skill_view(name='tyk-gateway-audit', file_path='references/<phase-file>')`
+2. **Record timestamp** — write `phase_N_start` in state.yaml
+3. **Check prerequisites** — verify prior phase gate is PASSED
+4. **Review findings** — check `findings.jsonl` for chain opportunities before starting
+
+## Retry / Timeout Patterns
+
+| Operation | Timeout | Retry | Backoff |
+|-----------|---------|-------|---------|
+| CSV parse | 10s | 2x | 5s |
+| Python script | 60s | 2x | 10s |
+| Web fetch | 30s | 2x | 5s |
+
+**Rules:**
+- On parse error: check file encoding (UTF-8 vs Latin-1), retry once
+- On empty CSV: verify header matches expected schema, document deviation
+- On timeout: save partial matches, document as incomplete audit
+
+
+## Findings (findings.jsonl)
+
+**Format:** JSONL, one JSON object per line.
+
+**Required fields:** `finding_id`, `title`, `severity`, `category`, `target`, `confidence` (0.0-1.0), `timestamp`
+
+**Example:**
+```json
+{"finding_id": "RETOOLS-001", "title": "Hardcoded API key", "severity": "High", "category": "secrets", "target": "app.apk", "confidence": 0.95, "timestamp": "2026-06-22T10:00:00Z"}
+```
+
+## Error Handling
+
+| Failure Mode | Action |
+|--------------|--------|
+| CSV missing | Check path; if truly missing, document as blocker |
+| Path mismatch | Log unmatched paths to `prefix-mismatch-endpoints.csv` |
+| Stale values | Clear column F for unmatched paths (see Phase 5 Cleanup) |
+| Encoding error | Re-read with `encoding='latin-1'` or skip BOM |
+
+**Rules:**
+- Never silently skip a path — log it as unmatched, N/A, or blocker
+- After all matching passes, clear stale values from prior runs
 
 ### Step 1: Load both assessment CSVs
 Read `whitelist-endpoints.csv` (col D = path) and `blacklist-endpoints.csv` (col D = path).
@@ -94,6 +175,44 @@ Run all three matching approaches (direct, param-normalized, prefix-mismatch) in
 
 - Updated OJK worksheet with col F (Yes/No) and col G (source file)
 - `prefix-mismatch-endpoints.csv` — unmatched paths with closest config match, prefix diff, source file
+
+## Quick Wins
+
+| Signal | Action | Expected Yield |
+|--------|--------|---------------|
+| Wildcard listen_path (`/`) | Check if ALL paths are exposed | High — broad exposure |
+| Blacklist with no entries | All paths pass through | High — missing controls |
+| Whitelist with `*` pattern | Effectively no restriction | Medium |
+| Path prefix mismatch | Endpoints may bypass policy | Medium — false sense of security |
+
+### Evidence Standards
+
+All findings must follow `../references/evidence-standards.md` for required/optional evidence capture and redaction rules.
+
+### Severity Mapping
+
+Cross-skill severity normalization: `../references/severity-mapping.md`
+
+### Postmortem
+
+After engagement closes, run shared retrospective:
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/scripts"))
+from postmortem import run_postmortem
+run_postmortem(workdir, "tyk-gateway-audit")
+```
+
+### Gate Enforcement (MANDATORY before `next`)
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/tyk-gateway-audit/scripts"))
+from gate_check import check_gate, print_gate_status
+
+result = check_gate(".", phase=None)
+print_gate_status(result)
+```
 
 ## References
 

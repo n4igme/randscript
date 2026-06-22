@@ -32,6 +32,13 @@ Key rules:
   • GraphQL: always try introspection + batching + nested queries
   • Rate limiting bypass: rotate headers, use array params, change HTTP method
   • Every finding needs reproducible curl/request evidence
+
+Quick Wins (mid-engagement entry with tokens/docs):
+  - OpenAPI/Swagger found → batch-test ALL endpoints unauth (2-min Python loop)
+  - GraphQL → introspection + batching + depth attack immediately
+  - CORS headers present → test origin reflection + allow-credentials
+  - Bearer-only API → skip CORS exploitation (tokens not sent cross-origin)
+  - Existing tokens → test BOLA on top 5 object-ID endpoints first
 ```
 
 ## Architecture
@@ -40,7 +47,39 @@ Key rules:
 Phase 1: Scope & Recon → Phase 2: AuthN/AuthZ → Phase 3: Injection & Logic → Phase 4: Reporting
 ```
 
-## Commands
+## When to Use / When NOT to Use
+
+**Use when:**
+- Target matches skill scope (see Quick Reference phases)
+- You have required access level (credentials, API token, device, etc.)
+- Authorization is confirmed (written permission for pentest, own assets for research)
+
+**Avoid when:**
+- Target is explicitly out of scope
+- No credentials/token/device available and skill requires authenticated testing
+- Time budget is insufficient for minimum viable engagement (< 15 min)
+- Legal/ToS constraints block required techniques
+- No API docs/traffic/tokens available and endpoints are unknown
+- Target is pure web app with no API layer (use ptest instead)
+- GraphQL introspection disabled and schema unknown
+
+## Error Handling
+
+| Failure Mode | Action |
+|--------------|--------|
+| Tool exits non-zero | Capture stderr, check if partial output is usable |
+| API rate limit (429) | Back off, retry once. If persistent, document and pivot |
+| Credential expired | Re-acquire or document as finding (credential rotation issue) |
+| Target unreachable | Retry 3x with 30s gap. If still down, mark host UNREACHABLE |
+| Permission denied | Try alternative auth method. If blocked, document scope gap |
+| WAF blocking | Try 3 bypass techniques max, then document WAF and move on |
+| Frida detach | Retry with `-f` spawn mode. 3 failures → anti-Frida, escalate |
+
+**Rules:**
+- Never retry blindly — understand the error first
+- Save partial results before retrying (power loss, network drop)
+- Document blocker findings with evidence (screenshot, HTTP status)
+- On repeated failure (>3 attempts): mark as BLOCKED, continue to other surface
 
 | Command | Action |
 |---------|--------|
@@ -54,7 +93,21 @@ Phase 1: Scope & Recon → Phase 2: AuthN/AuthZ → Phase 3: Injection & Logic �
 
 If no command is given, show current status and suggest next action.
 
-### Command Procedures
+#### Postmortem
+
+After engagement closes, run shared retrospective:
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/scripts"))
+from postmortem import run_postmortem
+run_postmortem(workdir, "atest")
+```
+
+## Concurrent Execution Safety
+
+See `../references/concurrent-execution-safety.md` for state locking, parallel scanning, and subagent handoff rules.
+
+## Command Procedures
 
 **`start`:**
 1. Collect: API type, base URLs, documentation, auth mechanism, authorization model, rate limits, rules of engagement.
@@ -206,7 +259,6 @@ Your testing priorities shift based on API type. Determine this during initializ
 
 ---
 
-
 ## Phases (load reference for full methodology)
 
 | Phase | Gate | Reference |
@@ -224,7 +276,7 @@ Your testing priorities shift based on API type. Determine this during initializ
 - BOLA/IDOR is #1 API vulnerability — test on EVERY endpoint with IDs
 - IDOR hunting patterns: load `references/idor-hunting-patterns.md` for parameter manipulation, bypass techniques, blind detection, and platform-specific patterns (GraphQL, gRPC, presigned URLs)
 - Test both horizontal (user→user) and vertical (user→admin) access
-- GraphQL: always try introspection + batching + nested queries (see `references/graphql-exploitation.md`) (see `references/graphql-exploitation.md`, `references/graphql-dos-batching.md`)
+- GraphQL: always try introspection + batching + nested queries (see `references/graphql-exploitation.md`, `references/graphql-dos-batching.md`)
 - WebSocket APIs: load `references/websocket-testing.md` for CSWSH, message-level IDOR, subscription escalation, and Socket.IO/SignalR patterns
 - Every finding needs reproducible curl/request evidence
 - mtest handoff: if `phase8-handoff.md` exists, skip Phase 1 discovery
@@ -314,6 +366,30 @@ Before writing the report, revisit all findings and attempt to chain them for hi
 {Specific fix}
 ```
 
+### Cross-Skill Chaining (findings.jsonl)
+
+When recording a finding, append to `./atest-output/findings.jsonl` for cross-skill consumption:
+
+```python
+import json
+from datetime import datetime
+finding = {
+    "id": "ATEST-{count:03d}",
+    "skill": "atest",
+    "severity": "{severity}",
+    "type": "{vuln_type}",  # e.g., bola, auth_bypass, sqli, ssrf, rate_limit
+    "target": "{endpoint}",
+    "summary": "{one-line description}",
+    "chain_potential": [],
+    "timestamp": datetime.now().isoformat(),
+    "phase": "phase{current_phase}",
+    "confidence": "confirmed",
+    "status": "confirmed"
+}
+with open("./atest-output/findings.jsonl", "a") as f:
+    f.write(json.dumps(finding) + "\n")
+```
+
 ---
 
 ## Mandatory Checks
@@ -327,8 +403,11 @@ Before writing the report, revisit all findings and attempt to chain them for hi
 | Rate Limiting | Auth endpoints + sensitive operations tested |
 | Data Exposure | All list endpoints checked for over-fetching |
 
-
 ---
+
+### Severity Mapping
+
+Cross-skill severity normalization: `../references/severity-mapping.md`
 
 ## Pitfalls
 
@@ -341,6 +420,9 @@ Before writing the report, revisit all findings and attempt to chain them for hi
 - SPA catch-all: ALL paths same status+size = frontend routing, extract routes from JS bundles
 - Webhook callbacks: test ALL for missing HMAC/signature (Prometheus `uri=` reveals routes)
 - Middleware auth gate: if ALL endpoints return same error → token acquisition is priority, not fuzzing
+- BEARER-ONLY + NO CLIENT_CREDENTIALS = DEAD END — when target uses OAuth2 bearer tokens AND public clients (mnzpub.* prefix) can't use client_credentials grant, you CANNOT get a token without completing a full user auth flow (magic link, browser redirect). Don't spend hours fuzzing auth-walled endpoints. Pivot to: (1) register an account, (2) mobile app RE for token extraction, (3) report info-disc and move on. Monzo (June 2026): 20 unauth tests, all properly gated.
+- CORS + BEARER AUTH = NOT EXPLOITABLE — CORS origin reflection + allow-credentials:true only matters if auth uses cookies. Bearer tokens are NOT sent cross-origin automatically. Skip CORS exploitation on bearer-only APIs even if it looks "vulnerable" in headers.
+- BFI Finance / Capital.com / Uphold patterns: Indonesian P2P lending + European trading platforms use Transmit Security CIS (WebAuthn) + HMAC-SHA256 API auth. CORS misconfigurations often appear with `Access-Control-Allow-Origin: *` + `Allow-Credentials: true` on subdomains. Check bypass via origin header case changes or malformed origins.
 - Large file writes: max 300 lines per op, split reports into skeleton + finding patches
 
 ### Cross-Skill Handoff
@@ -361,14 +443,6 @@ Before writing the report, revisit all findings and attempt to chain them for hi
 - The forge IS the token acquisition method — without it you can't do Phase 2+
 
 ---
-
-## Output Handling
-
-> Full details (DNS workarounds, React SPA automation, rate limits): `references/pitfalls.md`
-
-- **Burp MCP output:** parse via script, print <20 lines — never raw into context
-- **Large file writes:** max 300 lines per op, split into chunks
-- **Report writing:** skeleton + summary first, then patch in findings
 
 ---
 
@@ -410,7 +484,6 @@ Before writing the report, revisit all findings and attempt to chain them for hi
 
 ---
 
-
 ## Postman Collection Output
 
 When generating Postman collections, use v2.1.0 format with: collection-level variables (base_url, tokens, device headers), each step as separate request with full headers/body, query params in url.query array.
@@ -429,7 +502,9 @@ When generating Postman collections, use v2.1.0 format with: collection-level va
 
 ---
 
----
+### Evidence Standards
+
+All findings must follow `../references/evidence-standards.md` for required/optional evidence capture and redaction rules.
 
 ## Script Invocation
 
@@ -439,7 +514,8 @@ Scripts are in `~/.hermes/skills/security/atest/scripts/`. Invoke via `execute_c
 ```python
 from hermes_tools import terminal
 import sys, os
-sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/atest/scripts"))
+sys.path.insert(0, os.path.expanduser("~/.hermes/skills/security/scripts"))
+from config import SKILL_CONFIG
 import state_manager
 
 workdir = "."  # or specific project directory

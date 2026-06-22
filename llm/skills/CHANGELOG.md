@@ -1,5 +1,69 @@
 # Security Skills — Changelog
 
+## 2026-06-22
+
+### Cross-Skill Infrastructure
+- Added `scripts/validate_all.py` — 5-step validation suite (configs, imports, SKILL.md sections, cross-refs, findings.jsonl schema)
+- Added `Makefile` with `make check`/`refs`/`clean` targets
+- Added `.gitignore` for __pycache__ and .DS_Store
+- Added state.yaml schema validation in `base_state.py` (warns on missing keys)
+- Added severity validation in `base_state.py` `add_finding()`
+- Added `from __future__ import annotations` to `base_gate.py` (Python <3.10 compat)
+- Fixed `scripts/check_cross_refs.py` — added config.py fallback for phase detection
+- Fixed `scripts/postmortem.py` — accepts kwargs + argparse CLI, interactive fallback only in TTY
+- Removed erroneous `pidigits` from README brew install
+- Expanded README Contributing section with full checklist + validation step
+- Added README Validation section documenting make check
+
+### ptest v5.0.1
+- Fixed config.py: 8 phases → 6 (matching v5.0.0 SKILL.md)
+- Fixed gate_check.py: rebuilt for 6 phases, removed infinite-recursion shadow bug
+- Fixed state.yaml schema in SKILL.md: 8 gateways → 6
+- Fixed script example: "phase (8)" → "phase (6)"
+- Deduplicated pitfalls section (-30 lines of repeated concepts)
+- Deduplicated reference links (-9 duplicate entries)
+- Removed duplicate command table
+- Merged duplicate "Avoid when" blocks
+- Added findings.jsonl inline procedure
+
+### w3hunt v2.3.0
+- Fixed config.py: OUTPUT_DIR '.' → 'w3hunt-output', SUBDIRS 2 → 5 (matching phases)
+- Added evidence-standards reference
+
+### retools v1.2.0
+- Added scripts/gate_check.py and scripts/state_manager.py (standard wrappers)
+- Added postmortem, evidence-standards, severity-mapping, gate enforcement sections
+
+### tyk-gateway-audit v1.1.0
+- Added Quick Wins table, postmortem, evidence-standards, severity-mapping, gate enforcement
+
+### atest v1.3.1
+- Merged duplicate "Avoid when" blocks
+- Removed duplicate "Output Handling" section
+- Removed double --- separator
+
+### mtest v4.0.1
+- Merged duplicate "Avoid when" blocks
+- Replaced duplicated error handling table with actual concurrent execution guidance
+
+### scode v1.2.1
+- Removed fully duplicated "When NOT to Use" section
+
+### ctest, adtest, ttest, xdev, osint (minor)
+- Merged duplicate "Avoid when" blocks
+
+### osint v1.2.1, opsec v1.2.1
+- Added findings.jsonl cross-skill chaining procedure
+
+### INDEX.md
+- Fixed "8-phase" → "6-phase" (ptest), "10-phase" → "7-phase" (mtest), atest "5" → "4"
+
+### Missing Reference Files Created (10)
+- atest: attack-recipes.md, chain-and-escalate-phase.md, severity-escalation.md
+- ctest: chain-and-escalate-phase.md
+- mtest: attack-recipes.md, severity-escalation.md, geo-restriction-bypass.md
+- opsec: domain-recon.md, breach-correlation.md, proven-patterns.md
+
 ## 2026-06-19
 
 ### ptest v5.0.0

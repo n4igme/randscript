@@ -36,6 +36,22 @@ Rate each program 1-5 on these factors:
    → Pick that one unless rejection rate > 50%
 
 4. Tie-breaker: pick the one where you have unused recon data
+
+## Country-Gated Targets (Monzo lesson, June 2026)
+
+**AVOID** targets requiring country-specific bank/identity accounts unless you have local credentials:
+- Monzo (UK bank account + KYC) — 90% attack surface behind OAuth2, unauthenticated surface well-hardened
+- Similar: Revolut (EU), N26 (EU), Cash App (US SSN)
+
+**Signs a target is country-gated:**
+- "No credentials provided, use your own account"
+- KYC/identity verification required for signup
+- OAuth2 bearer tokens on all sensitive endpoints
+- Client_credentials grant disabled for public clients
+
+**What happens:** You exhaust unauthenticated vectors in 2-3 hours, find only Low/Info (source maps, healthz), then hit a wall. The real attack surface (BOLA, IDOR, payment logic) needs auth you can't get.
+
+**Better ROI:** Targets with demo accounts (Capital.com), public APIs (DigitalOcean), or self-registration without KYC. Check program FAQ for "how do I get credentials" before starting.
    (endpoints mapped but not fully tested)
 ```
 

@@ -40,9 +40,10 @@ All offensive skills append findings to a single JSONL file for cross-skill chai
 |-------|------|-------------|
 | `evidence` | string | Brief proof |
 | `chain_potential` | array | `["{skill}:{attack_type}"]` — what other skills should try |
-| `phase` | string | Phase where found |
-| `status` | string | `confirmed\|theoretical\|escalated\|submitted` |
-| `credentials` | object | `{"type":"aws_key","value":"AKIA..."}` (reference only, not full secret) |
+|| `phase` | string | Phase where found |
+|| `confidence` | string | `confirmed\|probable\|theoretical` |
+|| `status` | string | `confirmed\|theoretical\|escalated\|submitted` |
+|| `credentials` | object | `{"type":"aws_key","value":"AKIA..."}` (reference only, not full secret) |
 
 ## Chain Triggers
 
