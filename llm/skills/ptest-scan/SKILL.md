@@ -82,7 +82,7 @@ Every security skill MUST document its state.yaml schema in SKILL.md. Required f
 - All scan types share the same hunt engine (19 modules)
 - `modules/api.py` (APIModule) handles BOLA/mass-assign/rate-limit/verb-tamper as a hunt module
 - `modules/idor.py` skips API-prefixed URLs (`/api/`, `/v1/`, etc.) to avoid overlap with APIModule
-- Signal expansion runs AFTER hunt, only on confirmed findings
+- Signal expansion streams DURING hunt — confirmed findings kick off expansion tasks immediately as modules complete (not batched after all modules finish)
 
 ### Directory Layout
 - `pipeline/` — phase orchestration (recon, discover, hunt, signals, report, web, host, mobile, scode, desktop, collection, cve_scan, service_probes)
@@ -222,7 +222,7 @@ When adding a NEW Hermes security skill (not just a ptest module), follow this p
 - `tools/wordlist_config.py` — `WordlistLoader` merges builtin + target-specific + custom dir
 - Target config: `wordlists/<domain>.yaml` with paths, params, extensions sections
 
-### Mobile Pipeline (`pipeline/mobile.py`)
+### Mobile Pipeline (`pipeline/mobile/`)
 - Auto-detects APK vs IPA by extension
 - Android: apktool (resources/manifest) + jadx (Java source), parallel decompile
 - iOS: unzip IPA → Payload/*.app, strings on Mach-O binary, Info.plist parsing
@@ -231,7 +231,25 @@ When adding a NEW Hermes security skill (not just a ptest module), follow this p
 - Secret patterns shared between platforms (AWS, Google, Firebase, private keys)
 - Prerequisites: Android=apktool+jadx; iOS=unzip+strings+codesign (all preinstalled on macOS)
 
-### Desktop Pipeline (`pipeline/desktop.py`)
+### Mobile Dynamic (`pipeline/mobile/dynamic.py`)
+- Requires: device/emulator connected + frida-server running
+- Frida SSL pinning bypass (TrustManager + OkHttp CertificatePinner)
+- Root/jailbreak detection bypass (RootBeer, File.exists, Build.TAGS)
+- Traffic capture via OkHttp/HttpURLConnection hooks → endpoint extraction → web hunt
+- Runtime crypto hooks: weak algo detection (DES/RC4/ECB/MD5), KeyStore alias monitoring
+- Deep link invocation testing: extracts schemes from dumpsys, tests with injected params
+- Local storage inspection: SharedPreferences XML + SQLite databases for secrets
+- Graceful skip: no device → skip, no frida → skip (findings=[])
+- Prerequisites: `frida` CLI, `adb` (Android), `idevice_id` (iOS), rooted device/emulator
+
+### Desktop Pipeline (`pipeline/desktop/`)
+
+Sub-package (matching mobile pattern):
+- `__init__.py`: re-exports `run_desktop_pipeline`, `run_desktop_dynamic`
+- `static.py`: PE/ELF/Mach-O offline analysis (imports, strings, secrets, DLL hijack detection)
+- `dynamic.py`: Runtime analysis (traffic interception, local storage, memory scan, IPC, hijack validation, Windows registry)
+
+**Static:**
 - Auto-detects binary type: PE (MZ magic), ELF (\x7fELF), Mach-O (feedface/cafebabe), .app bundle
 - Windows PE: imports table (16 suspicious APIs), DLL hijack (LoadLibrary usage), persistence patterns (5), signature check (osslsigncode)
 - Linux ELF: PIE check (readelf -h), RELRO, stack canary (__stack_chk_fail), NX/executable stack, SUID, missing shared libs (ldd)
@@ -239,6 +257,16 @@ When adding a NEW Hermes security skill (not just a ptest module), follow this p
 - All platforms share: string extraction, secret scanning (7 patterns), insecure comms (5 patterns), endpoint extraction → web hunt
 - .app bundles: resolves CFBundleExecutable from Contents/Info.plist → Contents/MacOS/<binary>
 - Prerequisites: `strings` (all), `readelf`+`ldd` (Linux), `otool`+`codesign` (macOS), `objdump` (Windows PE)
+
+**Dynamic:**
+- Traffic interception via mitmproxy (launches app with HTTP_PROXY/HTTPS_PROXY env)
+- Local storage enumeration: cross-platform paths (macOS Library/, Windows %APPDATA%, Linux ~/.config/)
+- Windows registry scanning: `reg query HKCU\Software\{app} /s` for secrets
+- Process memory scanning: gcore/procdump → strings → secret regex
+- IPC enumeration: Unix sockets (ss/netstat + permission check), Windows named pipes
+- DLL/dylib/RPATH hijack live validation: writable directory checks on search paths
+- Graceful skip: each phase independently skips if tools unavailable
+- Prerequisites: `mitmproxy` (traffic), `gcore`/`procdump` (memory), `sqlite3` (storage)
 
 ### Collection Analysis (`pipeline/collection.py`)
 - Postman v2.0/v2.1 JSON: recursive item parsing, variable secret scan, auth config audit, header secrets
@@ -252,7 +280,8 @@ When adding a NEW Hermes security skill (not just a ptest module), follow this p
 ### CLI Design (`main.py`)
 - Auto-detection from target string: domain→web, IP→host, .apk/.ipa→mobile, .exe/.dll/.msi/ELF/.app→desktop, Postman .json→scode, Bruno dir→scode, directory→scode
 - No `scan` subcommand required — bare `ptest jago.com` works
-- Minimal flags: `-p` (profile), `-c` (cookie), `--cookie-b`, `-m` (modules), `--resume`, `--type`, `--config`
+- Minimal flags: `-p` (profile), `-c` (cookie), `--cookie-b`, `-m` (modules), `--resume`, `--type`, `--config`, `-d`/`--dynamic`
+- `--dynamic` / `-d`: enables runtime analysis (Frida for mobile, mitmproxy for desktop). Off by default — requires device/running app. Can also be set per-target in `.ptest/<domain>.yaml` as `dynamic: true`
 - Per-target config files: `.ptest/<domain>.yaml` auto-discovered by target domain
 - Config file holds: profile, cookie, cookie_b, refresh_url, refresh_token, timeout, modules
 - CLI flags override config file values
@@ -315,13 +344,33 @@ Move frequently-called imports (`random`, `re`, `json`) to module-level. `import
 - Use proportional distance: `dist < diff * 0.3` rather than absolute comparison
 
 ### Crawl Dedup During Collection
-Always maintain a `seen_endpoint_keys: set[str]` during endpoint collection. Without it, the endpoints list grows O(pages × forms × links) before final dedup — problematic at brutal profile (500 pages). Key format: `f"{ep.url}|{ep.method}"`.
+Always maintain a `seen_endpoint_keys: set[str]` during endpoint collection. Without it, the endpoints list grows O(pages × forms × links) before final dedup — problematic at brutal profile (500 pages). Key format: `f"{ep.url}|{ep.method}|{','.join(sorted(ep.params))}"`. ALL endpoint additions (crawl, JS extraction, robots, brute, OpenAPI, nextdata, sourcemaps) must go through the dedup helper.
 
+### Concurrent Crawl by Profile
+Stealth/normal use sequential crawl (1 page at a time). Aggressive/brutal use concurrent crawl with semaphore (5/10 workers respectively). Batch URLs from queue, gather results, process sequentially for link extraction.
 ### Progress Persistence Pattern
 **DON'T** do disk I/O (load_session + save_session) inside inner module-completion loops. Instead:
-- Accept a `progress_callback: Callable[[int, int], None] | None` parameter
-- Caller provides the callback that does the session save
-- Avoids redundant JSON parse/serialize per module (23+ times per scan)
+- Accept a `progress_callback: Callable[[int, int, list[Finding]], None] | None` parameter
+- Caller provides the callback that does the session save + incremental findings dump
+- Throttle writes: max once per 10 seconds (use `time.monotonic()` check in callback)
+- Callback also writes `findings_raw.json` atomically — crash mid-hunt doesn't lose earlier modules' findings
+
+### Atomic File Writes
+Session state and findings files use atomic write (tempfile + `os.replace`):
+```python
+fd, tmp = tempfile.mkstemp(dir=target_dir, suffix=".tmp")
+try:
+    with os.fdopen(fd, "w") as f:
+        f.write(data)
+    os.replace(tmp, target_path)
+except Exception:
+    os.unlink(tmp)
+    raise
+```
+Never use bare `open(path, "w")` + `json.dump()` for state files — crash during write corrupts them.
+
+### Session File Locking
+Use `fcntl.flock(LOCK_EX)` around session read/write to prevent race conditions when two `ptest scan --resume` hit the same run_id. Lock files in `sessions/.locks/<run_id>.lock`.
 
 ### Module Runner Error Handling
 `_run_module()` must catch exceptions and return `[]` — otherwise `asyncio.as_completed` propagates them and any `isinstance(result, Exception)` check in the consumer loop is dead code:
@@ -340,7 +389,37 @@ async def _run_module(m):
 ### Reproduction Script Coverage
 `reporting/reproduce.py` MODULE_GENERATORS must cover all high-frequency modules. Missing generators fall through to `_gen_generic` which just does a blind GET. Currently covered: sqli, ssrf, xxe, idor, cmdi, xss, lfi. When adding a new module, add its repro generator too.
 
-### Test API Drift
+### Scope Enforcement Port Handling
+`HttpClient._is_in_scope()` must strip port from BOTH the URL netloc AND the scope pattern before fnmatch comparison. Without this, any target on a non-standard port (localhost:8080, staging:3000) silently fails scope checks and drops all findings.
+```python
+host = parsed.netloc.split(":")[0]
+return any(fnmatch.fnmatch(host, pat.split(":")[0]) for pat in self._scope_domains)
+```
+
+### Confirmation Pass Concurrency
+`_confirm_findings()` uses `asyncio.Semaphore(10)` for concurrent re-probes. Sequential confirmation on 50+ findings caused 500s+ scans. Split into already-confirmed (skip) vs to-probe (gather with sem).
+
+### Link Extraction Robustness
+`_extract_links()` uses two regex patterns: quoted (`href="..."`) and unquoted (`href=path`). Also handles `\s*=\s*` whitespace around equals. Rejects template vars starting with `{`.
+
+### Subprocess stdin Closure
+All `run_tool()` subprocess spawns use `stdin=asyncio.subprocess.DEVNULL` to prevent hangs when tools (nuclei, nmap) expect TTY/stdin input.
+
+### API Path Extraction Noise Filtering
+`_is_likely_api_path()` rejects:
+- Template variables (`{`, `}`, `$`, `{{`, `}}`)
+- i18n-style keys (all segments >20 chars, alpha-only after stripping `-_`)
+- Deeply nested paths (>6 segments — config/template noise)
+- Per-source cap: `_extract_api_paths()` returns max 100 results
+
+### Scan-Level Endpoint Dedup Before Modules
+Hunt phase deduplicates endpoints by `url_base|method|sorted_params` BEFORE dispatching to modules. Prevents discover dedup misses + signal expansion + nuclei re-introducing duplicates that modules test redundantly.
+
+### OAuth Module JSON Safety
+Always check content-type OR body-starts-with-`{` before calling `resp.json()`. Wrap in try/except `(json.JSONDecodeError, ValueError)`. Non-JSON responses from OIDC discovery paths are common on non-API servers.
+
+### Response Size Guard
+Check BOTH content-length header AND actual body size (`len(response.content)`) against MAX_RESPONSE_SIZE. Chunked responses may lack content-length; relying on header alone misses them.
 When refactoring module interfaces (e.g. renaming `set_cookies` → `configure`), grep tests immediately: `grep -r "old_method_name" tests/`. The IDOR module test drift went unnoticed because tests weren't run after the rename.
 
 ## Error Handling
