@@ -1,1 +1,0 @@
-../../atest/scripts/background_recon.py

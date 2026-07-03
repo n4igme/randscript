@@ -1,1 +1,0 @@
-SKILL_CONFIG = {'NAME': 'ptest-scan', 'OUTPUT_DIR': 'ptest-scan-output', 'PHASES': {1: 'analysis', 2: 'implementation', 3: 'testing', 4: 'review', 5: 'deploy'}, 'GATEWAYS': {1: '1_analysis', 2: '2_implementation', 3: '3_testing', 4: '4_review', 5: '5_deploy'}, 'SUBDIRS': ['phase1-analysis', 'phase2-impl', 'phase3-test', 'phase4-review', 'report'], 'BUDGET_HOURS': 16}

@@ -1,1 +1,0 @@
-SKILL_CONFIG = {'NAME': 'intuition-engine', 'OUTPUT_DIR': 'intuition-output', 'PHASES': {1: 'fingerprint', 2: 'dispatch', 3: 'execute', 4: 'verify'}, 'GATEWAYS': {1: '1_fingerprint', 2: '2_dispatch', 3: '3_execute', 4: '4_verify'}, 'SUBDIRS': ['phase1-fingerprint', 'phase2-dispatch', 'phase3-execute', 'phase4-verify'], 'BUDGET_HOURS': 4}
