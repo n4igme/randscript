@@ -7,3 +7,55 @@ llm/skills/**/jago-auth-flow.md
 
 # Exception: generic ROI tracking (not target-specific)
 !llm/skills/w3hunt/references/engagement-roi-metrics.md
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+*.so
+.venv/
+venv/
+ENV/
+
+# macOS
+**/.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs & temp
+*.log
+logs/
+tmp/
+temp/
+
+# Security tool outputs (never commit)
+*.pcap
+*.pcapng
+*.cap
+*.har
+burp_*
+nmap-output/
+output/
+loot/
+*.raw
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+*.crt
+credentials.json
+token.json
